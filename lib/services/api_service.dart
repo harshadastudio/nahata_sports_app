@@ -28,7 +28,79 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 //
+
+
+
+
+
+
+
+
+// class ApiService {
+//   static Future<bool> login(String email, String password) async {
+//     final url = Uri.parse('https://nahatasports.com/api/login');
+//
+//     try {
+//       final response = await http.post(
+//         url,
+//         headers: {'Content-Type': 'application/json'},
+//         body: jsonEncode({'email': email, 'password': password}),
+//
+//       );
+//
+//       if (response.statusCode == 200) {
+//         final data = jsonDecode(response.body);
+//
+//         if (data['status'] == true) {
+//           SharedPreferences prefs = await SharedPreferences.getInstance();
+//           await prefs.setBool('isLoggedIn', true);
+//           await prefs.setString('userEmail', email);
+//           print("✅ Login successful");
+//           print("📥 Raw Response: ${response.body}");
+//
+//           // Save token or user info if returned:
+//           if (data.containsKey('token')) {
+//             await prefs.setString('authToken', data['token']);
+//             print("token");
+//           }
+//           return true;
+//         } else {
+//           print("❌ Login failed: ${data['message']}");
+//           return false;
+//         }
+//       } else {
+//         print("❌ Server Error: ${response.statusCode}");
+//         return false;
+//       }
+//     } catch (e) {
+//       print("❌ Error during login: $e");
+//       return false;
+//     }
+//   }
+//
+//   static Future<void> logout() async {
+//     SharedPreferences prefs = await SharedPreferences.getInstance();
+//     await prefs.clear();
+//   }
+//
+//   static Future<bool> isLoggedIn() async {
+//     SharedPreferences prefs = await SharedPreferences.getInstance();
+//     return prefs.getBool('isLoggedIn') ?? false;
+//   }
+// }
+
+
+
+
+
+
+
+
+
+
 class ApiService {
+  static Map<String, dynamic>? currentUser;
+
   static Future<bool> login(String email, String password) async {
     final url = Uri.parse('https://nahatasports.com/api/login');
 
@@ -43,14 +115,19 @@ class ApiService {
         final data = jsonDecode(response.body);
 
         if (data['status'] == true) {
+          currentUser = data['data']; // store user data dynamically
+
           SharedPreferences prefs = await SharedPreferences.getInstance();
           await prefs.setBool('isLoggedIn', true);
           await prefs.setString('userEmail', email);
-          // Save token or user info if returned:
+
           if (data.containsKey('token')) {
             await prefs.setString('authToken', data['token']);
-            print("token");
           }
+
+          print("✅ Login successful");
+          print("📥 User Data: $currentUser");
+
           return true;
         } else {
           print("❌ Login failed: ${data['message']}");
@@ -69,6 +146,7 @@ class ApiService {
   static Future<void> logout() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.clear();
+    currentUser = null;
   }
 
   static Future<bool> isLoggedIn() async {
@@ -76,16 +154,6 @@ class ApiService {
     return prefs.getBool('isLoggedIn') ?? false;
   }
 }
-
-
-
-
-
-
-
-
-
-
 
 
 

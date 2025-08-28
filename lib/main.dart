@@ -93,7 +93,7 @@ class MyApp extends StatelessWidget {
 
         routes: {
           '/': (context) => const InternetCheckWrapper(child: SplashScreen()),
-          '/signup': (context) => const InternetCheckWrapper(child: SignUpScreen()),
+          '/signup': (context) => InternetCheckWrapper(child: SignUpScreen()),
           '/login': (context) => const InternetCheckWrapper(child: LoginScreen()),
           '/location': (context) => const InternetCheckWrapper(child: LocationScreen()),
           // '/dashboard': (context) => const InternetCheckWrapper(child: DashboardScreen()),

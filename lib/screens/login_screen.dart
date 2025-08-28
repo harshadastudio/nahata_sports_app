@@ -3,8 +3,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import '../dashboard/admin_screen.dart';
+import '../dashboard/coach_screen.dart';
 import '../dashboard/dashboard1.dart';
 import '../dashboard/dashboard_screen.dart';
+import '../dashboard/security_screen.dart';
 import '../services/api_service.dart';
 import 'location_screen.dart';
 
@@ -237,13 +240,43 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
                                   if (Navigator.canPop(context)) Navigator.pop(context); // dismiss loader
 
+                                  // if (isSuccess) {
+                                  //   showCustomSnackbar(context, 'Login Successful');
+                                  //   Navigator.pushReplacement(
+                                  //     context,
+                                  //     MaterialPageRoute(builder: (_) => const DashboardScreen1()),
+                                  //   );
+                                  // }
+
                                   if (isSuccess) {
-                                    showCustomSnackbar(context, 'Login Successful');
-                                    Navigator.pushReplacement(
-                                      context,
-                                      MaterialPageRoute(builder: (_) => const DashboardScreen1()),
-                                    );
-                                  } else {
+                                    final role = ApiService.currentUser?['role'];
+
+                                    if (role == 'admin') {
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => AdminDashboardScreen()),
+                                      );
+                                    } else if (role == 'coach') {
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => CoachDashboardScreen()),
+                                      );
+                                    } else if (role == 'user') {
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => DashboardScreen()),
+                                      );
+                                    } else if (role == 'security') {
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => SecurityGateScanner()),
+                                      );
+                                    }
+                                  }
+
+
+
+                                  else {
                                     // Show dialog or error message
                                     showDialog(
                                       context: context,
