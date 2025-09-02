@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/api_service.dart';
+
 class PaymentScreen extends StatefulWidget {
   final Map<String, dynamic> bookingDetails;
 
@@ -223,7 +225,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       'currency': 'INR',
       'prefill': {
         'email': (await SharedPreferences.getInstance()).getString('userEmail') ?? '',
-        'contact': '9876543210',
+        'contact': ApiService.currentUser?['phone'] ?? '',
       },
       'method': {'upi': true},
       'upi': {'flow': 'collect'},
@@ -374,163 +376,165 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
 
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
-      body:Stack(
-        children: [
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF1D2B64), Color(0xFFf8cdda)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-            ),
-          ),
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 🔵 Page Title
-                  const Text(
-                    "Complete Your Payment",
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+    return SafeArea(
+      child: Scaffold(
+        // backgroundColor: const Color(0xFFF9FAFB),
+        body:Stack(
+          children: [
+            // Container(
+            //   decoration: const BoxDecoration(
+            //     gradient: LinearGradient(
+            //       colors: [Color(0xFF1D2B64), Color(0xFFf8cdda)],
+            //       begin: Alignment.topCenter,
+            //       end: Alignment.bottomCenter,
+            //     ),
+            //   ),
+            // ),
+            SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 🔵 Page Title
+                    const Text(
+                      "Complete Your Payment",
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0A198D),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
+                    const SizedBox(height: 24),
 
-                  // 📋 Booking Summary
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
+                    // 📋 Booking Summary
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "📋 Booking Summary",
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _infoRow("📍 Location", booking['location']),
+                          _infoRow("🎯 Game", booking['game']),
+                          _infoRow("📅 Date", booking['date']),
+                          _infoRow("⏰ Slots", (booking['slots'] as List)
+                              .map((s) => "${s['court']} (${s['time']})")
+                              .join(", ")
+                          ),
+                          const Divider(height: 32),
+                          _infoRow(
+                            "💰 Total Price",
+                            "₹${booking['price']}",
+                            isBold: true,
+                          ),
+                        ],
+                      ),
                     ),
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          "📋 Booking Summary",
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+
+                    const SizedBox(height: 32),
+
+                    // 💳 Payment Method Section
+                    const Text(
+                      "Select Payment Method",
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 🔘 Online Payment Button
+                    Container(
+                      width: double.infinity,
+                      height: 55,
+                      decoration: BoxDecoration(
+                        color: razorpayDisabled ? Colors.grey[400] : const Color(0xFF0A198D),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: ElevatedButton.icon(
+                        onPressed: razorpayDisabled ? null : _payOnline,
+                        icon: const Icon(Icons.credit_card_rounded, size: 22),
+                        label: Text(
+                          "Pay Online ₹$razorpayAmount",
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        _infoRow("📍 Location", booking['location']),
-                        _infoRow("🎯 Game", booking['game']),
-                        _infoRow("📅 Date", booking['date']),
-                        _infoRow("⏰ Slots", (booking['slots'] as List)
-                            .map((s) => "${s['court']} (${s['time']})")
-                            .join(", ")
-                        ),
-                        const Divider(height: 32),
-                        _infoRow(
-                          "💰 Total Price",
-                          "₹${booking['price']}",
-                          isBold: true,
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 32),
+                    const SizedBox(height: 20),
 
-                  // 💳 Payment Method Section
-                  const Text(
-                    "Select Payment Method",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 🔘 Online Payment Button
-                  Container(
-                    width: double.infinity,
-                    height: 55,
-                    decoration: BoxDecoration(
-                      color: razorpayDisabled ? Colors.grey[400] : const Color(0xFF0A198D),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: ElevatedButton.icon(
-                      onPressed: razorpayDisabled ? null : _payOnline,
-                      icon: const Icon(Icons.credit_card_rounded, size: 22),
-                      label: Text(
-                        "Pay Online ₹$razorpayAmount",
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ElevatedButton.icon(
+                      onPressed: _handleCashBooking,
+                      icon: const Icon(Icons.money_rounded, color: Colors.white),
+                      label: const Text(
+                        "Pay with Cash at Venue",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        elevation: 0,
-                        backgroundColor: Colors.transparent,
-                        shadowColor: Colors.transparent,
+                        backgroundColor: Color(0xFF0A198D), // same dark blue
                         foregroundColor: Colors.white,
+                        elevation: 5,
+                        minimumSize: const Size(double.infinity, 48),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
                     ),
-                  ),
 
-                  const SizedBox(height: 20),
-
-                  ElevatedButton.icon(
-                    onPressed: _handleCashBooking,
-                    icon: const Icon(Icons.money_rounded, color: Colors.white),
-                    label: const Text(
-                      "Pay with Cash at Venue",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Color(0xFF0A198D), // same dark blue
-                      foregroundColor: Colors.white,
-                      elevation: 5,
-                      minimumSize: const Size(double.infinity, 48),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-
-                  // 💵 Cash Button
-                  // OutlinedButton.icon(
-                  //   onPressed: _handleCashBooking,
-                  //   icon: const Icon(Icons.money_rounded, color: Colors.green),
-                  //   label: const Text(
-                  //     "Pay with Cash at Venue",
-                  //     style: TextStyle(fontSize: 16),
-                  //   ),
-                  //   style: OutlinedButton.styleFrom(
-                  //     foregroundColor: Colors.green[800],
-                  //     side: const BorderSide(color: Colors.green),
-                  //     minimumSize: const Size(double.infinity, 48),
-                  //     padding: const EdgeInsets.symmetric(vertical: 14),
-                  //     shape: RoundedRectangleBorder(
-                  //       borderRadius: BorderRadius.circular(14),
-                  //     ),
-                  //   ),
-                  // ),
-                ],
+                    // 💵 Cash Button
+                    // OutlinedButton.icon(
+                    //   onPressed: _handleCashBooking,
+                    //   icon: const Icon(Icons.money_rounded, color: Colors.green),
+                    //   label: const Text(
+                    //     "Pay with Cash at Venue",
+                    //     style: TextStyle(fontSize: 16),
+                    //   ),
+                    //   style: OutlinedButton.styleFrom(
+                    //     foregroundColor: Colors.green[800],
+                    //     side: const BorderSide(color: Colors.green),
+                    //     minimumSize: const Size(double.infinity, 48),
+                    //     padding: const EdgeInsets.symmetric(vertical: 14),
+                    //     shape: RoundedRectangleBorder(
+                    //       borderRadius: BorderRadius.circular(14),
+                    //     ),
+                    //   ),
+                    // ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
-      )
+          ],
+        )
+      ),
     );
   }
 

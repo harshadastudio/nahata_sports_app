@@ -3103,11 +3103,7 @@
 
 
 
-
-
-
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -3146,7 +3142,7 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
   Future<void> fetchCourtsWisePrice() async {
     setState(() => isLoading = true);
     final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDay);
-
+    final selectedDayName = DateFormat('EEEE').format(_selectedDay);
     final url = Uri.https(
       "nahatasports.com",
       "/api/courts_wise_price",
@@ -3170,7 +3166,7 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
             courtMap.forEach((hourType, daysMap) {
               if (daysMap is Map<String, dynamic>) {
                 daysMap.forEach((dayType, slotList) {
-                  if (slotList is List) {
+                  // if (dayType.toLowerCase() == selectedDayName.toLowerCase() && slotList is List) {
                     for (var slot in slotList) {
                       parsedSlots.add({
                         "court": courtName,
@@ -3181,7 +3177,7 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
                       });
                     }
                   }
-                });
+                );
               }
             });
           });
@@ -3218,7 +3214,8 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     return courtSlots.map((s) => s['hourType'].toString()).toSet().toList();
   }
 
-  List<Map<String, dynamic>> getSlotsForCourtAndHour(String court, String hourType) {
+  List<Map<String, dynamic>> getSlotsForCourtAndHour(
+      String court, String hourType) {
     return courts
         .where((s) => s['court'] == court && s['hourType'] == hourType)
         .toList();
@@ -3226,19 +3223,14 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF2F4F7),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF1D2B64), Color(0xFFf8cdda)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
+    return SafeArea(
+      child : Scaffold(
+
+        backgroundColor: const Color(0xFFF2F4F7),
+        body: SafeArea(
           child: isLoading
-              ? const Center(child: CircularProgressIndicator(color: Colors.white))
+              ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF0A198D)))
               : SingleChildScrollView(
             child: Column(
               children: [
@@ -3246,12 +3238,12 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
                 const SizedBox(height: 12),
                 _buildStepByStepUI(),
                 if (selectedSlots.isNotEmpty) _buildReviewSummary(),
-                const SizedBox(height: 10),
-                _buildBottomBar(),
+                const SizedBox(height: 80), // leave space for bottom bar
               ],
             ),
           ),
         ),
+        bottomNavigationBar: _buildBottomBar(),
       ),
     );
   }
@@ -3279,26 +3271,33 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
   }
 
   Widget _buildSelectedCourtHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            selectedCourt ?? "",
-            style: const TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                selectedCourt = null;
-                selectedHourType = null;
-              });
-            },
-            child: const Text("Change Court",style: TextStyle(color: Colors.white),),
-          )
-        ],
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              selectedCourt ?? "",
+              style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  selectedCourt = null;
+                  selectedHourType = null;
+                });
+              },
+              child: const Text("Change Court",
+                  style: TextStyle(color: Color(0xFF0A198D))),
+            )
+          ],
+        ),
       ),
     );
   }
@@ -3315,11 +3314,12 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
         final court = courtNames[index];
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          color: Colors.white.withOpacity(0.95),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           elevation: 3,
           child: ListTile(
-            title: Text(court, style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text(court,
+                style: const TextStyle(fontWeight: FontWeight.bold)),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () {
               setState(() {
@@ -3337,41 +3337,38 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     if (selectedCourt == null) return const SizedBox.shrink();
     final hourTypes = getHourTypesForCourt(selectedCourt!);
 
-    return SizedBox(
-      height: 50,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: hourTypes.length,
-        itemBuilder: (context, index) {
-          final hour = hourTypes[index];
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Wrap(
+        spacing: 8,
+        children: hourTypes.map((hour) {
           final isSelected = selectedHourType == hour;
           final isHappy = hour.toLowerCase().contains("happy");
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(hour),
-              selected: isSelected,
-              onSelected: (_) {
-                setState(() {
-                  selectedHourType = hour;
-                });
-              },
-              selectedColor: isHappy ? Colors.orange.shade100 : Colors.indigo.shade100,
-              backgroundColor: Colors.grey.shade200,
-              labelStyle: TextStyle(
-                  color: isSelected
-                      ? (isHappy ? Colors.orange.shade800 : Colors.indigo.shade900)
-                      : Colors.black),
-            ),
+          return ChoiceChip(
+            label: Text(hour),
+            selected: isSelected,
+            onSelected: (_) {
+              setState(() {
+                selectedHourType = hour;
+              });
+            },
+            selectedColor:
+            isHappy ? Colors.orange.shade100 : Colors.indigo.shade100,
+            backgroundColor: Colors.grey.shade200,
+            labelStyle: TextStyle(
+                color: isSelected
+                    ? (isHappy ? Colors.orange.shade800 : Colors.indigo.shade900)
+                    : Colors.black),
           );
-        },
+        }).toList(),
       ),
     );
   }
 
   Widget _buildSlotSelector() {
-    if (selectedCourt == null || selectedHourType == null) return const SizedBox.shrink();
+    if (selectedCourt == null || selectedHourType == null) {
+      return const SizedBox.shrink();
+    }
     final slots = getSlotsForCourtAndHour(selectedCourt!, selectedHourType!);
 
     return Padding(
@@ -3410,7 +3407,7 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
 
   Widget _buildCalendarCard() {
     return Card(
-      color: Colors.white.withOpacity(0.9),
+      color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 4,
       margin: const EdgeInsets.all(12),
@@ -3429,7 +3426,8 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
                 setState(() => _selectedDay = selected);
                 fetchCourtsWisePrice();
               },
-              headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true),
+              headerStyle:
+              const HeaderStyle(formatButtonVisible: false, titleCentered: true),
               calendarStyle: CalendarStyle(
                 todayDecoration: BoxDecoration(
                   color: Colors.indigo.shade100,
@@ -3463,7 +3461,6 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: Colors.white.withOpacity(0.9),
       elevation: 4,
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -3472,7 +3469,9 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
           children: [
             const Text("Review Selection",
                 style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87)),
             const SizedBox(height: 8),
             ...grouped.entries.map((courtEntry) {
               final court = courtEntry.key;
@@ -3484,7 +3483,6 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
                           fontSize: 14, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   ...courtEntry.value.entries.map((hourEntry) {
-                    final hour = hourEntry.key;
                     return Wrap(
                       spacing: 8,
                       children: hourEntry.value.map((slot) {
@@ -3504,7 +3502,9 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
             const Divider(height: 12, color: Colors.black26),
             Text("Total: ₹$totalPrice",
                 style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black)),
           ],
         ),
       ),
@@ -3514,13 +3514,21 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
   Widget _buildBottomBar() {
     return Container(
       padding: const EdgeInsets.all(12),
-      color: Colors.white.withOpacity(0.1),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black12, offset: Offset(0, -2), blurRadius: 6),
+        ],
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text("Total: ₹$totalPrice",
               style: const TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red)),
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red)),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF0A198D),
@@ -3544,10 +3552,452 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
               );
             },
             child: const Text("Proceed to Payment",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500,color: Colors.white)),
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white)),
           )
         ],
       ),
     );
   }
 }
+
+
+//
+// import 'dart:convert';
+//
+// import 'package:flutter/material.dart';
+// import 'package:http/http.dart' as http;
+// import 'package:intl/intl.dart';
+// import 'package:table_calendar/table_calendar.dart';
+//
+// class SlotBookingScreen extends StatefulWidget {
+//   final String location;
+//   final String game;
+//
+//   const SlotBookingScreen({
+//     super.key,
+//     required this.location,
+//     required this.game,
+//   });
+//
+//   @override
+//   State<SlotBookingScreen> createState() => _SlotBookingScreenState();
+// }
+//
+// class _SlotBookingScreenState extends State<SlotBookingScreen> {
+//   DateTime _selectedDay = DateTime.now();
+//   List<Map<String, dynamic>> selectedSlots = [];
+//   int totalPrice = 0;
+//   List<Map<String, dynamic>> courts = [];
+//   bool isLoading = false;
+//
+//   String? selectedCourt;
+//   String? selectedHourType;
+//
+//   @override
+//   void initState() {
+//     super.initState();
+//     fetchCourtsWisePrice();
+//   }
+//
+//   Future<void> fetchCourtsWisePrice() async {
+//     setState(() => isLoading = true);
+//     final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDay);
+//
+//     final url = Uri.https(
+//       "nahatasports.com",
+//       "/api/courts_wise_price",
+//       {
+//         "date": formattedDate,
+//         "sport_name": widget.game,
+//         "location": widget.location,
+//       },
+//     );
+//
+//     try {
+//       final response = await http.get(url);
+//       if (response.statusCode == 200) {
+//         final responseData = json.decode(response.body);
+//         if (responseData["status"] == "success") {
+//           final data = responseData["data"] as Map<String, dynamic>;
+//           List<Map<String, dynamic>> parsedSlots = [];
+//
+//           data.forEach((courtName, courtData) {
+//             final courtMap = courtData as Map<String, dynamic>;
+//             courtMap.forEach((hourType, daysMap) {
+//               if (daysMap is Map<String, dynamic>) {
+//                 daysMap.forEach((dayType, slotList) {
+//                   if (slotList is List) {
+//                     for (var slot in slotList) {
+//                       parsedSlots.add({
+//                         "court": courtName,
+//                         "hourType": hourType,
+//                         "dayType": dayType,
+//                         "time": slot["time"].toString(),
+//                         "price": int.tryParse(slot["price"].toString()) ?? 0,
+//                       });
+//                     }
+//                   }
+//                 });
+//               }
+//             });
+//           });
+//
+//           setState(() {
+//             courts = parsedSlots;
+//             selectedSlots.clear();
+//             totalPrice = 0;
+//           });
+//         }
+//       }
+//     } catch (e) {
+//       print("Error fetching courts price: $e");
+//     }
+//     setState(() => isLoading = false);
+//   }
+//
+//   void toggleSlot(Map<String, dynamic> slot) {
+//     setState(() {
+//       final exists = selectedSlots.any(
+//               (s) => s['court'] == slot['court'] && s['time'] == slot['time']);
+//       if (exists) {
+//         selectedSlots.removeWhere(
+//                 (s) => s['court'] == slot['court'] && s['time'] == slot['time']);
+//       } else {
+//         selectedSlots.add(slot);
+//       }
+//       totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
+//     });
+//   }
+//
+//   List<String> getHourTypesForCourt(String court) {
+//     final courtSlots = courts.where((s) => s['court'] == court);
+//     return courtSlots.map((s) => s['hourType'].toString()).toSet().toList();
+//   }
+//
+//   List<Map<String, dynamic>> getSlotsForCourtAndHour(String court, String hourType) {
+//     return courts
+//         .where((s) => s['court'] == court && s['hourType'] == hourType)
+//         .toList();
+//   }
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       backgroundColor: const Color(0xFFF2F4F7),
+//       body: SafeArea(
+//         child: isLoading
+//             ? const Center(child: CircularProgressIndicator(color: Colors.white))
+//             : SingleChildScrollView(
+//           child: Column(
+//             children: [
+//               _buildCalendarCard(),
+//               const SizedBox(height: 12),
+//               _buildStepByStepUI(),
+//               if (selectedSlots.isNotEmpty) _buildReviewSummary(),
+//               const SizedBox(height: 10),
+//               _buildBottomBar(),
+//             ],
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+//
+//   // Step-by-step UI
+//   Widget _buildStepByStepUI() {
+//     if (selectedCourt == null) {
+//       return _buildCourtSelector();
+//     } else if (selectedHourType == null) {
+//       return Column(
+//         children: [
+//           _buildSelectedCourtHeader(),
+//           _buildHourTypeSelector(),
+//         ],
+//       );
+//     } else {
+//       return Column(
+//         children: [
+//           _buildSelectedCourtHeader(),
+//           _buildHourTypeSelector(),
+//           _buildSlotSelector(),
+//         ],
+//       );
+//     }
+//   }
+//
+//   Widget _buildSelectedCourtHeader() {
+//     return Padding(
+//       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+//       child: Row(
+//         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//         children: [
+//           Text(
+//             selectedCourt ?? "",
+//             style: const TextStyle(
+//                 fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+//           ),
+//           TextButton(
+//             onPressed: () {
+//               setState(() {
+//                 selectedCourt = null;
+//                 selectedHourType = null;
+//               });
+//             },
+//             child: const Text("Change Court",style: TextStyle(color: Colors.white),),
+//           )
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _buildCourtSelector() {
+//     final courtNames = courts.map((s) => s['court'].toString()).toSet().toList();
+//
+//     return ListView.builder(
+//       shrinkWrap: true,
+//       physics: const NeverScrollableScrollPhysics(),
+//       itemCount: courtNames.length,
+//       padding: const EdgeInsets.all(12),
+//       itemBuilder: (context, index) {
+//         final court = courtNames[index];
+//         return Card(
+//           margin: const EdgeInsets.only(bottom: 12),
+//           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+//           color: Colors.white.withOpacity(0.95),
+//           elevation: 3,
+//           child: ListTile(
+//             title: Text(court, style: const TextStyle(fontWeight: FontWeight.bold)),
+//             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+//             onTap: () {
+//               setState(() {
+//                 selectedCourt = court;
+//                 selectedHourType = null;
+//               });
+//             },
+//           ),
+//         );
+//       },
+//     );
+//   }
+//
+//   Widget _buildHourTypeSelector() {
+//     if (selectedCourt == null) return const SizedBox.shrink();
+//     final hourTypes = getHourTypesForCourt(selectedCourt!);
+//
+//     return SizedBox(
+//       height: 50,
+//       child: ListView.builder(
+//         scrollDirection: Axis.horizontal,
+//         padding: const EdgeInsets.symmetric(horizontal: 12),
+//         itemCount: hourTypes.length,
+//         itemBuilder: (context, index) {
+//           final hour = hourTypes[index];
+//           final isSelected = selectedHourType == hour;
+//           final isHappy = hour.toLowerCase().contains("happy");
+//           return Padding(
+//             padding: const EdgeInsets.only(right: 8),
+//             child: ChoiceChip(
+//               label: Text(hour),
+//               selected: isSelected,
+//               onSelected: (_) {
+//                 setState(() {
+//                   selectedHourType = hour;
+//                 });
+//               },
+//               selectedColor: isHappy ? Colors.orange.shade100 : Colors.indigo.shade100,
+//               backgroundColor: Colors.grey.shade200,
+//               labelStyle: TextStyle(
+//                   color: isSelected
+//                       ? (isHappy ? Colors.orange.shade800 : Colors.indigo.shade900)
+//                       : Colors.black),
+//             ),
+//           );
+//         },
+//       ),
+//     );
+//   }
+//
+//   Widget _buildSlotSelector() {
+//     if (selectedCourt == null || selectedHourType == null) return const SizedBox.shrink();
+//     final slots = getSlotsForCourtAndHour(selectedCourt!, selectedHourType!);
+//
+//     return Padding(
+//       padding: const EdgeInsets.all(12.0),
+//       child: Wrap(
+//         spacing: 8,
+//         runSpacing: 8,
+//         children: slots.map((slot) {
+//           final isSelected = selectedSlots.any(
+//                   (s) => s['court'] == slot['court'] && s['time'] == slot['time']);
+//           return GestureDetector(
+//             onTap: () => toggleSlot(slot),
+//             child: Container(
+//               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+//               decoration: BoxDecoration(
+//                 color: isSelected ? Colors.indigo.shade50 : Colors.white,
+//                 borderRadius: BorderRadius.circular(10),
+//                 border: Border.all(
+//                   color: isSelected ? Colors.indigo : Colors.grey.shade300,
+//                   width: 1.2,
+//                 ),
+//               ),
+//               child: Column(
+//                 mainAxisSize: MainAxisSize.min,
+//                 children: [
+//                   Text(slot['time']),
+//                   Text("₹${slot['price']}"),
+//                 ],
+//               ),
+//             ),
+//           );
+//         }).toList(),
+//       ),
+//     );
+//   }
+//
+//   Widget _buildCalendarCard() {
+//     return Card(
+//       color: Colors.white.withOpacity(0.9),
+//       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+//       elevation: 4,
+//       margin: const EdgeInsets.all(12),
+//       child: Padding(
+//         padding: const EdgeInsets.all(12),
+//         child: Column(
+//           children: [
+//             const Text("Select Date",
+//                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+//             TableCalendar(
+//               firstDay: DateTime.now(),
+//               lastDay: DateTime.now().add(const Duration(days: 30)),
+//               focusedDay: _selectedDay,
+//               selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+//               onDaySelected: (selected, _) {
+//                 setState(() => _selectedDay = selected);
+//                 fetchCourtsWisePrice();
+//               },
+//               headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true),
+//               calendarStyle: CalendarStyle(
+//                 todayDecoration: BoxDecoration(
+//                   color: Colors.indigo.shade100,
+//                   shape: BoxShape.circle,
+//                 ),
+//                 selectedDecoration: BoxDecoration(
+//                   color: Colors.indigo,
+//                   shape: BoxShape.circle,
+//                 ),
+//                 selectedTextStyle: const TextStyle(color: Colors.white),
+//               ),
+//             ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+//
+//   Widget _buildReviewSummary() {
+//     if (selectedSlots.isEmpty) return const SizedBox.shrink();
+//
+//     final grouped = <String, Map<String, List<Map<String, dynamic>>>>{};
+//     for (var slot in selectedSlots) {
+//       final court = slot['court'];
+//       final hour = slot['hourType'];
+//       grouped.putIfAbsent(court, () => {});
+//       grouped[court]!.putIfAbsent(hour, () => []);
+//       grouped[court]![hour]!.add(slot);
+//     }
+//
+//     return Card(
+//       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+//       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+//       color: Colors.white.withOpacity(0.9),
+//       elevation: 4,
+//       child: Padding(
+//         padding: const EdgeInsets.all(12),
+//         child: Column(
+//           crossAxisAlignment: CrossAxisAlignment.start,
+//           children: [
+//             const Text("Review Selection",
+//                 style: TextStyle(
+//                     fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+//             const SizedBox(height: 8),
+//             ...grouped.entries.map((courtEntry) {
+//               final court = courtEntry.key;
+//               return Column(
+//                 crossAxisAlignment: CrossAxisAlignment.start,
+//                 children: [
+//                   Text(court,
+//                       style: const TextStyle(
+//                           fontSize: 14, fontWeight: FontWeight.w600)),
+//                   const SizedBox(height: 4),
+//                   ...courtEntry.value.entries.map((hourEntry) {
+//                     final hour = hourEntry.key;
+//                     return Wrap(
+//                       spacing: 8,
+//                       children: hourEntry.value.map((slot) {
+//                         return Chip(
+//                           label: Text("${slot['time']} ₹${slot['price']}"),
+//                           deleteIcon: const Icon(Icons.remove_circle, size: 18),
+//                           onDeleted: () {
+//                             toggleSlot(slot);
+//                           },
+//                         );
+//                       }).toList(),
+//                     );
+//                   })
+//                 ],
+//               );
+//             }).toList(),
+//             const Divider(height: 12, color: Colors.black26),
+//             Text("Total: ₹$totalPrice",
+//                 style: const TextStyle(
+//                     fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+//
+//   Widget _buildBottomBar() {
+//     return Container(
+//       padding: const EdgeInsets.all(12),
+//       color: Colors.white.withOpacity(0.1),
+//       child: Row(
+//         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//         children: [
+//           Text("Total: ₹$totalPrice",
+//               style: const TextStyle(
+//                   fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red)),
+//           ElevatedButton(
+//             style: ElevatedButton.styleFrom(
+//               backgroundColor: const Color(0xFF0A198D),
+//               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+//               shape: RoundedRectangleBorder(
+//                   borderRadius: BorderRadius.circular(12)),
+//             ),
+//             onPressed: selectedSlots.isEmpty
+//                 ? null
+//                 : () {
+//               Navigator.pushNamed(
+//                 context,
+//                 '/payment',
+//                 arguments: {
+//                   'location': widget.location,
+//                   'game': widget.game,
+//                   'date': DateFormat('yyyy-MM-dd').format(_selectedDay),
+//                   'slots': selectedSlots,
+//                   'price': totalPrice,
+//                 },
+//               );
+//             },
+//             child: const Text("Proceed to Payment",
+//                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500,color: Colors.white)),
+//           )
+//         ],
+//       ),
+//     );
+//   }
+// }

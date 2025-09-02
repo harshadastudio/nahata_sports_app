@@ -17,10 +17,11 @@ class _DashboardScreen1State extends State<DashboardScreen1> {
 
   // List of all screens for tabs
   final List<Widget> _screens = [
-    DashboardScreen(),      // index 0
+    BookPlayScreen(),
+   // DashboardScreen(),      // index 0
     CoachDashboardScreen(),// index 1
     AdminDashboardScreen(),// index 2
-    SecurityGateScanner(),      // index 3
+    SecurityGateScannerScreen(),      // index 3
   ];
 
 

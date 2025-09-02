@@ -43,51 +43,56 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'package:device_preview/device_preview.dart';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:nahata_app/screens/location_screen.dart';
 import 'package:nahata_app/screens/login_screen.dart';
 import 'package:nahata_app/screens/payment_screen.dart';
 import 'package:nahata_app/screens/registration.dart';
+import 'package:nahata_app/services/api_service.dart';
 import 'package:nahata_app/splash_screen.dart';
 
+import 'dashboard/admin_screen.dart';
+
+import 'dashboard/coach_screen.dart';
 import 'dashboard/dashboard_screen.dart';
+import 'dashboard/security_screen.dart';
 import 'dashboard/students_parents.dart';
 
-void main() {
-  runApp(const MyApp());
-}
 
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  runApp(MyApp());
+}
+//
+// void main() {
+//   runApp(const MyApp());
+// }
+// void main() {
+//   runApp(
+//     DevicePreview(
+//       enabled: true, // Set to false for release builds
+//       builder: (context) => MyApp(),
+//     ),
+//   );
+// }
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
+// void main() {
+//   WidgetsFlutterBinding.ensureInitialized();
+//   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+//   runApp(MyApp());
+// }
   @override
   Widget build(BuildContext context) {
     return InternetCheckWrapper(
       child: MaterialApp(
         title: 'Nahata Sports Booking',
         theme: ThemeData( primarySwatch: Colors.indigo, ),
-        // theme: ThemeData(
-        //   brightness: Brightness.light,
-        //   primarySwatch: Colors.indigo,
-        //   scaffoldBackgroundColor: Colors.white,
-        //   appBarTheme: const AppBarTheme(
-        //     backgroundColor: Colors.indigo,
-        //     foregroundColor: Colors.white,
-        //   ),
-        // ),
-        //
-        // // Dark theme
-        // darkTheme: ThemeData(
-        //   brightness: Brightness.dark,
-        //   primarySwatch: Colors.indigo,
-        //   scaffoldBackgroundColor: Colors.black,
-        //   appBarTheme: const AppBarTheme(
-        //     backgroundColor: Colors.black,
-        //     foregroundColor: Colors.white,
-        //   ),
-        // ),
-        // themeMode: ThemeMode.system,
+
         debugShowCheckedModeBanner: false,
         initialRoute: '/',
 
@@ -97,19 +102,64 @@ class MyApp extends StatelessWidget {
           '/login': (context) => const InternetCheckWrapper(child: LoginScreen()),
           '/location': (context) => const InternetCheckWrapper(child: LocationScreen()),
           // '/dashboard': (context) => const InternetCheckWrapper(child: DashboardScreen()),
-          '/students_parents': (context) => const InternetCheckWrapper(child: StudentsParentsScreen()),
+          '/students_parents': (context) =>  InternetCheckWrapper(child: StudentsParentsScreen(studentId: ApiService.currentUser?['student_id']?.toString() ?? '',)),
           // '/roleselection': (context) => const InternetCheckWrapper(child: RoleSelectionScreen()),
           '/payment': (context) {
             final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
             return InternetCheckWrapper(
               child: PaymentScreen(bookingDetails: args),
             );
-          },
+            },
+          '/dashboard': (context) => const InternetCheckWrapper(child: BookPlayScreen()),
+          '/coachscreen': (context) => const InternetCheckWrapper(child: CoachDashboardScreen()),
+          '/adminscreen': (context) => const InternetCheckWrapper(child: AdminDashboardScreen()),
+          '/securityscreen': (context) => const InternetCheckWrapper(child: SecurityGateScannerScreen()),
         },
       ),
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // /// ✅ InternetCheckWrapper monitors connectivity and shows popup if offline
 // class InternetCheckWrapper extends StatefulWidget {
@@ -394,4 +444,80 @@ class _InternetCheckWrapperState extends State<InternetCheckWrapper> {
 //     final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
 //     return PaymentScreen(bookingDetails: args);
 //   },
-// },
+// }
+//
+//
+// ,
+
+
+
+
+// -------------------------------------------------------------
+// Common styling
+// -------------------------------------------------------------
+class AppColors {
+  static const primary = Color(0xFF0066FF); // Electric Blue
+  static const accent = Color(0xFF32CD32); // Lime Green
+  static const bg = Color(0xFFF9FAFB);
+  static const text = Color(0xFF111827);
+  static const subtext = Color(0xFF6B7280);
+  static const card = Colors.white;
+}
+
+class AppGaps {
+  static const xs = SizedBox(height: 4);
+  static const sm = SizedBox(height: 8);
+  static const md = SizedBox(height: 12);
+  static const lg = SizedBox(height: 16);
+  static const xl = SizedBox(height: 24);
+}
+
+class AppButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  final bool filled;
+
+  const AppButton({super.key, required this.label, this.onPressed, this.filled = true});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = filled
+        ? ElevatedButton.styleFrom(
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    )
+        : OutlinedButton.styleFrom(
+      side: BorderSide(color: Theme.of(context).colorScheme.primary),
+      foregroundColor: Theme.of(context).colorScheme.primary,
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    );
+
+    final child = Text(label, style: const TextStyle(fontWeight: FontWeight.w600));
+    return filled
+        ? ElevatedButton(onPressed: onPressed, style: style, child: child)
+        : OutlinedButton(onPressed: onPressed, style: style, child: child);
+  }
+}
+
+class SectionCard extends StatelessWidget {
+  final Widget child;
+  const SectionCard({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(color: Color(0x11000000), blurRadius: 10, offset: Offset(0, 4)),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: child,
+    );
+  }
+}

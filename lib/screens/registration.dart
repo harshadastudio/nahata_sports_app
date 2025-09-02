@@ -139,6 +139,7 @@
 //   }
 // }
 
+// import 'dart:convert';
 import 'dart:convert';
 import 'dart:ui';
 import 'package:http/http.dart' as http;
@@ -642,17 +643,302 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart';
 
+// class SignUpScreen extends StatefulWidget {
+//   @override
+//   _SignUpScreenState createState() => _SignUpScreenState();
+// }
+//
+// class _SignUpScreenState extends State<SignUpScreen> {
+//   final _formKey = GlobalKey<FormState>();
+//   String? fullName, dob, bloodGroup, gender, mobile, parentContact, email, password, confirmPassword;
+//   File? studentPhoto;
+//   final ImagePicker _picker = ImagePicker();
+//   bool isLoading = false;
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     double screenWidth = MediaQuery.of(context).size.width;
+//     double padding = screenWidth < 600 ? 16 : 50;
+//
+//     return Scaffold(
+//       backgroundColor: Color(0xFFF5F6FA),
+//       appBar: AppBar(
+//         backgroundColor: Color(0xFF1E88E5),
+//         title: Text("Student Registration"),
+//         centerTitle: true,
+//       ),
+//       body: SingleChildScrollView(
+//         child: Padding(
+//           padding: EdgeInsets.symmetric(horizontal: padding, vertical: 20),
+//           child: Card(
+//             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+//             elevation: 6,
+//             shadowColor: Colors.grey.withOpacity(0.3),
+//             child: Padding(
+//               padding: const EdgeInsets.all(20.0),
+//               child: Form(
+//                 key: _formKey,
+//                 child: Column(
+//                   crossAxisAlignment: CrossAxisAlignment.stretch,
+//                   children: [
+//                     Center(
+//                       child: Column(
+//                         children: [
+//                           CircleAvatar(
+//                             radius: 50,
+//                             backgroundColor: Colors.grey[200],
+//                             backgroundImage: studentPhoto != null ? FileImage(studentPhoto!) : null,
+//                             child: studentPhoto == null
+//                                 ? Icon(Icons.person, size: 50, color: Colors.grey[600])
+//                                 : null,
+//                           ),
+//                           Row(
+//                             mainAxisAlignment: MainAxisAlignment.center,
+//                             children: [
+//                               TextButton.icon(
+//                                 onPressed: () => _pickImage(ImageSource.gallery),
+//                                 icon: Icon(Icons.photo),
+//                                 label: Text("Gallery"),
+//                                 style: TextButton.styleFrom(foregroundColor: Color(0xFF1E88E5)),
+//                               ),
+//                               TextButton.icon(
+//                                 onPressed: () => _pickImage(ImageSource.camera),
+//                                 icon: Icon(Icons.camera_alt),
+//                                 label: Text("Camera"),
+//                                 style: TextButton.styleFrom(foregroundColor: Color(0xFF1E88E5)),
+//                               ),
+//                             ],
+//                           ),
+//                         ],
+//                       ),
+//                     ),
+//                     SizedBox(height: 24),
+//                     _buildInputField("Full Name", "Enter full name", (val) => fullName = val),
+//                     _buildDatePickerField("Date of Birth", (val) => dob = val, context: context),
+//                     _buildDropdownField("Blood Group", ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"], (val) => bloodGroup = val),
+//                     _buildDropdownField("Gender", ["Male", "Female", "Other"], (val) => gender = val),
+//                     _buildInputField("Mobile Number", "Enter mobile number", (val) => mobile = val, keyboardType: TextInputType.phone),
+//                     _buildInputField("Parent / Guardian Contact Number(s)", "Enter parent contact numbers", (val) => parentContact = val, keyboardType: TextInputType.phone),
+//                     _buildInputField("Email Address", "Enter email", (val) => email = val, keyboardType: TextInputType.emailAddress),
+//                     _buildInputField("Password", "Enter password", (val) => password = val, obscureText: true),
+//                     _buildInputField("Confirm Password", "Confirm password", (val) => confirmPassword = val, obscureText: true),
+//                     SizedBox(height: 24),
+//                     isLoading
+//                         ? Center(child: CircularProgressIndicator())
+//                         : ElevatedButton(
+//                       onPressed: () => _submitForm(flutterContext: context),
+//                       style: ElevatedButton.styleFrom(
+//                         backgroundColor: Color(0xFF1E88E5),
+//                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+//                         padding: EdgeInsets.symmetric(vertical: 16),
+//                       ),
+//                       child: Text("Register", style: TextStyle(fontSize: 16)),
+//                     ),
+//                     SizedBox(height: 16),
+//                     Row(
+//                       mainAxisAlignment: MainAxisAlignment.center,
+//                       children: [
+//                         Text("Already have an account? ", style: TextStyle(color: Colors.grey[700])),
+//                         GestureDetector(
+//                           onTap:(){
+//                             Navigator.pushReplacement(
+//                               context,
+//                               MaterialPageRoute(builder: (context) => LoginScreen()),
+//                             );
+//                           },
+//                           child: Text(
+//                             "Login",
+//                             style: TextStyle(color: Color(0xFF1E88E5), fontWeight: FontWeight.bold),
+//                           ),
+//                         ),
+//                       ],
+//                     ),
+//                   ],
+//                 ),
+//               ),
+//             ),
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+//
+//   Future<void> _pickImage(ImageSource source) async {
+//     try {
+//       final XFile? image = await _picker.pickImage(source: source, imageQuality: 80);
+//       if (image != null) {
+//         setState(() => studentPhoto = File(image.path));
+//       }
+//     } catch (e) {
+//       print("Image pick failed: $e");
+//     }
+//   }
+//
+//   // Use a named parameter to explicitly require BuildContext
+//   void _submitForm({required BuildContext flutterContext}) async {
+//     if (!_formKey.currentState!.validate()) return;
+//     _formKey.currentState?.save();
+//
+//     if (studentPhoto == null) {
+//       ScaffoldMessenger.of(flutterContext).showSnackBar(
+//         const SnackBar(content: Text("Please select a student photo")),
+//       );
+//       return;
+//     }
+//
+//     setState(() => isLoading = true);
+//
+//     try {
+//       var uri = Uri.parse("https://nahatasports.com/api/register");
+//
+//
+//       // String photoUrl = "https://yourdomain.com/public/uploads/students/${basename(studentPhoto!.path)}";
+//       List<int> imageBytes = await studentPhoto!.readAsBytes();
+//       String base64Image = base64Encode(imageBytes);
+//       var body = {
+//         "name": fullName,
+//         "dob": dob,
+//         "blood_group": bloodGroup,
+//         "gender": gender,
+//         "phone": mobile,
+//         "parent_contact": parentContact,
+//         "email": email,
+//         "password": password,
+//         "confirmPassword": confirmPassword,
+//         "student_photo": base64Image,
+//       };
+//
+//       var response = await http.post(
+//         uri,
+//         headers: {"Content-Type": "application/json"},
+//         body: jsonEncode(body),
+//       );
+//       print(body);
+//       print("API Response Status: ${response.statusCode}");
+//       print("API Response Body: ${response.body}");
+//
+//       setState(() => isLoading = false);
+//
+//       if (response.statusCode == 200) {
+//         ScaffoldMessenger.of(flutterContext).showSnackBar(
+//           const SnackBar(content: Text("Registration successful!")),
+//         );
+//         Navigator.pushReplacement(
+//           flutterContext,
+//           MaterialPageRoute(builder: (context) => LoginScreen()),
+//         );
+//       } else {
+//         ScaffoldMessenger.of(flutterContext).showSnackBar(
+//           SnackBar(content: Text("Registration failed: ${response.body}")),
+//         );
+//       }
+//     } catch (e) {
+//       setState(() => isLoading = false);
+//       print("Registration error: $e");
+//       ScaffoldMessenger.of(flutterContext).showSnackBar(
+//         SnackBar(content: Text("Error: $e")),
+//       );
+//     }
+//   }
+//
+//
+//   Widget _buildInputField(String label, String hint, Function(String?) onSaved,
+//       {bool obscureText = false, TextInputType keyboardType = TextInputType.text}) {
+//     return Padding(
+//       padding: const EdgeInsets.only(bottom: 16.0),
+//       child: TextFormField(
+//         obscureText: obscureText,
+//         keyboardType: keyboardType,
+//         onSaved: onSaved,
+//         decoration: InputDecoration(
+//           labelText: label,
+//           hintText: hint,
+//           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+//         ),
+//       ),
+//     );
+//   }
+//
+//   Widget _buildDropdownField(String label, List<String> items, Function(String?) onChanged) {
+//     return Padding(
+//       padding: const EdgeInsets.only(bottom: 16.0),
+//       child: DropdownButtonFormField<String>(
+//         decoration: InputDecoration(
+//           labelText: label,
+//           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+//         ),
+//         items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+//         onChanged: onChanged,
+//       ),
+//     );
+//   }
+//
+//   Widget _buildDatePickerField(String label, Function(String) onSaved, {required BuildContext context}) {
+//     TextEditingController controller = TextEditingController(text: dob);
+//     return Padding(
+//       padding: const EdgeInsets.only(bottom: 16.0),
+//       child: TextFormField(
+//         controller: controller,
+//         readOnly: true,
+//         decoration: InputDecoration(
+//           labelText: label,
+//           hintText: "yyyy/mm/dd",
+//           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+//           suffixIcon: Icon(Icons.calendar_today),
+//         ),
+//         onTap: () async {
+//           DateTime? pickedDate = await showDatePicker(
+//             context: context, // now it's guaranteed BuildContext
+//             initialDate: DateTime(2005),
+//             firstDate: DateTime(1990),
+//             lastDate: DateTime.now(),
+//           );
+//           if (pickedDate != null) {
+//             String formattedDate = "${pickedDate.month}/${pickedDate.day}/${pickedDate.year}";
+//             controller.text = formattedDate;
+//             onSaved(formattedDate);
+//           }
+//         },
+//         onSaved: (val) => onSaved(val!),
+//       ),
+//     );
+//   }
+// }
+
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+
 class SignUpScreen extends StatefulWidget {
+  const SignUpScreen({super.key});
+
   @override
-  _SignUpScreenState createState() => _SignUpScreenState();
+  State<SignUpScreen> createState() => _SignUpScreenState();
 }
 
-class _SignUpScreenState extends State<SignUpScreen> {
+class _SignUpScreenState extends State<SignUpScreen> with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   String? fullName, dob, bloodGroup, gender, mobile, parentContact, email, password, confirmPassword;
   File? studentPhoto;
   final ImagePicker _picker = ImagePicker();
   bool isLoading = false;
+
+  late AnimationController _fieldsController;
+
+  @override
+  void initState() {
+    super.initState();
+    _fieldsController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _fieldsController.forward();
+  }
+
+  @override
+  void dispose() {
+    _fieldsController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -660,95 +946,135 @@ class _SignUpScreenState extends State<SignUpScreen> {
     double padding = screenWidth < 600 ? 16 : 50;
 
     return Scaffold(
-      backgroundColor: Color(0xFFF5F6FA),
-      appBar: AppBar(
-        backgroundColor: Color(0xFF1E88E5),
-        title: Text("Student Registration"),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: padding, vertical: 20),
-          child: Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            elevation: 6,
-            shadowColor: Colors.grey.withOpacity(0.3),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF5F6FA), Color(0xFFE3F2FD)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
             child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Center(
-                      child: Column(
-                        children: [
-                          CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Colors.grey[200],
-                            backgroundImage: studentPhoto != null ? FileImage(studentPhoto!) : null,
-                            child: studentPhoto == null
-                                ? Icon(Icons.person, size: 50, color: Colors.grey[600])
-                                : null,
-                          ),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              TextButton.icon(
-                                onPressed: () => _pickImage(ImageSource.gallery),
-                                icon: Icon(Icons.photo),
-                                label: Text("Gallery"),
-                                style: TextButton.styleFrom(foregroundColor: Color(0xFF1E88E5)),
-                              ),
-                              TextButton.icon(
-                                onPressed: () => _pickImage(ImageSource.camera),
-                                icon: Icon(Icons.camera_alt),
-                                label: Text("Camera"),
-                                style: TextButton.styleFrom(foregroundColor: Color(0xFF1E88E5)),
-                              ),
-                            ],
-                          ),
-                        ],
+              padding: EdgeInsets.symmetric(horizontal: padding, vertical: 30),
+              child: Column(
+                children: [
+                  // App Logo
+                  Column(
+                    children: [
+                      Image.asset('assets/logo.png', height: 70), // Replace with your logo
+                      const SizedBox(height: 8),
+                      const Text(
+                        "Join the Nahata Sports Family",
+                        style: TextStyle(color: Colors.black54, fontSize: 14),
                       ),
-                    ),
-                    SizedBox(height: 24),
-                    _buildInputField("Full Name", "Enter full name", (val) => fullName = val),
-                    _buildDatePickerField("Date of Birth", (val) => dob = val, context: context),
-                    _buildDropdownField("Blood Group", ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"], (val) => bloodGroup = val),
-                    _buildDropdownField("Gender", ["Male", "Female", "Other"], (val) => gender = val),
-                    _buildInputField("Mobile Number", "Enter mobile number", (val) => mobile = val, keyboardType: TextInputType.phone),
-                    _buildInputField("Parent / Guardian Contact Number(s)", "Enter parent contact numbers", (val) => parentContact = val, keyboardType: TextInputType.phone),
-                    _buildInputField("Email Address", "Enter email", (val) => email = val, keyboardType: TextInputType.emailAddress),
-                    _buildInputField("Password", "Enter password", (val) => password = val, obscureText: true),
-                    _buildInputField("Confirm Password", "Confirm password", (val) => confirmPassword = val, obscureText: true),
-                    SizedBox(height: 24),
-                    isLoading
-                        ? Center(child: CircularProgressIndicator())
-                        : ElevatedButton(
-                      onPressed: () => _submitForm(flutterContext: context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xFF1E88E5),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: Text("Register", style: TextStyle(fontSize: 16)),
-                    ),
-                    SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Avatar Section
+                  Center(
+                    child: Stack(
                       children: [
-                        Text("Already have an account? ", style: TextStyle(color: Colors.grey[700])),
-                        GestureDetector(
-                          onTap: () => Navigator.pop(context),
-                          child: Text(
-                            "Login",
-                            style: TextStyle(color: Color(0xFF1E88E5), fontWeight: FontWeight.bold),
+                        CircleAvatar(
+                          radius: 60,
+                          backgroundColor: Colors.grey[200],
+                          backgroundImage: studentPhoto != null ? FileImage(studentPhoto!) : null,
+                          child: studentPhoto == null
+                              ? Icon(Icons.person, size: 60, color: Colors.grey[600])
+                              : null,
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          child: FloatingActionButton(
+                            mini: true,
+                            heroTag: "galleryBtn",
+                            backgroundColor: Colors.blue,
+                            onPressed: () => _pickImage(ImageSource.gallery),
+                            child: const Icon(Icons.photo, size: 20),
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: FloatingActionButton(
+                            mini: true,
+                            heroTag: "cameraBtn",
+                            backgroundColor: Colors.blue,
+                            onPressed: () => _pickImage(ImageSource.camera),
+                            child: const Icon(Icons.camera_alt, size: 20),
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Form Fields with animation
+                  AnimatedBuilder(
+                    animation: _fieldsController,
+                    builder: (context, child) {
+                      double slide = 50 * (1 - _fieldsController.value);
+                      double opacity = _fieldsController.value;
+                      return Opacity(
+                        opacity: opacity,
+                        child: Transform.translate(
+                          offset: Offset(0, slide),
+                          child: Column(
+                            children: [
+                              _buildInputField("Full Name", "Enter full name", (val) => fullName = val, icon: Icons.person),
+                              _buildDatePickerField("Date of Birth", (val) => dob = val, context: context),
+                              _buildDropdownField("Blood Group", ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"], (val) => bloodGroup = val),
+                              _buildDropdownField("Gender", ["Male", "Female", "Other"], (val) => gender = val),
+                              _buildInputField("Mobile Number", "Enter mobile number", (val) => mobile = val, keyboardType: TextInputType.phone, icon: Icons.phone),
+                              _buildInputField("Parent / Guardian Contact Number(s)", "Enter parent contact numbers", (val) => parentContact = val, keyboardType: TextInputType.phone, icon: Icons.phone_android),
+                              _buildInputField("Email Address", "Enter email", (val) => email = val, keyboardType: TextInputType.emailAddress, icon: Icons.email),
+                              _buildInputField("Password", "Enter password", (val) => password = val, obscureText: true, icon: Icons.lock),
+                              _buildInputField("Confirm Password", "Confirm password", (val) => confirmPassword = val, obscureText: true, icon: Icons.lock_outline),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Register Button
+                  isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : ElevatedButton(
+                    onPressed: () => _submitForm(flutterContext: context),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      backgroundColor: Colors.blue,
+                    ),
+                    child: const Text("Register", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Login Redirect
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text("Already have an account? ", style: TextStyle(color: Colors.grey[700])),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (context) => LoginScreen()),
+                          );
+                        },
+                        child: const Text(
+                          "Login",
+                          style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),
@@ -768,14 +1094,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
   }
 
-  // Use a named parameter to explicitly require BuildContext
   void _submitForm({required BuildContext flutterContext}) async {
     if (!_formKey.currentState!.validate()) return;
     _formKey.currentState?.save();
 
     if (studentPhoto == null) {
-      ScaffoldMessenger.of(flutterContext)
-          .showSnackBar(SnackBar(content: Text("Please select a student photo")));
+      ScaffoldMessenger.of(flutterContext).showSnackBar(
+        const SnackBar(content: Text("Please select a student photo")),
+      );
       return;
     }
 
@@ -783,51 +1109,53 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     try {
       var uri = Uri.parse("https://nahatasports.com/api/register");
-      var request = http.MultipartRequest("POST", uri);
 
-      request.fields['full_name'] = fullName!;
-      request.fields['dob'] = dob!;
-      request.fields['blood_group'] = bloodGroup!;
-      request.fields['gender'] = gender!;
-      request.fields['mobile'] = mobile!;
-      request.fields['parent_contact'] = parentContact!;
-      request.fields['email'] = email!;
-      request.fields['password'] = password!;
-      request.fields['confirm_password'] = confirmPassword!;
+      List<int> imageBytes = await studentPhoto!.readAsBytes();
+      String base64Image = base64Encode(imageBytes);
+      var body = {
+        "name": fullName,
+        "dob": dob,
+        "blood_group": bloodGroup,
+        "gender": gender,
+        "phone": mobile,
+        "parent_contact": parentContact,
+        "email": email,
+        "password": password,
+        "confirmPassword": confirmPassword,
+        "student_photo": base64Image,
+      };
 
-      request.files.add(await http.MultipartFile.fromPath(
-        'student_photo',
-        studentPhoto!.path,
-        filename: basename(studentPhoto!.path),
-      ));
-
-      var response = await request.send();
-      var respStr = await response.stream.bytesToString();
-
-      print("API Response Status: ${response.statusCode}");
-      print("API Response Body: $respStr"); // <--- print full response here
+      var response = await http.post(
+        uri,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(body),
+      );
 
       setState(() => isLoading = false);
 
       if (response.statusCode == 200) {
-        ScaffoldMessenger.of(flutterContext)
-            .showSnackBar(SnackBar(content: Text("Registration successful!")));
-        Navigator.pop(flutterContext);
+        ScaffoldMessenger.of(flutterContext).showSnackBar(
+          const SnackBar(content: Text("Registration successful!")),
+        );
+        Navigator.pushReplacement(
+          flutterContext,
+          MaterialPageRoute(builder: (context) => LoginScreen()),
+        );
       } else {
-        ScaffoldMessenger.of(flutterContext)
-            .showSnackBar(SnackBar(content: Text("Registration failed: $respStr")));
+        ScaffoldMessenger.of(flutterContext).showSnackBar(
+          SnackBar(content: Text("Registration failed: ${response.body}")),
+        );
       }
     } catch (e) {
       setState(() => isLoading = false);
-      print("Registration error: $e"); // <--- print exception
-      ScaffoldMessenger.of(flutterContext)
-          .showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(flutterContext).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
     }
   }
 
-
   Widget _buildInputField(String label, String hint, Function(String?) onSaved,
-      {bool obscureText = false, TextInputType keyboardType = TextInputType.text}) {
+      {bool obscureText = false, TextInputType keyboardType = TextInputType.text, IconData? icon}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: TextFormField(
@@ -837,7 +1165,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          prefixIcon: icon != null ? Icon(icon, color: Colors.grey) : null,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+          filled: true,
+          fillColor: Colors.white,
         ),
       ),
     );
@@ -849,7 +1180,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
       child: DropdownButtonFormField<String>(
         decoration: InputDecoration(
           labelText: label,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+          filled: true,
+          fillColor: Colors.white,
         ),
         items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
         onChanged: onChanged,
@@ -866,13 +1199,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
         readOnly: true,
         decoration: InputDecoration(
           labelText: label,
-          hintText: "mm/dd/yyyy",
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          suffixIcon: Icon(Icons.calendar_today),
+          hintText: "yyyy/mm/dd",
+          suffixIcon: const Icon(Icons.calendar_today),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+          filled: true,
+          fillColor: Colors.white,
         ),
         onTap: () async {
           DateTime? pickedDate = await showDatePicker(
-            context: context, // now it's guaranteed BuildContext
+            context: context,
             initialDate: DateTime(2005),
             firstDate: DateTime(1990),
             lastDate: DateTime.now(),

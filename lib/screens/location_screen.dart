@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:nahata_app/dashboard/dashboard_screen.dart';
 import 'dart:ui';
 import '../services/api_service.dart';
 import 'game_selection_screen.dart';
@@ -12,66 +13,85 @@ class LocationScreen extends StatefulWidget {
 }
 
 class _LocationScreenState extends State<LocationScreen> {
-  final List<String> locations = ['Gangadham Chowk', 'Sinhgad Rd'];
+  final List<String> locations = [ 'Sinhgad Rd'];
   int? tappedIndex;
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        SystemNavigator.pop(); // Close the app
-        return false;
-      },
-
-      child: Scaffold(
+    return SafeArea(
+      child   : Scaffold(
+        appBar: AppBar(
+          backgroundColor: Color(0xFF0A198D),
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BookPlayScreen(),
+                ), // or any other screen
+              );
+            },
+          ),
+          title: Text(
+            "Locations",
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+            ),
+          ),
+          centerTitle: true,
+        ),
         backgroundColor: const Color(0xFFF2F4F7),
         body: SafeArea(
           child: Stack(
             children: [
               // 🔵 Gradient background
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF1D2B64), Color(0xFFf8cdda)],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                ),
-              ),
+              // Container(
+              //   decoration: const BoxDecoration(
+              //     gradient: LinearGradient(
+              //       colors: [Color(0xFF1D2B64), Color(0xFFf8cdda)],
+              //       begin: Alignment.topCenter,
+              //       end: Alignment.bottomCenter,
+              //     ),
+              //   ),
+              // ),
 
-              Positioned(
-                top: 15,
-                right: 15,
-                child: GestureDetector(
-                  onTap: () async {
-                    await ApiService.logout();
-                    Navigator.pushNamedAndRemoveUntil(
-                      context,
-                      '/dashboard',
-                          (route) => true,
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.9),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Image.asset(
-                      'assets/images/logout1.webp',
-                      width: 30,
-                      height: 30,
-                    ),
-                  ),
-                ),
-              ),
+              // Positioned(
+              //   top: 15,
+              //   right: 15,
+              //   child: GestureDetector(
+              //     onTap: () async {
+              //       await ApiService.logout();
+              //       Navigator.pushNamedAndRemoveUntil(
+              //         context,
+              //         '/dashboard',
+              //             (route) => true,
+              //       );
+              //     },
+              //     child: Container(
+              //       padding: const EdgeInsets.all(5),
+              //       decoration: BoxDecoration(
+              //         color: Colors.white.withOpacity(0.9),
+              //         shape: BoxShape.circle,
+              //         boxShadow: [
+              //           BoxShadow(
+              //             color: Colors.black.withOpacity(0.1),
+              //             blurRadius: 8,
+              //             offset: const Offset(0, 2),
+              //           ),
+              //         ],
+              //       ),
+              //       child: Image.asset(
+              //         'assets/images/logout1.webp',
+              //         width: 30,
+              //         height: 30,
+              //       ),
+              //     ),
+              //   ),
+              // ),
 
               // 🧾 Foreground card-style layout
               Center(
@@ -161,6 +181,93 @@ class _LocationScreenState extends State<LocationScreen> {
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
