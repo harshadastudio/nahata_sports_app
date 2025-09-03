@@ -218,8 +218,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final onlineAmount = amount - cashPaid;
 
     var options = {
-      'key': 'rzp_test_YwYUHvAMatnKBY',
-      'amount': onlineAmount * 100, // in paise
+      'key': 'rzp_live_R7b5MMCgg9AlWn',
+          'amount': onlineAmount * 100, // in paise
       'name': 'Nahata Sports',
       'description': 'Booking Payment',
       'currency': 'INR',

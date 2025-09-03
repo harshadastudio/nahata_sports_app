@@ -62,8 +62,9 @@ import 'dashboard/security_screen.dart';
 import 'dashboard/students_parents.dart';
 
 
-void main() {
+void main() async{
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiService.loadUserFromPrefs(); // restore session
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   runApp(MyApp());
 }

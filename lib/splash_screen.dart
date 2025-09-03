@@ -95,6 +95,7 @@
 //
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:nahata_app/dashboard/dashboard_screen.dart';
 import 'package:nahata_app/screens/login_screen.dart';
 import 'package:nahata_app/screens/regi.dart';
 
@@ -334,7 +335,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     Future.delayed(const Duration(seconds: 3), () {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        MaterialPageRoute(builder: (context) => const BookPlayScreen()),
       );
     });
   }

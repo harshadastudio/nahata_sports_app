@@ -7,6 +7,7 @@ import 'package:nahata_app/screens/login_screen.dart';
 import '../events2.dart';
 import '../screens/Events.dart';
 import '../services/api_service.dart';
+import '../services/event3.dart';
 import 'coach_screen.dart';
 
 // class DashboardScreen extends StatefulWidget {
@@ -303,28 +304,85 @@ class _BookPlayScreenState extends State<BookPlayScreen>
   Widget build(BuildContext context) {
     return SafeArea(
       child: Scaffold(
+        // appBar:
+        // AppBar(
+        //   backgroundColor: Color(0xFF0A198D),
+        //   elevation: 0,
+        //   leading: IconButton(
+        //     icon: Icon(Icons.arrow_back, color: Colors.white),
+        //    onPressed: (){
+        //      Navigator.pushReplacement(
+        //        context,
+        //        MaterialPageRoute(builder: (_) => LoginScreen()), // or any other screen
+        //      );
+        //    },
+        //   ),
+        //   title: Text(
+        //     "Students & Parents",
+        //     style: TextStyle(
+        //       color: Colors.white,
+        //       fontWeight: FontWeight.bold,
+        //       fontSize: 20,
+        //     ),
+        //   ),
+        //   centerTitle: true,
+        // ),
         appBar: AppBar(
-          backgroundColor: Color(0xFF0A198D),
+          backgroundColor: const Color(0xFF0A198D),
           elevation: 0,
           leading: IconButton(
-            icon: Icon(Icons.arrow_back, color: Colors.white),
-           onPressed: (){
-             Navigator.pushReplacement(
-               context,
-               MaterialPageRoute(builder: (_) => LoginScreen()), // or any other screen
-             );
-           },
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () {
+              Navigator.pop(context);
+            },
           ),
           title: Text(
             "Students & Parents",
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
               fontSize: 20,
             ),
           ),
-          centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.white),
+              onPressed: () async {
+                bool confirm = false;
+                // Optional: show confirmation dialog
+                confirm = await showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text("Logout"),
+                    content: const Text("Are you sure you want to logout?"),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text("Cancel"),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text("Logout"),
+                      ),
+                    ],
+                  ),
+                ) ?? false;
+
+                if (confirm) {
+                  await ApiService.logout(); // clear SharedPreferences & currentUser
+                  if (mounted) {
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (_) => LoginScreen()),
+                          (route) => false,
+                    );
+                  }
+                }
+              },
+            ),
+          ],
         ),
+
 
         backgroundColor: Color(0xFFF5F5F5),
         body: Column(

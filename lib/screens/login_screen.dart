@@ -625,6 +625,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                     if (Navigator.canPop(context)) Navigator.pop(context); // dismiss loader
 
                                     if (isSuccess) {
+
+                                      SharedPreferences prefs = await SharedPreferences.getInstance();
+                                      await prefs.setBool('isLoggedIn', true);
+                                      await prefs.setString('user', jsonEncode(ApiService.currentUser));
                                       final role = ApiService.currentUser?['role'];
 
                                       if (role == 'admin') {

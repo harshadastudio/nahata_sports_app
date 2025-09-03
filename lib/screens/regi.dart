@@ -890,6 +890,8 @@ class _PremiumSignUpScreenState extends State<PremiumSignUpScreen> {
               "Password",
               "Enter password",
               obscureText: true,
+
+
               helperText: "Min 10 chars, uppercase, lowercase, number & special char",
               validatorOverride: (val) {
                 if (val == null || val.isEmpty) return "Password is required";
@@ -921,6 +923,44 @@ class _PremiumSignUpScreenState extends State<PremiumSignUpScreen> {
   }
 
   // Input field helper with validatorOverride support
+  // Widget buildInputField(
+  //     TextEditingController controller,
+  //     String label,
+  //     String hint, {
+  //       bool obscureText = false,
+  //       TextInputType keyboardType = TextInputType.text,
+  //       IconData? icon,
+  //       bool isEmail = false,
+  //       String? helperText,
+  //       String? Function(String?)? validatorOverride,
+  //       List<TextInputFormatter>? inputFormatters,
+  //       void Function(String)? onChanged,
+  //     }) {
+  //   return Padding(
+  //     padding: const EdgeInsets.symmetric(vertical: 8),
+  //     child: TextFormField(
+  //       controller: controller,
+  //       obscureText: obscureText,
+  //       keyboardType: keyboardType,
+  //       inputFormatters: inputFormatters,
+  //       onChanged: onChanged,
+  //       validator: validatorOverride ?? (val) {
+  //         if (val == null || val.isEmpty) return "Required";
+  //         if (isEmail && !RegExp(r"^[a-zA-Z0-9._%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$").hasMatch(val)) return "Invalid email";
+  //         return null;
+  //       },
+  //       decoration: InputDecoration(
+  //         labelText: label,
+  //         hintText: hint,
+  //         helperText: helperText,
+  //         prefixIcon: icon != null ? Icon(icon) : null,
+  //         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+  //         filled: true,
+  //         fillColor: Colors.white,
+  //       ),
+  //     ),
+  //   );
+  // }
   Widget buildInputField(
       TextEditingController controller,
       String label,
@@ -934,31 +974,56 @@ class _PremiumSignUpScreenState extends State<PremiumSignUpScreen> {
         List<TextInputFormatter>? inputFormatters,
         void Function(String)? onChanged,
       }) {
+    // Only for password fields: use ValueNotifier to persist _obscure state
+    final obscureNotifier = ValueNotifier<bool>(obscureText);
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: TextFormField(
-        controller: controller,
-        obscureText: obscureText,
-        keyboardType: keyboardType,
-        inputFormatters: inputFormatters,
-        onChanged: onChanged,
-        validator: validatorOverride ?? (val) {
-          if (val == null || val.isEmpty) return "Required";
-          if (isEmail && !RegExp(r"^[a-zA-Z0-9._%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$").hasMatch(val)) return "Invalid email";
-          return null;
+      child: ValueListenableBuilder<bool>(
+        valueListenable: obscureNotifier,
+        builder: (context, _obscure, child) {
+          return TextFormField(
+            controller: controller,
+            obscureText: _obscure,
+            keyboardType: keyboardType,
+            inputFormatters: inputFormatters,
+            onChanged: onChanged,
+            validator: validatorOverride ??
+                    (val) {
+                  if (val == null || val.isEmpty) return "Required";
+                  if (isEmail &&
+                      !RegExp(r"^[a-zA-Z0-9._%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$")
+                          .hasMatch(val)) return "Invalid email";
+                  return null;
+                },
+            decoration: InputDecoration(
+              labelText: label,
+              hintText: hint,
+              helperText: helperText,
+              prefixIcon: icon != null ? Icon(icon) : null,
+              suffixIcon: obscureText
+                  ? IconButton(
+                icon: Icon(
+                  _obscure ? Icons.visibility : Icons.visibility_off,
+                ),
+                onPressed: () {
+                  obscureNotifier.value = !_obscure;
+                },
+              )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+          );
         },
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          helperText: helperText,
-          prefixIcon: icon != null ? Icon(icon) : null,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-          filled: true,
-          fillColor: Colors.white,
-        ),
       ),
     );
   }
+
 
   Widget buildDropdownField(String label, List<String> items, Function(String?) onChanged) {
     return Padding(

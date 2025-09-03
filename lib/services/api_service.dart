@@ -96,6 +96,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static Map<String, dynamic>? currentUser;
+  static Future<void> loadUserFromPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('isLoggedIn') ?? false) {
+      final userJson = prefs.getString('user');
+      if (userJson != null) {
+        currentUser = jsonDecode(userJson);
+      }
+    }
+  }
 
   static Future<bool> login(String email, String password) async {
     final url = Uri.parse('https://nahatasports.com/api/login');
@@ -120,8 +129,10 @@ class ApiService {
 
           SharedPreferences prefs = await SharedPreferences.getInstance();
           await prefs.setBool('isLoggedIn', true);
-          await prefs.setString('userEmail', email);
-          await prefs.setString('userPhone', currentUser?['phone'] ?? '');
+          await prefs.setString('user', jsonEncode(currentUser)); // ✅ save full user JSON
+
+          // await prefs.setString('userEmail', email);
+          // await prefs.setString('userPhone', currentUser?['phone'] ?? '');
 
           if (data.containsKey('token')) {
             await prefs.setString('authToken', data['token']);
