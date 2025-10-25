@@ -123,6 +123,7 @@
     id("kotlin-android")
     // Flutter Gradle plugin must be applied after Android and Kotlin plugins
     id("dev.flutter.flutter-gradle-plugin")
+     id("com.google.gms.google-services")
     // id("com.google.gms.google-services") // Uncomment if using Firebase services
 }
 
@@ -134,6 +135,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
+
     }
 
     kotlinOptions {
@@ -176,14 +179,21 @@ android {
     }
 }
 
+//dependencies {
+//    implementation("com.razorpay:checkout:1.6.33")
+//    implementation("com.google.android.gms:play-services-wallet:19.2.0")
+//    // implementation("com.google.android.gms:play-services-auth:20.7.0")
+//    // implementation(platform("com.google.firebase:firebase-bom:34.2.0"))
+//    // implementation("com.google.firebase:firebase-analytics")
+//    implementation "androidx.core:core-ktx:1.12.0"
+//    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.3'
+//}
 dependencies {
     implementation("com.razorpay:checkout:1.6.33")
     implementation("com.google.android.gms:play-services-wallet:19.2.0")
-    // implementation("com.google.android.gms:play-services-auth:20.7.0")
-    // implementation(platform("com.google.firebase:firebase-bom:34.2.0"))
-    // implementation("com.google.firebase:firebase-analytics")
+    implementation("androidx.core:core-ktx:1.12.0")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
-
 flutter {
     source = "../.."
 }

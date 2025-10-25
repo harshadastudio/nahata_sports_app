@@ -76,6 +76,10 @@ dependencies:
   permission_handler:
   image_gallery_saver_plus:
   qr_flutter:
+  firebase_core:
+  firebase_messaging:
+  flutter_local_notifications:
+  timeago:
 #  file_picker: ^6.1.6
 dev_dependencies:
   flutter_test:

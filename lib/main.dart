@@ -531,68 +531,282 @@
 
 
 
-
+//
+// import 'dart:async';
+//
+// import 'package:connectivity_plus/connectivity_plus.dart';
+// import 'package:firebase_core/firebase_core.dart';
+// import 'package:flutter/material.dart';
+// import 'package:flutter/services.dart';
+// import 'dart:io';
+// import 'package:image_picker/image_picker.dart';
+// import 'package:shared_preferences/shared_preferences.dart';
+//
+// import 'auth/login.dart';
+// import 'bottombar/Custombottombar.dart';
+// import 'dashboard/admin_screen.dart';
+// import 'dashboard/coach_screen.dart';
+// import 'dashboard/security_screen.dart';
+// import 'network.dart';
+// import 'package:firebase_core/firebase_core.dart';
+// import 'package:firebase_messaging/firebase_messaging.dart';
+// import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+// import 'package:http/http.dart' as http;
+// import 'package:timeago/timeago.dart' as timeago;
+//
+// Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+//   await Firebase.initializeApp();
+//   print('Handling a background message: ${message.messageId}');
+// }
+//
+// final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+// FlutterLocalNotificationsPlugin();
+// void main() async {
+//   WidgetsFlutterBinding.ensureInitialized();
+//
+//   try {
+//     await Firebase.initializeApp();
+//
+//     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+//
+//     const AndroidNotificationChannel channel = AndroidNotificationChannel(
+//       'high_importance_channel',
+//       'High Importance Notifications',
+//       description: 'This channel is used for important notifications.',
+//       importance: Importance.high,
+//     );
+//
+//     // Use the global instance only
+//     await flutterLocalNotificationsPlugin
+//         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+//         ?.createNotificationChannel(channel);
+//
+//     await SystemChrome.setPreferredOrientations([
+//       DeviceOrientation.portraitUp,
+//       DeviceOrientation.portraitDown,
+//     ]);
+//
+//     await ApiService.loadUserFromPrefs(); // make sure this is not blocking
+//
+//     final connectivityResult = await Connectivity().checkConnectivity();
+//     print("🔌 Initial connectivity: $connectivityResult");
+//   } catch (e, st) {
+//     print("🔥 main() initialization error: $e\n$st");
+//   }
+//
+//   runApp(const MyApp());
+// }
+//
+//
+// class MyApp extends StatelessWidget {
+//   const MyApp({super.key});
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return MaterialApp(
+//       debugShowCheckedModeBanner: false,
+//       theme: ThemeData(
+//         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A237E)),
+//       ),
+//
+//       // ✅ Wrap ALL screens inside ConnectivityWrapper
+//       builder: (context, child) {
+//         return ConnectivityWrapper(
+//           child: child ?? const SizedBox(), // fallback if child is null
+//         );
+//       },
+//
+//       // your starting screen
+//       home: const SplashStep3(),
+//     );
+//   }
+// }
 import 'dart:async';
-
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:io';
-import 'package:image_picker/image_picker.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import 'auth/login.dart';
 import 'bottombar/Custombottombar.dart';
 import 'dashboard/admin_screen.dart';
 import 'dashboard/coach_screen.dart';
 import 'dashboard/security_screen.dart';
 import 'network.dart';
+import 'notification.dart';
 
+// 🔹 Global notification plugin
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+FlutterLocalNotificationsPlugin();
 
+// 🔹 Global navigator key for navigation from notification taps
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-   // await Firebase.initializeApp();
-  // Force portrait mode
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-
-  // Initialize API service
-  await ApiService.loadUserFromPrefs();
-
-  // Initialize network status listener
-  final connectivityResult = await Connectivity().checkConnectivity();
-  print("🔌 Initial connectivity: $connectivityResult");
-
-  runApp(const MyApp());
+// 🔹 Background message handler (must be top-level)
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  print('📩 Handling background message: ${message.messageId}');
+  _showLocalNotification(message);
 }
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A237E)),
+// 🔹 Show local notification
+Future<void> _showLocalNotification(RemoteMessage message) async {
+  RemoteNotification? notification = message.notification;
+  AndroidNotification? android = message.notification?.android;
+
+  if (notification != null) {
+    await flutterLocalNotificationsPlugin.show(
+      notification.hashCode,
+      notification.title ?? 'Notification',
+      notification.body ?? '',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          'high_importance_channel',
+          'High Importance Notifications',
+          channelDescription: 'Used for important notifications',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: android?.smallIcon ?? '@mipmap/ic_launcher',
+        ),
       ),
-
-      // ✅ Wrap ALL screens inside ConnectivityWrapper
-      builder: (context, child) {
-        return ConnectivityWrapper(
-          child: child ?? const SizedBox(), // fallback if child is null
-        );
-      },
-
-      // your starting screen
-      home: const SplashStep3(),
+      payload: message.data['screen'] ?? '',
     );
   }
 }
+
+// 🔹 Handle navigation from notification tap
+void _handleNotificationNavigation(RemoteMessage message) {
+  final data = message.data;
+  print('📌 Navigating from notification: $data');
+
+  // Example: route by 'screen' key from backend
+  if (data['screen'] == 'notifications') {
+    navigatorKey.currentState?.push(
+      MaterialPageRoute(builder: (_) => const NotificationsPage()),
+    );
+  } else {
+    // Default route
+    navigatorKey.currentState?.push(
+      MaterialPageRoute(builder: (_) => const CustomBottomNav()),
+    );
+  }
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+  // 🔹 Request notification permission (important for Android 13+ & iOS)
+  NotificationSettings settings =
+  await FirebaseMessaging.instance.requestPermission(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+  print('🔔 Permission status: ${settings.authorizationStatus}');
+
+  // 🔹 Get FCM token (for backend use)
+  String? token = await FirebaseMessaging.instance.getToken();
+  print('📱 FCM Token: $token');
+
+  // 🔹 Setup background message handler
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // 🔹 Android notification channel setup
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'high_importance_channel',
+    'High Importance Notifications',
+    description: 'Used for important notifications',
+    importance: Importance.high,
+  );
+
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+      AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+
+  // 🔹 Foreground listener
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    print('📩 Foreground message: ${message.messageId}');
+    _showLocalNotification(message);
+  });
+
+  // 🔹 Notification click while app in background
+  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    print('📌 Notification clicked (background): ${message.data}');
+    _handleNotificationNavigation(message);
+  });
+
+  // 🔹 Handle terminated state (app killed)
+  RemoteMessage? initialMessage =
+  await FirebaseMessaging.instance.getInitialMessage();
+  print('🚀 Initial message (terminated): $initialMessage');
+
+  runApp(MyApp(initialMessage: initialMessage));
+}
+
+class MyApp extends StatelessWidget {
+  final RemoteMessage? initialMessage;
+  const MyApp({super.key, this.initialMessage});
+
+  @override
+  Widget build(BuildContext context) {
+    // Force portrait mode
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
+    // Handle navigation if app launched from terminated state
+    if (initialMessage != null) {
+      Future.microtask(() => _handleNotificationNavigation(initialMessage!));
+    }
+
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A237E)),
+      ),
+      home: const SplashStep3(), // your splash or main screen
+    );
+  }
+}
+
+// void main() async {
+//   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+//
+//   // Notification channel for Android
+//   const AndroidNotificationChannel channel = AndroidNotificationChannel(
+//     'high_importance_channel',
+//     'High Importance Notifications',
+//     description: 'This channel is used for important notifications.',
+//     importance: Importance.high,
+//   );
+//
+//   await flutterLocalNotificationsPlugin
+//       .resolvePlatformSpecificImplementation<
+//       AndroidFlutterLocalNotificationsPlugin>()
+//       ?.createNotificationChannel(channel);
+//
+//    // await Firebase.initializeApp();
+//   // Force portrait mode
+//   await SystemChrome.setPreferredOrientations([
+//     DeviceOrientation.portraitUp,
+//     DeviceOrientation.portraitDown,
+//   ]);
+//
+//   // Initialize API service
+//   await ApiService.loadUserFromPrefs();
+//
+//   // Initialize network status listener
+//   final connectivityResult = await Connectivity().checkConnectivity();
+//   print("🔌 Initial connectivity: $connectivityResult");
+//
+//   runApp(const MyApp());
+// }
 
 // class MyApp extends StatelessWidget {
 //   const MyApp({super.key});
@@ -1028,7 +1242,7 @@ class _SplashStep3State extends State<SplashStep3> {
   }
   Future<void> _redirectAfterSplash() async {
     await Future.delayed(const Duration(seconds: 5));
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+     SharedPreferences prefs = await SharedPreferences.getInstance();
 
     final bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
     final bool isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;

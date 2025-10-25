@@ -909,6 +909,7 @@ import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_options.dart';
 import 'package:carousel_slider/carousel_slider.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:nahata_app/bottombar/profile.dart';
@@ -917,6 +918,8 @@ import 'package:nahata_app/bottombar/event.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../auth/login.dart';
+import '../main.dart';
+import '../notification.dart';
 import 'Custombottombar.dart';
 import 'event.dart';
 
@@ -924,6 +927,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:http/http.dart' as http;
+import 'package:timeago/timeago.dart' as timeago;
 class UserOptionsPage extends StatefulWidget {
   const UserOptionsPage({super.key});
 
@@ -1237,6 +1247,55 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _fetchUpcomingEvents();
+    initNotifications();
+
+  }
+
+  void initNotifications() async {
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+    // Request permission
+    await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    // Get device token (optional, for sending targeted notifications)
+    String? token = await messaging.getToken();
+    print("Device FCM Token: $token");
+
+    // Foreground message
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      RemoteNotification? notification = message.notification;
+      AndroidNotification? android = message.notification?.android;
+
+      if (notification != null && android != null) {
+        flutterLocalNotificationsPlugin.show(
+          notification.hashCode,
+          notification.title,
+          notification.body,
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              'high_importance_channel',
+              'High Importance Notifications',
+              channelDescription:
+              'This channel is used for important notifications.',
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
+          ),
+        );
+      }
+    });
+
+    // When app opened from notification
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const NotificationsPage()),
+      );
+    });
   }
   void _openLocationPage() {
     // Navigate to the new page with TabBar
@@ -1273,6 +1332,71 @@ class _HomeScreenState extends State<HomeScreen> {
       _showSnack("Error loading events");
     }
   }
+
+  List<dynamic> notifications = [];
+
+  Future<void> fetchNotifications() async {
+    final response = await http.get(
+      Uri.parse('https://nahatasports.com/api/notifications/status'),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      setState(() {
+        notifications = data['notifications'];
+      });
+      print(notifications);
+      print(data);
+      print(response.body);
+    } else {
+      // Handle error
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to fetch notifications')),
+      );
+    }
+  }
+
+  void showNotificationsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Notifications'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: notifications.isEmpty
+              ? const Text('No notifications')
+              : ListView.builder(
+            shrinkWrap: true,
+            itemCount: notifications.length,
+            itemBuilder: (context, index) {
+              final notif = notifications[index];
+              return ListTile(
+                leading: notif['image'] != null
+                    ? Image.network(
+                  notif['image'],
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                )
+                    : const Icon(Icons.notifications),
+                title: Text(notif['title']),
+                subtitle: Text(notif['body']),
+                trailing: Text(notif['status']),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+
 
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -1315,9 +1439,22 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             // IconButton(
-            //   icon: const Icon(Icons.search, color: Colors.black),
-            //   onPressed: () {},
+            //   icon: const Icon(Icons.notifications, color: Colors.black),
+            //   onPressed: () async {
+            //     await fetchNotifications();
+            //     showNotificationsDialog();
+            //   },
             // ),
+            IconButton(
+              icon: const Icon(Icons.notifications, color: Colors.black),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const NotificationsPage()),
+                );
+              },
+            ),
+
             IconButton(
               icon: const Icon(Icons.person, color: Colors.black),
               onPressed: () {
@@ -1332,11 +1469,9 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
         CarouselSlider(
         options: CarouselOptions(
         height: 180,
-
           autoPlay: true,
           viewportFraction: 0.9,
           enlargeCenterPage: true,

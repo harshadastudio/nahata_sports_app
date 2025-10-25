@@ -136,6 +136,9 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Optional for Android 10+ -->
     <!-- <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" /> -->
 
@@ -175,8 +178,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="nahatasports" android:host="pass" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="FLUTTER_NOTIFICATION_CLICK" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
-
+        <!-- Firebase Messaging Service -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="high_importance_channel" />
         <!-- Razorpay GPay feature -->
         <meta-data
             android:name="com.razorpay.feature.gpay"
@@ -186,6 +196,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+
 
         <!-- Optional: Google Maps API Key -->
         <!--

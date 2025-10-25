@@ -1,6 +1,17 @@
 import org.gradle.api.tasks.Delete
 import org.gradle.api.file.Directory
 
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.1.1") // or your version
+        classpath("com.google.gms:google-services:4.4.0") // Firebase plugin
+    }
+}
+
 allprojects {
     repositories {
         google()
