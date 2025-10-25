@@ -48,18 +48,102 @@
 <!--</manifest>-->
 
 
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-    <uses-permission android:name="android.permission.INTERNET"/>
+<!--<manifest xmlns:android="http://schemas.android.com/apk/res/android">-->
 
+<!--&lt;!&ndash;    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"&ndash;&gt;-->
+<!--&lt;!&ndash;        android:maxSdkVersion="29"/>&ndash;&gt;-->
+<!--&lt;!&ndash;    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"&ndash;&gt;-->
+<!--&lt;!&ndash;       />&ndash;&gt;-->
+<!--&lt;!&ndash;    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />&ndash;&gt;-->
+<!--    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>-->
+<!--    <uses-permission android:name="android.permission.INTERNET"/>-->
+<!--    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>-->
+<!--    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>-->
+<!--    <uses-feature android:name="android.hardware.camera" android:required="false" />-->
+<!--    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>-->
+<!--    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>-->
+
+
+<!--    <application-->
+<!--        android:label="Nahata Sports"-->
+
+<!--        android:icon="@mipmap/ic_launcher"-->
+<!--        android:usesCleartextTraffic="true">-->
+
+<!--        <activity-->
+<!--            android:name=".MainActivity"-->
+<!--            android:exported="true"-->
+<!--            android:launchMode="singleTop"-->
+<!--            android:taskAffinity=""-->
+<!--            android:theme="@style/LaunchTheme"-->
+<!--            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"-->
+<!--            android:hardwareAccelerated="true"-->
+<!--            android:windowSoftInputMode="adjustResize">-->
+
+<!--            <meta-data-->
+<!--                android:name="io.flutter.embedding.android.NormalTheme"-->
+<!--                android:resource="@style/NormalTheme" />-->
+
+<!--            <intent-filter>-->
+<!--                <action android:name="android.intent.action.MAIN"/>-->
+<!--                <category android:name="android.intent.category.LAUNCHER"/>-->
+
+<!--                    <action android:name="android.intent.action.VIEW" />-->
+<!--                    <category android:name="android.intent.category.DEFAULT" />-->
+<!--                    <category android:name="android.intent.category.BROWSABLE" />-->
+<!--                    <data android:scheme="nahatasports" android:host="pass" />-->
+
+<!--            </intent-filter>-->
+<!--        </activity>-->
+
+<!--        &lt;!&ndash; Required for Razorpay Google Pay support &ndash;&gt;-->
+<!--        <meta-data-->
+<!--            android:name="com.razorpay.feature.gpay"-->
+<!--            android:value="true"/>-->
+
+<!--        &lt;!&ndash; Required by Flutter &ndash;&gt;-->
+<!--        <meta-data-->
+<!--            android:name="flutterEmbedding"-->
+<!--            android:value="2" />-->
+<!--&lt;!&ndash;        <meta-data&ndash;&gt;-->
+<!--&lt;!&ndash;            android:name="com.google.android.geo.API_KEY"&ndash;&gt;-->
+<!--&lt;!&ndash;            android:value="AIzaSyBp8chXF9LAZefrRpWbbJdFWsMmJQTf4m8" />&ndash;&gt;-->
+<!--    </application>-->
+
+<!--    <queries>-->
+<!--        <intent>-->
+<!--            <action android:name="android.intent.action.PROCESS_TEXT"/>-->
+<!--            <data android:mimeType="text/plain"/>-->
+<!--        </intent>-->
+<!--    </queries>-->
+<!--</manifest>-->
+
+
+
+<!--  android:name="${applicationName}"-->
+
+
+
+
+<!-- Harshada -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.nahata_sports_app">
+
+    <!-- Permissions -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- Optional for Android 10+ -->
+    <!-- <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" /> -->
+
+    <!-- Camera feature (not required) -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-
 
     <application
         android:label="Nahata Sports"
-
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
 
@@ -73,34 +157,50 @@
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
 
+            <!-- Flutter normal theme -->
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
 
+            <!-- Launcher intent -->
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Deep link intent -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nahatasports" android:host="pass" />
             </intent-filter>
         </activity>
 
-        <!-- Required for Razorpay Google Pay support -->
+        <!-- Razorpay GPay feature -->
         <meta-data
             android:name="com.razorpay.feature.gpay"
-            android:value="true"/>
+            android:value="true" />
 
-        <!-- Required by Flutter -->
+        <!-- Flutter embedding version -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Optional: Google Maps API Key -->
+        <!--
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="YOUR_API_KEY_HERE" />
+        -->
     </application>
 
+    <!-- Queries for process text (optional) -->
     <queries>
         <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
         </intent>
     </queries>
 </manifest>
 
-
-<!--  android:name="${applicationName}"-->

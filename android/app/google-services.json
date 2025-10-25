@@ -1,0 +1,38 @@
+{
+  "project_info": {
+    "project_number": "69937713669",
+    "project_id": "nahata-sports-472506",
+    "storage_bucket": "nahata-sports-472506.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:69937713669:android:833763b9889ff7617ac26c",
+        "android_client_info": {
+          "package_name": "com.example.nahata_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "69937713669-2vru9dl28lchiuitiphsidpsk8jk6ql9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.nahata_app",
+            "certificate_hash": "9f76ce1841d2903265447aa565d22a193c2cfdde"
+          }
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBp8chXF9LAZefrRpWbbJdFWsMmJQTf4m8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,168 +1,276 @@
+
+
+
+
+
+// // import 'package:flutter/material.dart';
+// // import 'package:nahata_app/screens/location_screen.dart';
+// // import 'package:nahata_app/screens/login_screen.dart';
+// // import 'package:nahata_app/screens/payment_screen.dart';
+// // import 'package:nahata_app/screens/registration.dart';
+// // import 'package:nahata_app/splash_screen.dart';
+// //
+// // void main() {
+// //   runApp(const MyApp());
+// // }
+// //
+// // class MyApp extends StatelessWidget {
+// //   const MyApp({super.key});
+// //
+// //   // This widget is the root of your application.
+// //   @override
+// //   Widget build(BuildContext context) {
+// //     return  MaterialApp(
+// //       title: 'Nahata Sports Booking',
+// //       theme: ThemeData(
+// //         primarySwatch: Colors.indigo,
+// //       ),
+// //       debugShowCheckedModeBanner: false,
+// //
+// //       initialRoute: '/',
+// //       routes: {
+// //         '/': (context) => const SplashScreen(),
+// //         '/signup': (context) => const SignUpScreen(),
+// //         // '/login': (context) => const LoginScreen(),
+// //           '/login': (context) => const LoginScreen(),
+// //           '/location': (context) => const LocationScreen(),
+// //             '/payment': (context) {
+// //               final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+// //               return PaymentScreen(bookingDetails: args);
+// //             },
+// //       },
+// //     );
+// //   }
+// // }
+//
+//
+//
+//
+// import 'dart:async';
+// import 'dart:io';
+// import 'package:device_preview/device_preview.dart';
 // import 'package:flutter/material.dart';
+// import 'package:connectivity_plus/connectivity_plus.dart';
+// import 'package:flutter/services.dart';
 // import 'package:nahata_app/screens/location_screen.dart';
 // import 'package:nahata_app/screens/login_screen.dart';
 // import 'package:nahata_app/screens/payment_screen.dart';
 // import 'package:nahata_app/screens/registration.dart';
+// import 'package:nahata_app/services/api_service.dart';
 // import 'package:nahata_app/splash_screen.dart';
 //
-// void main() {
-//   runApp(const MyApp());
+// import 'dashboard/admin_screen.dart';
+//
+// import 'dashboard/coach_screen.dart';
+// import 'dashboard/dashboard_screen.dart';
+// import 'dashboard/security_screen.dart';
+// import 'dashboard/students_parents.dart';
+//
+//
+// void main() async{
+//   WidgetsFlutterBinding.ensureInitialized();
+//   await ApiService.loadUserFromPrefs(); // restore session
+//   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+//   runApp(MyApp());
 // }
 //
 // class MyApp extends StatelessWidget {
 //   const MyApp({super.key});
 //
-//   // This widget is the root of your application.
 //   @override
 //   Widget build(BuildContext context) {
-//     return  MaterialApp(
-//       title: 'Nahata Sports Booking',
-//       theme: ThemeData(
-//         primarySwatch: Colors.indigo,
-//       ),
-//       debugShowCheckedModeBanner: false,
+//     return InternetCheckWrapper(
+//       child: MaterialApp(
+//         title: 'Nahata Sports Booking',
+//         theme: ThemeData( primarySwatch: Colors.indigo, ),
 //
-//       initialRoute: '/',
-//       routes: {
-//         '/': (context) => const SplashScreen(),
-//         '/signup': (context) => const SignUpScreen(),
-//         // '/login': (context) => const LoginScreen(),
-//           '/login': (context) => const LoginScreen(),
-//           '/location': (context) => const LocationScreen(),
-//             '/payment': (context) {
-//               final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
-//               return PaymentScreen(bookingDetails: args);
+//         debugShowCheckedModeBanner: false,
+//         initialRoute: '/',
+//
+//         routes: {
+//           '/': (context) => const InternetCheckWrapper(child: SplashScreen()),
+//           '/signup': (context) => InternetCheckWrapper(child: SignUpScreen()),
+//           '/login': (context) => const InternetCheckWrapper(child: LoginScreen()),
+//           '/location': (context) => const InternetCheckWrapper(child: LocationScreen()),
+//           // '/dashboard': (context) => const InternetCheckWrapper(child: DashboardScreen()),
+//           '/students_parents': (context) =>  InternetCheckWrapper(child: StudentsParentsScreen(studentId: ApiService.currentUser?['student_id']?.toString() ?? '',)),
+//           // '/roleselection': (context) => const InternetCheckWrapper(child: RoleSelectionScreen()),
+//           '/payment': (context) {
+//             final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+//             return InternetCheckWrapper(
+//               child: PaymentScreen(bookingDetails: args),
+//             );
 //             },
-//       },
+//           '/dashboard': (context) => const InternetCheckWrapper(child: BookPlayScreen()),
+//           '/coachscreen': (context) => const InternetCheckWrapper(child: CoachDashboardScreen()),
+//           '/adminscreen': (context) => const InternetCheckWrapper(child: AdminDashboardScreen()),
+//           '/securityscreen': (context) => const InternetCheckWrapper(child: SecurityGateScannerScreen()),
+//         },
+//       ),
 //     );
 //   }
 // }
-
-
-
-
-import 'dart:async';
-import 'dart:io';
-import 'package:device_preview/device_preview.dart';
-import 'package:flutter/material.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/services.dart';
-import 'package:nahata_app/screens/location_screen.dart';
-import 'package:nahata_app/screens/login_screen.dart';
-import 'package:nahata_app/screens/payment_screen.dart';
-import 'package:nahata_app/screens/registration.dart';
-import 'package:nahata_app/services/api_service.dart';
-import 'package:nahata_app/splash_screen.dart';
-
-import 'dashboard/admin_screen.dart';
-
-import 'dashboard/coach_screen.dart';
-import 'dashboard/dashboard_screen.dart';
-import 'dashboard/security_screen.dart';
-import 'dashboard/students_parents.dart';
-
-
-void main() async{
-  WidgetsFlutterBinding.ensureInitialized();
-  await ApiService.loadUserFromPrefs(); // restore session
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  runApp(MyApp());
-}
 //
-// void main() {
-//   runApp(const MyApp());
-// }
-// void main() {
-//   runApp(
-//     DevicePreview(
-//       enabled: true, // Set to false for release builds
-//       builder: (context) => MyApp(),
-//     ),
-//   );
-// }
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-// void main() {
-//   WidgetsFlutterBinding.ensureInitialized();
-//   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-//   runApp(MyApp());
-// }
-  @override
-  Widget build(BuildContext context) {
-    return InternetCheckWrapper(
-      child: MaterialApp(
-        title: 'Nahata Sports Booking',
-        theme: ThemeData( primarySwatch: Colors.indigo, ),
-
-        debugShowCheckedModeBanner: false,
-        initialRoute: '/',
-
-        routes: {
-          '/': (context) => const InternetCheckWrapper(child: SplashScreen()),
-          '/signup': (context) => InternetCheckWrapper(child: SignUpScreen()),
-          '/login': (context) => const InternetCheckWrapper(child: LoginScreen()),
-          '/location': (context) => const InternetCheckWrapper(child: LocationScreen()),
-          // '/dashboard': (context) => const InternetCheckWrapper(child: DashboardScreen()),
-          '/students_parents': (context) =>  InternetCheckWrapper(child: StudentsParentsScreen(studentId: ApiService.currentUser?['student_id']?.toString() ?? '',)),
-          // '/roleselection': (context) => const InternetCheckWrapper(child: RoleSelectionScreen()),
-          '/payment': (context) {
-            final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
-            return InternetCheckWrapper(
-              child: PaymentScreen(bookingDetails: args),
-            );
-            },
-          '/dashboard': (context) => const InternetCheckWrapper(child: BookPlayScreen()),
-          '/coachscreen': (context) => const InternetCheckWrapper(child: CoachDashboardScreen()),
-          '/adminscreen': (context) => const InternetCheckWrapper(child: AdminDashboardScreen()),
-          '/securityscreen': (context) => const InternetCheckWrapper(child: SecurityGateScannerScreen()),
-        },
-      ),
-    );
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// /// ✅ InternetCheckWrapper monitors connectivity and shows popup if offline
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+// //
+// // void main() {
+// //   runApp(const MyApp());
+// // }
+// // void main() {
+// //   runApp(
+// //     DevicePreview(
+// //       enabled: true, // Set to false for release builds
+// //       builder: (context) => MyApp(),
+// //     ),
+// //   );
+// // }
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+// // /// ✅ InternetCheckWrapper monitors connectivity and shows popup if offline
+// // class InternetCheckWrapper extends StatefulWidget {
+// //   final Widget child;
+// //   const InternetCheckWrapper({super.key, required this.child});
+// //
+// //   @override
+// //   State<InternetCheckWrapper> createState() => _InternetCheckWrapperState();
+// // }
+// //
+// // class _InternetCheckWrapperState extends State<InternetCheckWrapper> {
+// //   late final _subscription;
+// //   bool _dialogIsOpen = false;
+// //   BuildContext? _dialogContext;
+// //
+// //   @override
+// //   void initState() {
+// //     super.initState();
+// //     WidgetsBinding.instance.addPostFrameCallback((_) {
+// //       _checkInternet();
+// //     });
+// //
+// //     // Listen to connectivity changes
+// //     _subscription = Connectivity().onConnectivityChanged.listen((_) {
+// //       _checkInternet();
+// //     });
+// //   }
+// //
+// //   Future<void> _checkInternet() async {
+// //     bool hasInternet = await _hasInternet();
+// //
+// //     if (!hasInternet && !_dialogIsOpen) {
+// //       _showNoInternetDialog();
+// //     } else if (hasInternet && _dialogIsOpen && _dialogContext != null) {
+// //       Navigator.pop(_dialogContext!); // close dialog automatically
+// //       _dialogIsOpen = false;
+// //       _dialogContext = null;
+// //     }
+// //   }
+// //
+// //   Future<bool> _hasInternet() async {
+// //     try {
+// //       final result = await InternetAddress.lookup('example.com');
+// //       return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+// //     } on SocketException catch (_) {
+// //       return false;
+// //     }
+// //   }
+// //
+// //   void _showNoInternetDialog() {
+// //     _dialogIsOpen = true;
+// //
+// //   //   showDialog(
+// //   //     context: context,
+// //   //     barrierDismissible: false,
+// //   //     builder: (dialogContext) {
+// //   //       _dialogContext = dialogContext;
+// //   //       return const AlertDialog(
+// //   //         title: Text("No Internet"),
+// //   //         content: Text("Please check your internet connection."),
+// //   //       );
+// //   //     },
+// //   //   ).then((_) {
+// //   //     _dialogIsOpen = false;
+// //   //     _dialogContext = null;
+// //   //   });
+// //   // }
+// //
+// //
+// //     showDialog(
+// //       context: context,
+// //       barrierDismissible: false, // cannot dismiss by tapping outside
+// //       builder: (context) => WillPopScope(
+// //         // prevent back button closing
+// //         onWillPop: () async => false,
+// //         child: AlertDialog(
+// //           title: const Text("No Internet"),
+// //           content: const Text("Please check your internet connection."),
+// //           actions: [
+// //             TextButton(
+// //               onPressed: () async {
+// //                 bool hasInternet = await _hasInternet();
+// //                 if (hasInternet) {
+// //                   Navigator.of(context, rootNavigator: true).pop();
+// //                   _dialogIsOpen = false;
+// //                 }
+// //                 // if no internet → keep dialog open
+// //               },
+// //               child: const Text("Retry"),
+// //             ),
+// //           ],
+// //         ),
+// //       ),
+// //     );
+// //   }
+// //
+// //   @override
+// //   void dispose() {
+// //     _subscription.cancel();
+// //     super.dispose();
+// //   }
+// //
+// //   @override
+// //   Widget build(BuildContext context) {
+// //     return widget.child;
+// //   }
+// // }
+//
+//
 // class InternetCheckWrapper extends StatefulWidget {
 //   final Widget child;
 //   const InternetCheckWrapper({super.key, required this.child});
@@ -172,34 +280,52 @@ class MyApp extends StatelessWidget {
 // }
 //
 // class _InternetCheckWrapperState extends State<InternetCheckWrapper> {
-//   late final _subscription;
+//   late StreamSubscription<List<ConnectivityResult>> _subscription;
 //   bool _dialogIsOpen = false;
-//   BuildContext? _dialogContext;
 //
 //   @override
 //   void initState() {
 //     super.initState();
+//
 //     WidgetsBinding.instance.addPostFrameCallback((_) {
 //       _checkInternet();
 //     });
 //
-//     // Listen to connectivity changes
-//     _subscription = Connectivity().onConnectivityChanged.listen((_) {
+//     _subscription = Connectivity().onConnectivityChanged.listen((results) {
+//       // results is List<ConnectivityResult>
 //       _checkInternet();
 //     });
 //   }
 //
-//   Future<void> _checkInternet() async {
-//     bool hasInternet = await _hasInternet();
+//   // Future<void> _checkInternet() async {
+//   //   bool hasInternet = await _hasInternet();
+//   //
+//   //   if (!mounted) return; // widget not ready
+//   //
+//   //   if (!hasInternet && !_dialogIsOpen) {
+//   //     _showNoInternetDialog();
+//   //   } else if (hasInternet && _dialogIsOpen) {
+//   //     // Ensure navigator is ready before popping
+//   //     WidgetsBinding.instance.addPostFrameCallback((_) {
+//   //       if (mounted) {
+//   //         Navigator.of(context, rootNavigator: true).pop();
+//   //         _dialogIsOpen = false;
+//   //       }
+//   //     });
+//   //   }
+//   // }
 //
-//     if (!hasInternet && !_dialogIsOpen) {
-//       _showNoInternetDialog();
-//     } else if (hasInternet && _dialogIsOpen && _dialogContext != null) {
-//       Navigator.pop(_dialogContext!); // close dialog automatically
-//       _dialogIsOpen = false;
-//       _dialogContext = null;
-//     }
-//   }
+//   // Future<void> _checkInternet() async {
+//   //   bool hasInternet = await _hasInternet();
+//   //
+//   //   if (!hasInternet && !_dialogIsOpen) {
+//   //     _showNoInternetDialog();
+//   //   } else if (hasInternet && _dialogIsOpen) {
+//   //     // Internet restored → close popup automatically
+//   //     Navigator.of(context, rootNavigator: true).pop();
+//   //     _dialogIsOpen = false;
+//   //   }
+//   // }
 //
 //   Future<bool> _hasInternet() async {
 //     try {
@@ -209,53 +335,69 @@ class MyApp extends StatelessWidget {
 //       return false;
 //     }
 //   }
-//
-//   void _showNoInternetDialog() {
-//     _dialogIsOpen = true;
-//
+//   //
+//   // void _showNoInternetDialog() {
+//   //   _dialogIsOpen = true;
+//   //
 //   //   showDialog(
 //   //     context: context,
-//   //     barrierDismissible: false,
-//   //     builder: (dialogContext) {
-//   //       _dialogContext = dialogContext;
-//   //       return const AlertDialog(
+//   //     barrierDismissible: false, // cannot dismiss manually
+//   //     builder: (context) => WillPopScope(
+//   //       onWillPop: () async => false, // disable back button
+//   //       child: const AlertDialog(
 //   //         title: Text("No Internet"),
 //   //         content: Text("Please check your internet connection."),
-//   //       );
-//   //     },
+//   //       ),
+//   //     ),
 //   //   ).then((_) {
 //   //     _dialogIsOpen = false;
-//   //     _dialogContext = null;
 //   //   });
 //   // }
 //
 //
+//
+//
+//   void _showNoInternetDialog() {
+//     _dialogIsOpen = true;
+//
 //     showDialog(
 //       context: context,
-//       barrierDismissible: false, // cannot dismiss by tapping outside
-//       builder: (context) => WillPopScope(
-//         // prevent back button closing
-//         onWillPop: () async => false,
-//         child: AlertDialog(
-//           title: const Text("No Internet"),
-//           content: const Text("Please check your internet connection."),
-//           actions: [
-//             TextButton(
-//               onPressed: () async {
-//                 bool hasInternet = await _hasInternet();
-//                 if (hasInternet) {
-//                   Navigator.of(context, rootNavigator: true).pop();
-//                   _dialogIsOpen = false;
-//                 }
-//                 // if no internet → keep dialog open
-//               },
-//               child: const Text("Retry"),
-//             ),
-//           ],
-//         ),
+//       barrierDismissible: false,
+//       builder: (context) => AlertDialog(
+//         title: const Text("No Internet"),
+//         content: const Text("Please check your internet connection."),
+//         actions: [
+//           TextButton(
+//             onPressed: () async {
+//               Navigator.of(context, rootNavigator: true).pop(); // close dialog
+//               _dialogIsOpen = false;
+//               _checkInternet(); // retry check
+//             },
+//             child: const Text("Retry"),
+//           ),
+//         ],
 //       ),
-//     );
+//     ).then((_) {
+//       _dialogIsOpen = false;
+//     });
 //   }
+//
+//   Future<void> _checkInternet() async {
+//     bool hasInternet = await _hasInternet();
+//
+//     if (!mounted) return;
+//
+//     if (!hasInternet && !_dialogIsOpen) {
+//       _showNoInternetDialog();
+//     } else if (hasInternet && _dialogIsOpen) {
+//       // dismiss the popup automatically when internet is back
+//       if (Navigator.canPop(context)) {
+//         Navigator.of(context, rootNavigator: true).pop();
+//       }
+//       _dialogIsOpen = false;
+//     }
+//   }
+//
 //
 //   @override
 //   void dispose() {
@@ -268,257 +410,797 @@ class MyApp extends StatelessWidget {
 //     return widget.child;
 //   }
 // }
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+// // routes: {
+// //   '/': (context) => const SplashScreen(),
+// //   '/signup': (context) => const SignUpScreen(),
+// //   '/login': (context) => const LoginScreen(),
+// //   '/location': (context) => const LocationScreen(),
+// //   '/payment': (context) {
+// //     final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+// //     return PaymentScreen(bookingDetails: args);
+// //   },
+// // }
+// //
+// //
+// // ,
+//
+//
+//
+//
+// // -------------------------------------------------------------
+// // Common styling
+// // -------------------------------------------------------------
+// class AppColors {
+//   static const primary = Color(0xFF0066FF); // Electric Blue
+//   static const accent = Color(0xFF32CD32); // Lime Green
+//   static const bg = Color(0xFFF9FAFB);
+//   static const text = Color(0xFF111827);
+//   static const subtext = Color(0xFF6B7280);
+//   static const card = Colors.white;
+// }
+//
+// class AppGaps {
+//   static const xs = SizedBox(height: 4);
+//   static const sm = SizedBox(height: 8);
+//   static const md = SizedBox(height: 12);
+//   static const lg = SizedBox(height: 16);
+//   static const xl = SizedBox(height: 24);
+// }
+//
+// class AppButton extends StatelessWidget {
+//   final String label;
+//   final VoidCallback? onPressed;
+//   final bool filled;
+//
+//   const AppButton({super.key, required this.label, this.onPressed, this.filled = true});
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     final style = filled
+//         ? ElevatedButton.styleFrom(
+//       backgroundColor: AppColors.primary,
+//       foregroundColor: Colors.white,
+//       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+//       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+//     )
+//         : OutlinedButton.styleFrom(
+//       side: BorderSide(color: Theme.of(context).colorScheme.primary),
+//       foregroundColor: Theme.of(context).colorScheme.primary,
+//       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+//       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+//     );
+//
+//     final child = Text(label, style: const TextStyle(fontWeight: FontWeight.w600));
+//     return filled
+//         ? ElevatedButton(onPressed: onPressed, style: style, child: child)
+//         : OutlinedButton(onPressed: onPressed, style: style, child: child);
+//   }
+// }
+//
+// class SectionCard extends StatelessWidget {
+//   final Widget child;
+//   const SectionCard({super.key, required this.child});
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Container(
+//       decoration: BoxDecoration(
+//         color: AppColors.card,
+//         borderRadius: BorderRadius.circular(18),
+//         boxShadow: const [
+//           BoxShadow(color: Color(0x11000000), blurRadius: 10, offset: Offset(0, 4)),
+//         ],
+//       ),
+//       padding: const EdgeInsets.all(16),
+//       child: child,
+//     );
+//   }
+// }
 
 
-class InternetCheckWrapper extends StatefulWidget {
-  final Widget child;
-  const InternetCheckWrapper({super.key, required this.child});
+
+
+
+
+
+
+
+import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'auth/login.dart';
+import 'bottombar/Custombottombar.dart';
+import 'dashboard/admin_screen.dart';
+import 'dashboard/coach_screen.dart';
+import 'dashboard/security_screen.dart';
+import 'network.dart';
+
+
+
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+   // await Firebase.initializeApp();
+  // Force portrait mode
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
+  // Initialize API service
+  await ApiService.loadUserFromPrefs();
+
+  // Initialize network status listener
+  final connectivityResult = await Connectivity().checkConnectivity();
+  print("🔌 Initial connectivity: $connectivityResult");
+
+  runApp(const MyApp());
+}
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
-  State<InternetCheckWrapper> createState() => _InternetCheckWrapperState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A237E)),
+      ),
+
+      // ✅ Wrap ALL screens inside ConnectivityWrapper
+      builder: (context, child) {
+        return ConnectivityWrapper(
+          child: child ?? const SizedBox(), // fallback if child is null
+        );
+      },
+
+      // your starting screen
+      home: const SplashStep3(),
+    );
+  }
 }
 
-class _InternetCheckWrapperState extends State<InternetCheckWrapper> {
-  late StreamSubscription<List<ConnectivityResult>> _subscription;
-  bool _dialogIsOpen = false;
+// class MyApp extends StatelessWidget {
+//   const MyApp({super.key});
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return MaterialApp(
+//       debugShowCheckedModeBanner: false,
+//       theme: ThemeData(
+//         colorScheme: ColorScheme.fromSeed(seedColor: Color(0xFF1A237E)),
+//       ),
+//       home: ConnectivityWrapper(child: const SplashStep3()), // ✅ Always start from Splash
+//       // FutureBuilder<bool>(
+//       //   future: ApiService.isLoggedIn(),
+//       //   builder: (context, snapshot) {
+//       //     if (snapshot.connectionState == ConnectionState.waiting) {
+//       //       return const Scaffold(
+//       //         body: Center(child: CircularProgressIndicator()),
+//       //       );
+//       //     } else if (snapshot.hasData && snapshot.data == true) {
+//       //       return CustomBottomNav();
+//       //     } else {
+//       //       return const LoginScreen();
+//       //     }
+//       //   },
+//       // ),
+//     );
+//   }
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// /// This widget controls the 3-step splash animation
+// class SplashController extends StatefulWidget {
+//   @override
+//   State<SplashController> createState() => _SplashControllerState();
+// }
+//
+// class _SplashControllerState extends State<SplashController> {
+//   final PageController _pageController = PageController();
+//   int _currentPage = 0;
+//
+//   @override
+//   void initState() {
+//     super.initState();
+//     // Auto animate between screens every 2 seconds
+//     Timer.periodic(const Duration(seconds: 2), (timer) {
+//       if (_currentPage < 2) {
+//         _currentPage++;
+//         _pageController.animateToPage(
+//           _currentPage,
+//           duration: const Duration(milliseconds: 600),
+//           curve: Curves.easeInOut,
+//         );
+//       } else {
+//         timer.cancel();
+//         // Navigate to Login after splash
+//         Future.delayed(const Duration(seconds: 1), () {
+//           Navigator.pushReplacement(
+//               context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+//         });
+//       }
+//     });
+//   }
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       body: PageView(
+//         controller: _pageController,
+//         physics: const NeverScrollableScrollPhysics(), // disable swipe
+//         children: const [
+//           // SplashStep1(),
+//           // SplashStep2(),
+//           SplashStep3(),
+//         ],
+//       ),
+//     );
+//   }
+// }
+//
+// /// Step 1 → Only Logo
+// class SplashStep1 extends StatelessWidget {
+//   const SplashStep1({super.key});
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Center(
+//       child: Image.asset(
+//         "assets/ns.png", // Your NahataSports logo
+//         height: 120,
+//       ),
+//     );
+//   }
+// }
+//
+// /// Step 2 → Logo with images around
+// class SplashStep2 extends StatelessWidget {
+//   const SplashStep2({super.key});
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Stack(
+//       alignment: Alignment.center,
+//       children: [
+//         Positioned(top: 80, left: 40, child: _splashImage("assets/ns1.jpg")),
+//         Positioned(top: 80, right: 40, child: _splashImage("assets/ns2.jpg")),
+//         Positioned(bottom: 100, left: 30, child: _splashImage("assets/ns3.jpg")),
+//         Positioned(bottom: 100, right: 30, child: _splashImage("assets/ns4.jpg")),
+//         Image.asset("assets/ns.png", height: 120),
+//       ],
+//     );
+//   }
+//
+//   Widget _splashImage(String path) => ClipRRect(
+//     borderRadius: BorderRadius.circular(12),
+//     child: Image.asset(path, height: 90, width: 90, fit: BoxFit.cover),
+//   );
+// }
+
+/// Step 3 → Logo + tagline + images
+// class SplashStep3 extends StatefulWidget {
+//   const SplashStep3({super.key});
+//
+//   @override
+//   State<SplashStep3> createState() => _SplashStep3State();
+// }
+//
+// class _SplashStep3State extends State<SplashStep3> {
+//   double logoOpacity = 0.0;
+//   double imagesOpacity = 0.0;
+//   double text1Opacity = 0.0;
+//   double text2Opacity = 0.0;
+//   double text3Opacity = 0.0;
+//
+//   @override
+//   void initState() {
+//     super.initState();
+//     // Future.delayed(const Duration(seconds: 5), () {
+//     //   Navigator.pushAndRemoveUntil(
+//     //     context,
+//     //     MaterialPageRoute(builder: (context) => CustomBottomNav()),
+//     //         (route) => false, // clears history
+//     //   );
+//     //
+//     // });
+//     // Animation sequence
+//     Future<void> checkLaunchAndRedirect() async {
+//       SharedPreferences prefs = await SharedPreferences.getInstance();
+//       final isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
+//
+//       if (isFirstLaunch) {
+//         // ✅ First launch, show CustomBottomNav
+//         prefs.setBool('isFirstLaunch', false);
+//         Navigator.pushReplacement(
+//           context,
+//           MaterialPageRoute(builder: (_) => CustomBottomNav()),
+//         );
+//       } else {
+//         // ✅ Not first launch, check role
+//         final savedRole = prefs.getString('role') ?? 'user';
+//         Widget screen;
+//         switch (savedRole) {
+//           case 'admin':
+//             screen = AdminDashboardScreen();
+//             break;
+//           case 'coach':
+//             screen = CoachDashboardScreen();
+//             break;
+//           case 'security':
+//             screen = SecurityGateScannerScreen();
+//             break;
+//           default:
+//             screen = CustomBottomNav();
+//         }
+//         Navigator.pushReplacement(
+//           context,
+//           MaterialPageRoute(builder: (_) => screen),
+//         );
+//       }
+//     }
+//
+//     Timer(const Duration(milliseconds: 500), () {
+//       setState(() => logoOpacity = 1.0);
+//     });
+//     Timer(const Duration(milliseconds: 1500), () {
+//       setState(() => imagesOpacity = 1.0);
+//     });
+//     Timer(const Duration(milliseconds: 2500), () {
+//       setState(() => text1Opacity = 1.0);
+//     });
+//     Timer(const Duration(milliseconds: 3500), () {
+//       setState(() => text2Opacity = 1.0);
+//     });
+//     Timer(const Duration(milliseconds: 4500), () {
+//       setState(() => text3Opacity = 1.0);
+//     });
+//   }
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       backgroundColor: Colors.white,
+//       body: Stack(
+//         alignment: Alignment.center,
+//         children: [
+//           // Overlapping Sports images
+//           AnimatedOpacity(
+//             opacity: imagesOpacity,
+//             duration: const Duration(seconds: 1),
+//             child: Stack(
+//               children: [
+//                 // Top overlapping images
+//                 Positioned(
+//                   top: 60,
+//                   left: 20,
+//                   child: Transform.rotate(
+//                     angle: -0.1,
+//                     child: _splashImage("assets/r1.png"),
+//                   ),
+//                 ),
+//                 Positioned(
+//                   top: 60,
+//                   left: 80,
+//                   child: Transform.rotate(
+//                     angle:-0.1,
+//                     child: _splashImage("assets/r2.png"),
+//                   ),
+//                 ),
+//                 Positioned(
+//                   top: 60,
+//                   right: 90,
+//                   child: Transform.rotate(
+//                     angle: -0.1,
+//                     child: _splashImage("assets/r3.png"),
+//                   ),
+//                 ),
+//                 Positioned(
+//                   top: 60,
+//                   right: 20,
+//                   child: Transform.rotate(
+//                     angle: -0.1,
+//                     child: _splashImage("assets/r4.png"),
+//                   ),
+//                 ),
+//
+//                 // Bottom overlapping images
+//                 Positioned(
+//                   bottom: 80,
+//                   left: 20,
+//                   child: Transform.rotate(
+//                     angle: -0.1,
+//                     child: _splashImage("assets/r1.png"),
+//                   ),
+//                 ),
+//                 Positioned(
+//                   bottom: 80,
+//                   left: 80,
+//                   child: Transform.rotate(
+//                     angle: -0.1,
+//                     child: _splashImage("assets/r2.png"),
+//                   ),
+//                 ),
+//                 Positioned(
+//                   bottom: 80,
+//                   right: 20,
+//                   child: Transform.rotate(
+//                     angle: -0.1,
+//                     child: _splashImage("assets/r3.png"),
+//                   ),
+//                 ),
+//                 Positioned(
+//                   bottom: 80,
+//                   right: 80,
+//                   child: Transform.rotate(
+//                     angle: -0.1,
+//                     child: _splashImage("assets/r4.png"),
+//                   ),
+//                 ),
+//               ],
+//             ),
+//           ),
+//
+//           // Main content
+//           Column(
+//             mainAxisAlignment: MainAxisAlignment.center,
+//             children: [
+//               // Logo
+//               AnimatedOpacity(
+//                 opacity: logoOpacity,
+//                 duration: const Duration(seconds: 1),
+//                 child: Image.asset("assets/ns.png", height: 100),
+//               ),
+//               const SizedBox(height: 10),
+//
+//               // Texts fade-in sequentially with background
+//               AnimatedOpacity(
+//                 opacity: text1Opacity,
+//                 duration: const Duration(seconds: 1),
+//                 child: Container(
+//                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+//                   decoration: BoxDecoration(
+//                     color: Colors.white.withOpacity(0.9),
+//                     borderRadius: BorderRadius.circular(25),
+//                   ),
+//                   child: const Text(
+//                     "Unleash Potential",
+//                     style: TextStyle(
+//                         fontSize: 22,
+//                         fontWeight: FontWeight.bold,
+//                         color: Colors.black),
+//                   ),
+//                 ),
+//               ),
+//               // const SizedBox(height: 12),
+//               AnimatedOpacity(
+//                 opacity: text2Opacity,
+//                 duration: const Duration(seconds: 1),
+//                 child: Container(
+//                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+//                   decoration: BoxDecoration(
+//                     color: Colors.white.withOpacity(0.9),
+//                     borderRadius: BorderRadius.circular(25),
+//                   ),
+//                   child: const Text(
+//                     "Elevate Every Game.",
+//                     style: TextStyle(
+//                       fontSize: 20,
+//                       fontWeight: FontWeight.bold,
+//                       color: Color(0xFF2E3192),
+//                     ),
+//                   ),
+//                 ),
+//               ),
+//               // const SizedBox(height: 12),
+//               AnimatedOpacity(
+//                 opacity: text3Opacity,
+//                 duration: const Duration(seconds: 1),
+//                 child: Container(
+//                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+//                   decoration: BoxDecoration(
+//                     color: Colors.white.withOpacity(0.9),
+//                     borderRadius: BorderRadius.circular(25),
+//                   ),
+//                   child: const Text(
+//                     "Sport. Spirit. Strength. Success. Nahata.",
+//                     style: TextStyle(fontSize: 14, color: Colors.black54),
+//                     textAlign: TextAlign.center,
+//                   ),
+//                 ),
+//               ),
+//             ],
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _splashImage(String path) => Container(
+//     decoration: BoxDecoration(
+//       borderRadius: BorderRadius.circular(16),
+//       boxShadow: [
+//         BoxShadow(
+//           color: Colors.black.withOpacity(0.2),
+//           blurRadius: 10,
+//           spreadRadius: 2,
+//           offset: const Offset(3, 3),
+//         ),
+//       ],
+//     ),
+//     child: ClipRRect(
+//       borderRadius: BorderRadius.circular(16),
+//       child: Image.asset(
+//         path,
+//         height: 110,
+//         width: 75,
+//         fit: BoxFit.cover,
+//       ),
+//     ),
+//   );
+// }
+
+class SplashStep3 extends StatefulWidget {
+  const SplashStep3({super.key});
+
+  @override
+  State<SplashStep3> createState() => _SplashStep3State();
+}
+
+class _SplashStep3State extends State<SplashStep3> {
+  double logoOpacity = 0.0;
+  double imagesOpacity = 0.0;
+  double text1Opacity = 0.0;
+  double text2Opacity = 0.0;
+  double text3Opacity = 0.0;
 
   @override
   void initState() {
     super.initState();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkInternet();
-    });
-
-    _subscription = Connectivity().onConnectivityChanged.listen((results) {
-      // results is List<ConnectivityResult>
-      _checkInternet();
-    });
+    _animateSplash();
+    _redirectAfterSplash();
   }
 
-  // Future<void> _checkInternet() async {
-  //   bool hasInternet = await _hasInternet();
-  //
-  //   if (!mounted) return; // widget not ready
-  //
-  //   if (!hasInternet && !_dialogIsOpen) {
-  //     _showNoInternetDialog();
-  //   } else if (hasInternet && _dialogIsOpen) {
-  //     // Ensure navigator is ready before popping
-  //     WidgetsBinding.instance.addPostFrameCallback((_) {
-  //       if (mounted) {
-  //         Navigator.of(context, rootNavigator: true).pop();
-  //         _dialogIsOpen = false;
-  //       }
-  //     });
-  //   }
-  // }
+  void _animateSplash() {
+    // Animation sequence
+    Timer(const Duration(milliseconds: 500), () {
+      setState(() => logoOpacity = 1.0);
+    });
+    Timer(const Duration(milliseconds: 1500), () {
+      setState(() => imagesOpacity = 1.0);
+    });
+    Timer(const Duration(milliseconds: 2500), () {
+      setState(() => text1Opacity = 1.0);
+    });
+    Timer(const Duration(milliseconds: 3500), () {
+      setState(() => text2Opacity = 1.0);
+    });
+    Timer(const Duration(milliseconds: 4500), () {
+      setState(() => text3Opacity = 1.0);
+    });
+  }
+  Future<void> _redirectAfterSplash() async {
+    await Future.delayed(const Duration(seconds: 5));
+    SharedPreferences prefs = await SharedPreferences.getInstance();
 
-  // Future<void> _checkInternet() async {
-  //   bool hasInternet = await _hasInternet();
-  //
-  //   if (!hasInternet && !_dialogIsOpen) {
-  //     _showNoInternetDialog();
-  //   } else if (hasInternet && _dialogIsOpen) {
-  //     // Internet restored → close popup automatically
-  //     Navigator.of(context, rootNavigator: true).pop();
-  //     _dialogIsOpen = false;
-  //   }
-  // }
+    final bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+    final bool isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
 
-  Future<bool> _hasInternet() async {
-    try {
-      final result = await InternetAddress.lookup('example.com');
-      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-    } on SocketException catch (_) {
-      return false;
+    Widget screen;
+
+    if (isLoggedIn) {
+      // Already logged in → go straight to role dashboard
+      final savedRole = ApiService.getRole() ?? 'user';
+      switch (savedRole) {
+        case 'admin':
+          screen = AdminDashboardScreen();
+          break;
+        case 'coach':
+          screen = CoachDashboardScreen();
+          break;
+        case 'security':
+          screen = SecurityGateScannerScreen();
+          break;
+        default:
+          screen = CustomBottomNav(); // user dashboard
+      }
+    } else if (isFirstLaunch) {
+      // First launch → show role chooser
+      prefs.setBool('isFirstLaunch', false);
+      screen = CustomBottomNav();
+    } else {
+      // Not logged in → go to LoginScreen
+      screen = const CustomBottomNav();
+    }
+
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => screen),
+            (route) => false,
+      );
     }
   }
+
+  // Future<void> _redirectAfterSplash() async {
+  //   await Future.delayed(const Duration(seconds: 5));
   //
-  // void _showNoInternetDialog() {
-  //   _dialogIsOpen = true;
+  //   SharedPreferences prefs = await SharedPreferences.getInstance();
+  //   final isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
   //
-  //   showDialog(
-  //     context: context,
-  //     barrierDismissible: false, // cannot dismiss manually
-  //     builder: (context) => WillPopScope(
-  //       onWillPop: () async => false, // disable back button
-  //       child: const AlertDialog(
-  //         title: Text("No Internet"),
-  //         content: Text("Please check your internet connection."),
-  //       ),
-  //     ),
-  //   ).then((_) {
-  //     _dialogIsOpen = false;
-  //   });
+  //   Widget screen;
+  //
+  //   if (isFirstLaunch) {
+  //     // First launch → show CustomBottomNav
+  //     prefs.setBool('isFirstLaunch', false);
+  //     screen = CustomBottomNav();
+  //   } else {
+  //     // Not first launch → redirect based on saved role
+  //     final savedRole = prefs.getString('role') ?? 'user';
+  //     switch (savedRole) {
+  //       case 'admin':
+  //         screen = AdminDashboardScreen();
+  //         break;
+  //       case 'coach':
+  //         screen = CoachDashboardScreen();
+  //         break;
+  //       case 'security':
+  //         screen = SecurityGateScannerScreen();
+  //         break;
+  //       default:
+  //         screen = CustomBottomNav();
+  //     }
+  //   }
+  //
+  //   if (mounted) {
+  //     Navigator.pushAndRemoveUntil(
+  //       context,
+  //       MaterialPageRoute(builder: (_) => screen),
+  //           (route) => false,
+  //     );
+  //   }
   // }
 
-
-
-
-  void _showNoInternetDialog() {
-    _dialogIsOpen = true;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text("No Internet"),
-        content: const Text("Please check your internet connection."),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              Navigator.of(context, rootNavigator: true).pop(); // close dialog
-              _dialogIsOpen = false;
-              _checkInternet(); // retry check
-            },
-            child: const Text("Retry"),
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Stack(
+        alignment: Alignment.center,
+        children: [
+          AnimatedOpacity(
+            opacity: imagesOpacity,
+            duration: const Duration(seconds: 1),
+            child: _buildOverlappingImages(),
+          ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedOpacity(
+                opacity: logoOpacity,
+                duration: const Duration(seconds: 1),
+                child: Image.asset("assets/ns.png", height: 100),
+              ),
+              const SizedBox(height: 10),
+              _fadeText(text1Opacity, "Unleash Potential", 22, Colors.black),
+              _fadeText(text2Opacity, "Elevate Every Game.", 20, const Color(0xFF2E3192)),
+              _fadeText(text3Opacity, "Sport. Spirit. Strength. Success. Nahata.", 14, Colors.black54),
+            ],
           ),
         ],
       ),
-    ).then((_) {
-      _dialogIsOpen = false;
-    });
-  }
-
-  Future<void> _checkInternet() async {
-    bool hasInternet = await _hasInternet();
-
-    if (!mounted) return;
-
-    if (!hasInternet && !_dialogIsOpen) {
-      _showNoInternetDialog();
-    } else if (hasInternet && _dialogIsOpen) {
-      // dismiss the popup automatically when internet is back
-      if (Navigator.canPop(context)) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
-      _dialogIsOpen = false;
-    }
-  }
-
-
-  @override
-  void dispose() {
-    _subscription.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return widget.child;
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// routes: {
-//   '/': (context) => const SplashScreen(),
-//   '/signup': (context) => const SignUpScreen(),
-//   '/login': (context) => const LoginScreen(),
-//   '/location': (context) => const LocationScreen(),
-//   '/payment': (context) {
-//     final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
-//     return PaymentScreen(bookingDetails: args);
-//   },
-// }
-//
-//
-// ,
-
-
-
-
-// -------------------------------------------------------------
-// Common styling
-// -------------------------------------------------------------
-class AppColors {
-  static const primary = Color(0xFF0066FF); // Electric Blue
-  static const accent = Color(0xFF32CD32); // Lime Green
-  static const bg = Color(0xFFF9FAFB);
-  static const text = Color(0xFF111827);
-  static const subtext = Color(0xFF6B7280);
-  static const card = Colors.white;
-}
-
-class AppGaps {
-  static const xs = SizedBox(height: 4);
-  static const sm = SizedBox(height: 8);
-  static const md = SizedBox(height: 12);
-  static const lg = SizedBox(height: 16);
-  static const xl = SizedBox(height: 24);
-}
-
-class AppButton extends StatelessWidget {
-  final String label;
-  final VoidCallback? onPressed;
-  final bool filled;
-
-  const AppButton({super.key, required this.label, this.onPressed, this.filled = true});
-
-  @override
-  Widget build(BuildContext context) {
-    final style = filled
-        ? ElevatedButton.styleFrom(
-      backgroundColor: AppColors.primary,
-      foregroundColor: Colors.white,
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-    )
-        : OutlinedButton.styleFrom(
-      side: BorderSide(color: Theme.of(context).colorScheme.primary),
-      foregroundColor: Theme.of(context).colorScheme.primary,
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
     );
-
-    final child = Text(label, style: const TextStyle(fontWeight: FontWeight.w600));
-    return filled
-        ? ElevatedButton(onPressed: onPressed, style: style, child: child)
-        : OutlinedButton(onPressed: onPressed, style: style, child: child);
   }
-}
 
-class SectionCard extends StatelessWidget {
-  final Widget child;
-  const SectionCard({super.key, required this.child});
+  Widget _buildOverlappingImages() {
+    return Stack(
+      children: [
+        // Top images
+        Positioned(top: 60, left: 20, child: _rotatedImage("assets/r1.png")),
+        Positioned(top: 60, left: 80, child: _rotatedImage("assets/r2.png")),
+        Positioned(top: 60, right: 90, child: _rotatedImage("assets/r3.png")),
+        Positioned(top: 60, right: 20, child: _rotatedImage("assets/r4.png")),
+        // Bottom images
+        Positioned(bottom: 80, left: 20, child: _rotatedImage("assets/r1.png")),
+        Positioned(bottom: 80, left: 80, child: _rotatedImage("assets/r2.png")),
+        Positioned(bottom: 80, right: 20, child: _rotatedImage("assets/r3.png")),
+        Positioned(bottom: 80, right: 80, child: _rotatedImage("assets/r4.png")),
+      ],
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: const [
-          BoxShadow(color: Color(0x11000000), blurRadius: 10, offset: Offset(0, 4)),
-        ],
+  Widget _rotatedImage(String path) => Transform.rotate(
+    angle: -0.1,
+    child: _splashImage(path),
+  );
+
+  Widget _fadeText(double opacity, String text, double fontSize, Color color) {
+    return AnimatedOpacity(
+      opacity: opacity,
+      duration: const Duration(seconds: 1),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(25),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.bold, color: color),
+          textAlign: TextAlign.center,
+        ),
       ),
-      padding: const EdgeInsets.all(16),
-      child: child,
     );
   }
+
+  Widget _splashImage(String path) => Container(
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.2),
+          blurRadius: 10,
+          spreadRadius: 2,
+          offset: const Offset(3, 3),
+        ),
+      ],
+    ),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Image.asset(
+        path,
+        height: 110,
+        width: 75,
+        fit: BoxFit.cover,
+      ),
+    ),
+  );
 }
+

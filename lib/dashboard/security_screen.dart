@@ -1,9 +1,23 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import '../auth/login.dart';
+import '../screens/login_screen.dart';
+import '../services/api_service.dart';
+
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+
+// import your AuthService and LoginScreen as needed
+// import 'auth_service.dart';
+// import 'login_screen.dart';
 
 class SecurityGateScannerScreen extends StatefulWidget {
   const SecurityGateScannerScreen({super.key});
@@ -74,8 +88,6 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
       setState(() {
         responseData = data;
       });
-
-      // Start animation after getting response
       _animationController.forward(from: 0);
     } catch (e) {
       setState(() {
@@ -151,65 +163,121 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
     return SafeArea(
       child: Scaffold(
         backgroundColor: Colors.grey[100],
-        body: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.blue[800],
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(30),
-                  ),
-                ),
-                child: Column(
-                  children: const [
-                    Icon(Icons.security, size: 50, color: Colors.white),
-                    SizedBox(height: 10),
-                    Text(
-                      "Security Gate Scanner",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF0A198D),
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () {
+              SystemNavigator.pop();
+            },
+          ),
+          title: const Text(
+            "Security Dashboard",
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+            ),
+          ),
+          centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.white),
+              onPressed: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text("Logout"),
+                    content: const Text("Are you sure you want to logout?"),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text("Cancel"),
                       ),
-                    ),
-                    SizedBox(height: 5),
-                    Text(
-                      "Scan QR codes to verify entry",
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                  ],
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text("Logout"),
+                      ),
+                    ],
+                  ),
+                ) ?? false;
+
+                if (confirm) {
+                  await AuthService.logout(); // Call your AuthService logout
+                  if (context.mounted) {
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                          (route) => false,
+                    );
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+
+        body: Column(
+          children: [
+            // Header
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.blue[800],
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(30),
                 ),
               ),
+              child: Column(
+                children: const [
+                  Icon(Icons.security, size: 50, color: Colors.white),
+                  SizedBox(height: 10),
+                  Text(
+                    "Security Gate Scanner",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 5),
+                  Text(
+                    "Scan QR codes to verify entry",
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
 
-              const SizedBox(height: 20),
+            const SizedBox(height: 20),
 
-              // QR Scanner or Result
-              Expanded(
-                child: scanCompleted
-                    ? isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : responseData != null
-                    ? Center(
-                  child: SlideTransition(
-                    position: _slideAnimation,
-                    child: FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        elevation: 6,
-                        margin: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
+            // QR Scanner or Result
+            Expanded(
+              child: scanCompleted
+                  ? isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : responseData != null
+                  ? Center(
+                child: SlideTransition(
+                  position: _slideAnimation,
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 6,
+                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: SingleChildScrollView(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Pulsing icon
+                              // Status Icon
                               TweenAnimationBuilder<double>(
                                 tween: Tween(begin: 1, end: 1.2),
                                 duration: const Duration(milliseconds: 700),
@@ -224,9 +292,9 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
                                     ),
                                   );
                                 },
-                                onEnd: () => _animationController.forward(from: 0),
                               ),
                               const SizedBox(height: 15),
+
                               Text(
                                 responseData?['message'] ?? "No message",
                                 textAlign: TextAlign.center,
@@ -236,24 +304,69 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
+
                               const SizedBox(height: 20),
-                              ElevatedButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    scanCompleted = false;
-                                    scanResult = null;
-                                    responseData = null;
-                                    controller?.resumeCamera();
-                                  });
-                                },
-                                icon: const Icon(Icons.qr_code),
-                                label: const Text("Scan Next Person"),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue[700],
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 20, vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+
+                              // ✅ Show Pass Details
+                              // ✅ Show Pass Details
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (responseData?['details'] != null)
+                                    ...responseData!['details'].map<Widget>((item) {
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 4),
+                                        child: RichText(
+                                          text: TextSpan(
+                                            children: [
+                                              TextSpan(
+                                                text: "${item['field']}: ", // Field in bold
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.black87,
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                              TextSpan(
+                                                text: item['value'] ?? '', // Value normal
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.normal,
+                                                  color: Colors.black87,
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+
+                                ],
+                              ),
+
+
+
+                              const SizedBox(height: 20),
+
+                              Center(
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    setState(() {
+                                      scanCompleted = false;
+                                      scanResult = null;
+                                      responseData = null;
+                                      controller?.resumeCamera();
+                                    });
+                                  },
+                                  icon: const Icon(Icons.qr_code),
+                                  label: const Text("Scan Next Person"),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue[700],
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 14),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -263,61 +376,61 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
                       ),
                     ),
                   ),
-                )
-                    : const Center(child: Text("No data available"))
-                    : Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        height: 250,
-                        width: 300,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.blueGrey.shade200, width: 2),
-                          borderRadius: BorderRadius.circular(16),
-                          color: Colors.white,
-                        ),
-                        child: QRView(
-                          key: qrKey,
-                          onQRViewCreated: _onQRViewCreated,
+                ),
+              )
+                  : const Center(child: Text("No data available"))
+                  : Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      height: 250,
+                      width: 300,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.blueGrey.shade200, width: 2),
+                        borderRadius: BorderRadius.circular(16),
+                        color: Colors.white,
+                      ),
+                      child: QRView(
+                        key: qrKey,
+                        onQRViewCreated: _onQRViewCreated,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      "Point your camera at the QR code",
+                      style: TextStyle(fontSize: 16, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        controller?.resumeCamera();
+                        setState(() {
+                          scanCompleted = false;
+                          scanResult = null;
+                        });
+                      },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text("Restart Scanner"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue[700],
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        "Point your camera at the QR code",
-                        style: TextStyle(fontSize: 16, color: Colors.black87),
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          controller?.resumeCamera();
-                          setState(() {
-                            scanCompleted = false;
-                            scanResult = null;
-                            responseData = null;
-                          });
-                        },
-                        icon: const Icon(Icons.refresh),
-                        label: const Text("Restart Scanner"),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue[700],
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
+
 
 // class SecurityGateScanner extends StatefulWidget {
 //   const SecurityGateScanner({super.key});

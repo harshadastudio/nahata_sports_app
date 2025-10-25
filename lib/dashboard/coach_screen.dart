@@ -1,9 +1,12 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../auth/login.dart';
 import '../screens/login_screen.dart';
+import '../services/api_service.dart';
 
 // class CoachDashboardScreen extends StatefulWidget {
 //   const CoachDashboardScreen({Key? key}) : super(key: key);
@@ -426,7 +429,6 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
   //     setState(() => isLoading = false);
   //   }
   // }
-
   Future<void> markAsPaid(int feeId) async {
     try {
       final response = await http.post(
@@ -438,6 +440,7 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
 
       if (response.statusCode == 200 && data['status'] == true) {
         setState(() {
+          // update main fees list
           final index = fees.indexWhere((f) => f.id == feeId);
           if (index != -1) {
             fees[index] = fees[index].copyWith(
@@ -445,6 +448,12 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
               dueDate: data['data']['next_due_date'],
               paidDate: data['data']['paid_date'],
             );
+          }
+
+          // also update displayedFees list
+          final displayIndex = displayedFees.indexWhere((f) => f.id == feeId);
+          if (displayIndex != -1) {
+            displayedFees[displayIndex] = fees[index];
           }
         });
 
@@ -463,6 +472,43 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
       );
     }
   }
+
+  // Future<void> markAsPaid(int feeId) async {
+  //   try {
+  //     final response = await http.post(
+  //       Uri.parse("https://nahatasports.com/api/fees/markPaid/$feeId"),
+  //     );
+  //
+  //     final data = json.decode(response.body);
+  //     print("Mark Paid Response: $data");
+  //
+  //     if (response.statusCode == 200 && data['status'] == true) {
+  //       setState(() {
+  //         final index = fees.indexWhere((f) => f.id == feeId);
+  //         if (index != -1) {
+  //           fees[index] = fees[index].copyWith(
+  //             status: "paid",
+  //             dueDate: data['data']['next_due_date'],
+  //             paidDate: data['data']['paid_date'],
+  //           );
+  //         }
+  //       });
+  //
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(content: Text(data['message'] ?? "Fee marked as paid ✅")),
+  //       );
+  //     } else {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(content: Text(data['message'] ?? "Failed to update")),
+  //       );
+  //     }
+  //   } catch (e) {
+  //     print("Error in markAsPaid: $e");
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(content: Text("Error: $e")),
+  //     );
+  //   }
+  // }
 
   Color getStatusColor(String status) {
     switch (status.toLowerCase()) {
@@ -498,18 +544,33 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
           leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.white),
             onPressed: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => LoginScreen()),
-              );
+              SystemNavigator.pop(); // 👈 exit app cleanly
             },
           ),
           title: const Text(
             "Coach Dashboard",
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+            ),
           ),
           centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.white),
+              onPressed: () async {
+                await AuthService.logout();
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                );
+              },
+            ),
+          ],
         ),
+
         body: isLoading
             ? const Center(child: CircularProgressIndicator())
             : FadeTransition(
@@ -574,31 +635,34 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
 
                 const SizedBox(height: 20),
                 // STUDENT CARDS
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: displayedFees.length,
-                  itemBuilder: (context, index) {
-                    final fee = displayedFees[index];
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                      child: _studentCard(
-                        fee.studentName,
-                        fee.sport ?? 'N/A',
-                        fee.timing ?? 'N/A',
-                        fee.status,
-                        fee.dueDate,
-                        getStatusColor(fee.status),
-                        "Mark Paid",
-                        paidDate: fee.paidDate,
-                        amount: fee.amount,
-                        onMarkPaid: fee.status.toLowerCase() == "paid"
-                            ? null
-                            : () => markAsPaid(fee.id),
-                      ),
-                    );
-                  },
+                RefreshIndicator(
+                  onRefresh: fetchFees,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: displayedFees.length,
+                    itemBuilder: (context, index) {
+                      final fee = displayedFees[index];
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        child: _studentCard(
+                          fee.studentName,
+                          fee.sport ?? 'N/A',
+                          fee.timing ?? 'N/A',
+                          fee.status,
+                          fee.dueDate,
+                          getStatusColor(fee.status),
+                          "Mark Paid",
+                          paidDate: fee.paidDate,
+                          amount: fee.amount,
+                          onMarkPaid: fee.status.toLowerCase() == "paid"
+                              ? null
+                              : () => markAsPaid(fee.id),
+                        ),
+                      );
+                    },
+                  ),
                 ),
 
 
@@ -826,13 +890,17 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
                               if ((response.statusCode == 200 || response.statusCode == 201) &&
                                   data['status'] == true) {
                                 // Convert API data to Fee object
-                                final newFee = Fee.fromJson(data['data']);
-
-                                fees.add(newFee);
-                                _listKey.currentState?.insertItem(
-                                  fees.length - 1,
-                                  duration: const Duration(milliseconds: 500),
-                                );
+                                // final newFee = Fee.fromJson(data['data']);
+                                // setState(() {
+                                //   fees.add(newFee);
+                                //   displayedFees.add(newFee); // 🔥 ensures dashboard updates
+                                // });
+                                await fetchFees();
+                                // fees.add(newFee);
+                                // _listKey.currentState?.insertItem(
+                                //   fees.length - 1,
+                                //   duration: const Duration(milliseconds: 500),
+                                // );
 
                                 Navigator.pop(context); // close sheet
 

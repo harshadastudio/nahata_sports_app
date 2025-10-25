@@ -1466,8 +1466,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../auth/login.dart';
 import '../screens/login_screen.dart';
 
 // class AdminDashboardScreen extends StatefulWidget {
@@ -2559,6 +2561,8 @@ import '../screens/login_screen.dart';
 
 import 'dart:math' as math;
 
+import '../services/api_service.dart';
+
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
 
@@ -2957,12 +2961,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.white),
             onPressed: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => LoginScreen(),
-                ),
-              );
+              SystemNavigator.pop();
             },
           ),
           title: const Text(
@@ -2974,7 +2973,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             ),
           ),
           centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.white),
+              onPressed: () async {
+                await AuthService.logout();
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                );
+              },
+            ),
+          ],
         ),
+
         body: isLoading
             ? const Center(child: CircularProgressIndicator())
             : FadeTransition(
