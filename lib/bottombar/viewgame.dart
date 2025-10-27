@@ -11,7 +11,9 @@ import 'Custombottombar.dart';
 
 
 class Viewgame extends StatefulWidget {
-  const Viewgame({super.key});
+  final String locationName; // 👈 add t, required String locationNamehis line
+
+  const Viewgame({Key? key, required this.locationName}) : super(key: key);
 
   @override
   State<Viewgame> createState() => _ViewgameState();
@@ -24,37 +26,7 @@ class _ViewgameState extends State<Viewgame>
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
 
-  // @override
-  // void initState() {
-  //   super.initState();
-  //   _fadeController = AnimationController(
-  //     duration: const Duration(milliseconds: 800),
-  //     vsync: this,
-  //   );
-  //   _scaleController = AnimationController(
-  //     duration: const Duration(milliseconds: 600),
-  //     vsync: this,
-  //   );
-  //
-  //   _fadeAnimation = Tween<double>(
-  //     begin: 0.0,
-  //     end: 1.0,
-  //   ).animate(CurvedAnimation(
-  //     parent: _fadeController,
-  //     curve: Curves.easeInOut,
-  //   ));
-  //
-  //   _scaleAnimation = Tween<double>(
-  //     begin: 0.8,
-  //     end: 1.0,
-  //   ).animate(CurvedAnimation(
-  //     parent: _scaleController,
-  //     curve: Curves.elasticOut,
-  //   ));
-  //
-  //   _fadeController.forward();
-  //   _scaleController.forward();
-  // }
+
   late Future<List<Sport>> _sportsFuture;
 
   @override
@@ -81,7 +53,10 @@ class _ViewgameState extends State<Viewgame>
     _scaleController.forward();
 
     // 🔥 Fetch games by location (example: "Sinhgad Rd")
-    _sportsFuture = Api_loc_Service.fetchSportsByLocation("Sinhgad Rd");
+    _sportsFuture = Api_loc_Service.fetchSportsByLocation(widget.locationName);
+
+    // _sportsFuture = Api_loc_Service.fetchSportsByLocation("Sinhgad Rd");
+    // _sportsFuture = Api_loc_Service.fetchSportsByLocation("Gangadham Chowk");
   }
 
   @override
@@ -172,7 +147,7 @@ class _ViewgameState extends State<Viewgame>
               children: [
                 const SizedBox(height: 10),
                 Text(
-                  'Games at Sinhgad Rd',
+                  'Games at ${widget.locationName}',
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.grey[600],
@@ -235,16 +210,46 @@ class _ViewgameState extends State<Viewgame>
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
-                    } else if (snapshot.hasError) {
-                      return Center(
-                        child: Text(
-                          "Error: ${snapshot.error}",
-                          style: const TextStyle(color: Colors.red),
+                    }
+                    else if (snapshot.hasError) {
+                      return AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 700),
+                        transitionBuilder: (child, animation) =>
+                            ScaleTransition(scale: animation, child: child),
+                        child: Column(
+                          key: ValueKey('no_data'),
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.sentiment_dissatisfied_outlined,
+                              color: Colors.grey[400],
+                              size: 80,
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              "No data found",
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.black54,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                       );
-                    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return const Center(child: Text("No sports found"));
                     }
+
+                    // else if (snapshot.hasError) {
+                    //   return Center(
+                    //     child: Text(
+                    //       "Error: ${snapshot.error}",
+                    //       style: const TextStyle(color: Colors.red),
+                    //     ),
+                    //   );
+                    // } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                    //   return const Center(child: Text("No sports found"));
+                    // }
 
                     final sports = snapshot.data!;
 
@@ -304,7 +309,7 @@ class _ViewgameState extends State<Viewgame>
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => SlotBookingScreen(game: title,location:'Sinhgad Road' ,),
+                      builder: (_) => SlotBookingScreen(game: title,location: widget.locationName ,),
                     ),
                   );
                 },
@@ -586,9 +591,6 @@ class _ViewgameState extends State<Viewgame>
     );
   }
 }
-
-
-
 
 class Api_loc_Service {
   static Future<List<Sport>> fetchSportsByLocation(String location) async {

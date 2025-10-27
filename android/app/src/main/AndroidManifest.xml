@@ -129,26 +129,35 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.nahata_sports_app">
 
-    <!-- Permissions -->
+    <!-- 🌐 Network & Internet Permissions -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 📍 Location Permissions -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-    <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- Optional for Android 10+ -->
-    <!-- <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" /> -->
+    <!-- Optional for background access (if needed in future): -->
+    <!-- <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" /> -->
 
-    <!-- Camera feature (not required) -->
+    <!-- 💾 Storage Permissions (optional; not needed for Android 13+) -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- 🔔 Notifications -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 📷 Optional Camera Feature -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
+        android:name="${applicationName}"
         android:label="Nahata Sports"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true">
 
         <activity
             android:name=".MainActivity"
@@ -160,48 +169,53 @@
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
 
-            <!-- Flutter normal theme -->
+            <!-- 🌈 Flutter Normal Theme -->
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
 
-            <!-- Launcher intent -->
+            <!-- 🚀 Launcher Intent -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep link intent -->
+            <!-- 🔗 Deep Link Intent -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="nahatasports" android:host="pass" />
             </intent-filter>
+
+            <!-- 🔔 Firebase Notification Intent -->
             <intent-filter>
                 <action android:name="FLUTTER_NOTIFICATION_CLICK" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-        <!-- Firebase Messaging Service -->
+
+        <!-- 🔔 Firebase Notification Channel -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="high_importance_channel" />
-        <!-- Razorpay GPay feature -->
+
+        <!-- 💳 Razorpay GPay Integration -->
         <meta-data
             android:name="com.razorpay.feature.gpay"
             android:value="true" />
 
-        <!-- Flutter embedding version -->
+        <!-- 🔧 Flutter Embedding -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- 🔔 Default Notification Icon -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
 
-
-        <!-- Optional: Google Maps API Key -->
+        <!-- 🗺️ Optional: Google Maps API Key -->
         <!--
         <meta-data
             android:name="com.google.android.geo.API_KEY"
@@ -209,7 +223,7 @@
         -->
     </application>
 
-    <!-- Queries for process text (optional) -->
+    <!-- 🧩 Optional Queries Section -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
@@ -217,4 +231,99 @@
         </intent>
     </queries>
 </manifest>
+
+
+
+
+<!--<manifest xmlns:android="http://schemas.android.com/apk/res/android"-->
+<!--    package="com.nahata_sports_app">-->
+
+<!--    &lt;!&ndash; Permissions &ndash;&gt;-->
+<!--    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />-->
+<!--    <uses-permission android:name="android.permission.INTERNET" />-->
+<!--    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />-->
+<!--    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />-->
+<!--    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />-->
+<!--    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />-->
+<!--    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>-->
+<!--    <uses-permission android:name="android.permission.VIBRATE" />-->
+<!--    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>-->
+<!--    &lt;!&ndash; Optional for Android 10+ &ndash;&gt;-->
+<!--    &lt;!&ndash; <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" /> &ndash;&gt;-->
+
+<!--    &lt;!&ndash; Camera feature (not required) &ndash;&gt;-->
+<!--    <uses-feature android:name="android.hardware.camera" android:required="false" />-->
+
+<!--    <application-->
+<!--        android:label="Nahata Sports"-->
+<!--        android:icon="@mipmap/ic_launcher"-->
+<!--        android:usesCleartextTraffic="true">-->
+
+<!--        <activity-->
+<!--            android:name=".MainActivity"-->
+<!--            android:exported="true"-->
+<!--            android:launchMode="singleTop"-->
+<!--            android:taskAffinity=""-->
+<!--            android:theme="@style/LaunchTheme"-->
+<!--            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"-->
+<!--            android:hardwareAccelerated="true"-->
+<!--            android:windowSoftInputMode="adjustResize">-->
+
+<!--            &lt;!&ndash; Flutter normal theme &ndash;&gt;-->
+<!--            <meta-data-->
+<!--                android:name="io.flutter.embedding.android.NormalTheme"-->
+<!--                android:resource="@style/NormalTheme" />-->
+
+<!--            &lt;!&ndash; Launcher intent &ndash;&gt;-->
+<!--            <intent-filter>-->
+<!--                <action android:name="android.intent.action.MAIN" />-->
+<!--                <category android:name="android.intent.category.LAUNCHER" />-->
+<!--            </intent-filter>-->
+
+<!--            &lt;!&ndash; Deep link intent &ndash;&gt;-->
+<!--            <intent-filter>-->
+<!--                <action android:name="android.intent.action.VIEW" />-->
+<!--                <category android:name="android.intent.category.DEFAULT" />-->
+<!--                <category android:name="android.intent.category.BROWSABLE" />-->
+<!--                <data android:scheme="nahatasports" android:host="pass" />-->
+<!--            </intent-filter>-->
+<!--            <intent-filter>-->
+<!--                <action android:name="FLUTTER_NOTIFICATION_CLICK" />-->
+<!--                <category android:name="android.intent.category.DEFAULT" />-->
+<!--            </intent-filter>-->
+<!--        </activity>-->
+<!--        &lt;!&ndash; Firebase Messaging Service &ndash;&gt;-->
+<!--        <meta-data-->
+<!--            android:name="com.google.firebase.messaging.default_notification_channel_id"-->
+<!--            android:value="high_importance_channel" />-->
+<!--        &lt;!&ndash; Razorpay GPay feature &ndash;&gt;-->
+<!--        <meta-data-->
+<!--            android:name="com.razorpay.feature.gpay"-->
+<!--            android:value="true" />-->
+
+<!--        &lt;!&ndash; Flutter embedding version &ndash;&gt;-->
+<!--        <meta-data-->
+<!--            android:name="flutterEmbedding"-->
+<!--            android:value="2" />-->
+<!--        <meta-data-->
+<!--            android:name="com.google.firebase.messaging.default_notification_icon"-->
+<!--            android:resource="@mipmap/ic_launcher" />-->
+
+
+<!--        &lt;!&ndash; Optional: Google Maps API Key &ndash;&gt;-->
+<!--        &lt;!&ndash;-->
+<!--        <meta-data-->
+<!--            android:name="com.google.android.geo.API_KEY"-->
+<!--            android:value="YOUR_API_KEY_HERE" />-->
+<!--        &ndash;&gt;-->
+<!--    </application>-->
+
+<!--    &lt;!&ndash; Queries for process text (optional) &ndash;&gt;-->
+<!--    <queries>-->
+<!--        <intent>-->
+<!--            <action android:name="android.intent.action.PROCESS_TEXT" />-->
+<!--            <data android:mimeType="text/plain" />-->
+<!--        </intent>-->
+<!--    </queries>-->
+<!--</manifest>-->
 

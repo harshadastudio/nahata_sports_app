@@ -6,6 +6,7 @@ import 'BookPlay.dart';
 import 'Viewpass.dart';
 import 'event.dart';
 import 'home.dart';
+import 'morescreen.dart';
 
 class CustomBottomNav extends StatefulWidget {
   const CustomBottomNav({super.key});
@@ -20,11 +21,12 @@ class _CustomBottomNavState extends State<CustomBottomNav> {
   final List<Widget> _screens = [
     // HomeScreen(studentId: ApiService.currentUser?['student_id']?.toString() ?? '',),
     HomeScreen(),
+    VenueListScreen(),
+    // Bookplay(),
+    SportsScreen(),
     EventsScreen(),
-    Viewpass(),
-    Bookplay(),
-    SportsScreen()
-    // CoachScreen()
+    // Viewpass(),
+    MoreScreen()
   ];
   @override
   Widget build(BuildContext context) {
@@ -47,12 +49,12 @@ class _CustomBottomNavState extends State<CustomBottomNav> {
         unselectedFontSize: 12,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.book_online), label: 'Book'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.person_2_outlined), label: 'Coaching'),
           BottomNavigationBarItem(icon: Icon(Icons.event), label: 'Events'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.grid_view), label: 'View Pass'),
-          BottomNavigationBarItem(icon: Icon(Icons.sports), label: 'Book a Play'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.person_2_outlined), label: 'Coach'),
+              icon: Icon(Icons.menu), label: 'More'),
         ],
       ),
     );

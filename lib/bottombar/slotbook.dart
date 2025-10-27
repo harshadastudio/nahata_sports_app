@@ -156,7 +156,9 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
               }
             });
           });
-
+        print(data);
+        print(responseData);
+        print(response);
           final currentSelected = selectedSlots.where((sel) {
             return parsedSlots.any((p) =>
             p['court'] == sel['court'] &&
@@ -275,7 +277,7 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
         onTap: (){
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => Viewgame()),
+            MaterialPageRoute(builder: (context) => Viewgame(locationName: widget.location,)),
           );
         },
         child: const Icon(
@@ -1936,3 +1938,6 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
 //   bool isSameDate(DateTime a, DateTime b) =>
 //       a.year == b.year && a.month == b.month && a.day == b.day;
 // }
+
+
+
