@@ -11,7 +11,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:nahata_app/bottombar/Custombottombar.dart';
-import 'package:nahata_app/bottombar/viewgame.dart';
+import 'package:nahata_app/bottombar/viewgame.dart' hide Viewgame;
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -291,6 +291,13 @@ import 'package:geolocator/geolocator.dart';
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:carousel_slider/carousel_slider.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'Viewgame.dart';
+
 class VenueListScreen extends StatefulWidget {
   const VenueListScreen({Key? key}) : super(key: key);
 
@@ -299,45 +306,109 @@ class VenueListScreen extends StatefulWidget {
 }
 
 class _VenueListScreenState extends State<VenueListScreen> {
-
   String selectedSport = 'All Sports';
   late String selectedDate;
-
   int _currentIndex = 0;
+
+  bool isLoading = true;
+  Map<String, List<String>> venueSports = {}; // venueName -> list of sports
 
   final List<String> sliderImages = [
     'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800',
-    // 'https://images.unsplash.com/photo-1519766030446-ae88ffa134c0?w=800',
     'https://images.unsplash.com/photo-1521412644187-c49fa049e84d?w=800',
   ];
+
   @override
   void initState() {
     super.initState();
-    // Format date like "27 Oct" or "27th Oct"
     DateTime now = DateTime.now();
     String day = now.day.toString();
     String month = DateFormat('MMM').format(now);
-    selectedDate = '$day $month'; // or '$day${getDaySuffix(now.day)} $month';
+    selectedDate = '$day $month';
+    fetchVenueSports();
   }
 
-  // Optional: if you want to show "27th Oct" instead of "27 Oct"
-  String getDaySuffix(int day) {
-    if (day >= 11 && day <= 13) {
-      return 'th';
-    }
-    switch (day % 10) {
-      case 1:
-        return 'st';
-      case 2:
-        return 'nd';
-      case 3:
-        return 'rd';
-      default:
-        return 'th';
+  // ✅ Fetch data dynamically
+  Future<void> fetchVenueSports() async {
+    try {
+      final response =
+      await http.get(Uri.parse('https://nahatasports.com/sports_list'));
+
+      if (response.statusCode == 200) {
+        final jsonResponse = json.decode(response.body);
+        final data = jsonResponse['data'] as Map<String, dynamic>;
+
+        Map<String, List<String>> parsed = {};
+        data.forEach((venueName, sportsList) {
+          parsed[venueName] = (sportsList as List)
+              .map<String>((item) => item['sport_name'].toString())
+              .toList();
+        });
+
+        setState(() {
+          venueSports = parsed;
+          isLoading = false;
+        });
+      } else {
+        setState(() => isLoading = false);
+      }
+    } catch (e) {
+      setState(() => isLoading = false);
+      debugPrint('Error fetching sports: $e');
     }
   }
+  List<String> getFilteredVenues() {
+    // ✅ Always show both venues for "All Sports"
+    if (selectedSport == 'All Sports') {
+      return ['Sinhgad Rd', 'Gangadham Chowk'];
+    }
+
+    // ✅ Otherwise, filter dynamically based on API data
+    return venueSports.entries
+        .where((entry) => entry.value.contains(selectedSport))
+        .map((entry) => entry.key)
+        .toList();
+  }
+
+  // List<String> getFilteredVenues() {
+  //   if (selectedSport == 'All Sports') return venueSports.keys.toList();
+  //   return venueSports.entries
+  //       .where((entry) => entry.value.contains(selectedSport))
+  //       .map((entry) => entry.key)
+  //       .toList();
+  // }
+
+  Widget buildSportChip(String label) {
+    bool isSelected = selectedSport == label;
+
+    return GestureDetector(
+      onTap: () => setState(() => selectedSport = label),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        margin: const EdgeInsets.only(right: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF5B4FC7) : Colors.white,
+          border: Border.all(
+            color: isSelected ? const Color(0xFF5B4FC7) : Colors.grey.shade300,
+          ),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.black87,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final filteredVenues = getFilteredVenues();
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -352,11 +423,15 @@ class _VenueListScreenState extends State<VenueListScreen> {
         ),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : venueSports.isEmpty
+          ? const Center(child: Text("No venues available"))
+          : SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Hero Image with carousel dots
+            // ✅ Carousel
             Stack(
               alignment: Alignment.bottomCenter,
               children: [
@@ -364,19 +439,20 @@ class _VenueListScreenState extends State<VenueListScreen> {
                   options: CarouselOptions(
                     height: 200,
                     autoPlay: true,
-                    autoPlayInterval: const Duration(seconds: 3),
-                    autoPlayAnimationDuration: const Duration(milliseconds: 500),
+                    autoPlayInterval:
+                    const Duration(seconds: 3),
+                    autoPlayAnimationDuration:
+                    const Duration(milliseconds: 500),
                     enlargeCenterPage: true,
                     viewportFraction: 1,
                     onPageChanged: (index, reason) {
-                      setState(() {
-                        _currentIndex = index;
-                      });
+                      setState(() => _currentIndex = index);
                     },
                   ),
                   items: sliderImages.map((imageUrl) {
                     return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      margin:
+                      const EdgeInsets.symmetric(horizontal: 16),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
                         image: DecorationImage(
@@ -387,17 +463,17 @@ class _VenueListScreenState extends State<VenueListScreen> {
                     );
                   }).toList(),
                 ),
-
-                // ✅ Dots Indicator
                 Positioned(
                   bottom: 12,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: sliderImages.asMap().entries.map((entry) {
+                    children:
+                    sliderImages.asMap().entries.map((entry) {
                       return Container(
                         width: 8,
                         height: 8,
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 3),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: _currentIndex == entry.key
@@ -410,16 +486,19 @@ class _VenueListScreenState extends State<VenueListScreen> {
                 ),
               ],
             ),
-            SizedBox(height: 5,),
-            // Available Venues and Filters
+
+            const SizedBox(height: 5),
+
+            // ✅ Venues Section
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Available Venues (2)',
-                    style: TextStyle(
+                  Text(
+                    'Available Venues',
+                    style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Colors.black87,
@@ -427,59 +506,24 @@ class _VenueListScreenState extends State<VenueListScreen> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Filter Chips Row
+                  // ✅ Sports Filter Row
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-
                     child: Row(
                       children: [
-                        // Date Dropdown
+                        // Date Chip
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
+                              horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
                             color: const Color(0xFF5B4FC7),
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius:
+                            BorderRadius.circular(20),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                selectedDate,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              // const Icon(
-                              //   Icons.keyboard_arrow_down,
-                              //   color: Colors.white,
-                              //   size: 18,
-                              // ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // All Sports Chip
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'All Sports',
-                            style: TextStyle(
-                              color: Colors.black87,
+                          child: Text(
+                            selectedDate,
+                            style: const TextStyle(
+                              color: Colors.white,
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
                             ),
@@ -487,102 +531,9 @@ class _VenueListScreenState extends State<VenueListScreen> {
                         ),
                         const SizedBox(width: 8),
 
-                        // Football Chip
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'Cricket',
-                            style: TextStyle(
-                              color: Colors.black87,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'Basketball',
-                            style: TextStyle(
-                              color: Colors.black87,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'Badminton',
-                            style: TextStyle(
-                              color: Colors.black87,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        // Container(
-                        //   padding: const EdgeInsets.symmetric(
-                        //     horizontal: 16,
-                        //     vertical: 8,
-                        //   ),
-                        //   decoration: BoxDecoration(
-                        //     color: Colors.white,
-                        //     border: Border.all(color: Colors.grey.shade300),
-                        //     borderRadius: BorderRadius.circular(20),
-                        //   ),
-                        //   child: const Text(
-                        //     'Football',
-                        //     style: TextStyle(
-                        //       color: Colors.black87,
-                        //       fontSize: 13,
-                        //       fontWeight: FontWeight.w500,
-                        //     ),
-                        //   ),
-                        // ),
-                        // Container(
-                        //   padding: const EdgeInsets.symmetric(
-                        //     horizontal: 16,
-                        //     vertical: 8,
-                        //   ),
-                        //   decoration: BoxDecoration(
-                        //     color: Colors.white,
-                        //     border: Border.all(color: Colors.grey.shade300),
-                        //     borderRadius: BorderRadius.circular(20),
-                        //   ),
-                        //   child: const Text(
-                        //     'Football',
-                        //     style: TextStyle(
-                        //       color: Colors.black87,
-                        //       fontSize: 13,
-                        //       fontWeight: FontWeight.w500,
-                        //     ),
-                        //   ),
-                        // ),
+                        // ✅ Dynamic sport chips
+                        buildSportChip('All Sports'),
+                        ..._getAllSports().map(buildSportChip),
                       ],
                     ),
                   ),
@@ -591,36 +542,39 @@ class _VenueListScreenState extends State<VenueListScreen> {
               ),
             ),
 
-            // Venue Cards
-            VenueCard(
-              name: 'Sinhgad Rd',
-              address: 'Nahata Sports Complex , Near Veer Baji Pasalkar Chowk, Near Wadgaon Highway Bridge, Wadgaon Bk , Pune-411030',
-              rating: '5.0(2)',
-              imageUrl: 'assets/56.jpg',
-              // sport: 'Pickle ball',
-            ),
-
-            VenueCard(
-              name: 'Gangadham Chowk',
-              address: 'Aai Mata Mandir, Najushree Hall -on the way of, to, Chowk, Ganga Dham, Pune, Maharashtra 411037',
-              rating: '5.0(2)',
-              imageUrl: 'assets/23.webp',
-              // sport: 'Pickle ball',
-            ),
+            // ✅ Filtered Venues List
+            ...filteredVenues.map((venue) {
+              return VenueCard(
+                name: venue,
+                address:
+                venue == 'Sinhgad Rd'
+                    ? 'Nahata Sports Complex , Near Veer Baji Pasalkar Chowk, Near Wadgaon Highway Bridge, Wadgaon Bk , Pune-411030'
+                    : 'Aai Mata Mandir, Najushree Hall -on the way of, to, Chowk, Ganga Dham, Pune, Maharashtra 411037',
+                rating: '5.0(2)',
+                imageUrl: venue == 'Sinhgad Rd'
+                    ? 'assets/56.jpg'
+                    : 'assets/23.webp',
+              );
+            }).toList(),
           ],
         ),
       ),
     );
   }
-}
 
+  // ✅ Collect all unique sports dynamically
+  List<String> _getAllSports() {
+    final Set<String> allSports = {};
+    venueSports.values.forEach(allSports.addAll);
+    return allSports.toList();
+  }
+}
 
 class VenueCard extends StatelessWidget {
   final String name;
   final String address;
   final String rating;
   final String imageUrl;
-  // final String sport;
 
   const VenueCard({
     Key? key,
@@ -628,7 +582,6 @@ class VenueCard extends StatelessWidget {
     required this.address,
     required this.rating,
     required this.imageUrl,
-    // required this.sport,
   }) : super(key: key);
 
   @override
@@ -638,11 +591,11 @@ class VenueCard extends StatelessWidget {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => Viewgame(locationName: name), // dynamic location
+            builder: (_) => Viewgame(locationName: name),
           ),
         );
       },
-      child : Container(
+      child: Container(
         margin: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -652,7 +605,6 @@ class VenueCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Venue Image
             ClipRRect(
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
@@ -665,34 +617,16 @@ class VenueCard extends StatelessWidget {
                 fit: BoxFit.cover,
               ),
             ),
-
-            // Sport Badge
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.sports_tennis,
-                        size: 16,
-                        color: Colors.grey.shade600,
-                      ),
-                      // const SizedBox(width: 4),
-                      // Text(
-                      //   sport,
-                      //   style: TextStyle(
-                      //     fontSize: 12,
-                      //     color: Colors.grey.shade600,
-                      //     fontWeight: FontWeight.w500,
-                      //   ),
-                      // ),
-                    ],
-                  ),
+                  Row(children: [
+                    Icon(Icons.sports_tennis,
+                        size: 16, color: Colors.grey.shade600),
+                  ]),
                   const SizedBox(height: 12),
-
-                  // Venue Name and Rating
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -706,29 +640,22 @@ class VenueCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.star,
-                            size: 16,
-                            color: Colors.amber,
+                      Row(children: [
+                        const Icon(Icons.star,
+                            size: 16, color: Colors.amber),
+                        const SizedBox(width: 4),
+                        Text(
+                          rating,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            rating,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ]),
                     ],
                   ),
                   const SizedBox(height: 6),
-
-                  // Address
                   Text(
                     address,
                     style: TextStyle(
@@ -748,6 +675,42 @@ class VenueCard extends StatelessWidget {
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

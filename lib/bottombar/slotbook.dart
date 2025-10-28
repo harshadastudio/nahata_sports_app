@@ -22,1280 +22,1381 @@ import 'package:nahata_app/bottombar/Viewgame.dart' hide ApiService;
 import 'package:nahata_app/bottombar/bkpayment.dart';
 
 
-
-class SlotBookingScreen extends StatefulWidget {
-  final String location;
-  final String game;
-
-  const SlotBookingScreen({
-    super.key,
-    required this.location,
-    required this.game,
-  });
-
-  @override
-  State<SlotBookingScreen> createState() => _SlotBookingScreenState();
-}
-
-class _SlotBookingScreenState extends State<SlotBookingScreen> {
-  DateTime _selectedDay = DateTime.now();
-  bool isLoading = false;
-  String? error;
-
-  List<Map<String, dynamic>> courts = [];
-  String? selectedCourt;
-  String? selectedHourType;
-
-  List<Map<String, dynamic>> selectedSlots = [];
-  int totalPrice = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    fetchCourtsWisePrice();
-  }
-
-  // ---------------------- Day matcher ----------------------
-  bool isSlotForSelectedDay(String dayKey, String selectedDayName) {
-    dayKey = dayKey.toLowerCase().trim();
-    selectedDayName = selectedDayName.toLowerCase();
-
-    final dayMap = {
-      'mon': 'monday',
-      'tue': 'tuesday',
-      'wed': 'wednesday',
-      'thu': 'thursday',
-      'fri': 'friday',
-      'sat': 'saturday',
-      'sun': 'sunday'
-    };
-
-    if (dayMap.containsKey(dayKey)) {
-      return dayMap[dayKey] == selectedDayName;
-    }
-
-    if (dayKey.contains('–')) {
-      final parts = dayKey.split('–').map((d) => d.trim()).toList();
-      if (parts.length == 2) {
-        final daysOrder = [
-          'monday',
-          'tuesday',
-          'wednesday',
-          'thursday',
-          'friday',
-          'saturday',
-          'sunday'
-        ];
-        final start = dayMap[parts[0]] ?? parts[0];
-        final end = dayMap[parts[1]] ?? parts[1];
-
-        final startIndex = daysOrder.indexOf(start);
-        final endIndex = daysOrder.indexOf(end);
-
-        if (startIndex != -1 && endIndex != -1) {
-          if (startIndex <= endIndex) {
-            return daysOrder.sublist(startIndex, endIndex + 1).contains(selectedDayName);
-          } else {
-            return (daysOrder.sublist(startIndex) + daysOrder.sublist(0, endIndex + 1))
-                .contains(selectedDayName);
-          }
-        }
-      }
-    }
-
-    if (dayKey.contains('all') || dayKey.contains('every')) return true;
-    return dayKey == selectedDayName;
-  }
-
-  // ---------------------- API fetch ----------------------
-  Future<void> fetchCourtsWisePrice() async {
-    setState(() {
-      isLoading = true;
-      error = null;
-    });
-
-    final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDay);
-    final selectedDayName = DateFormat('EEEE').format(_selectedDay);
-
-    final url = Uri.https(
-      "nahatasports.com",
-      "/api/courts_wise_price",
-      {
-        "date": formattedDate,
-        "sport_name": widget.game,
-        "location": widget.location,
-      },
-    );
-
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        if (responseData["status"] == "success") {
-          final data = responseData["data"] as Map<String, dynamic>;
-          final List<Map<String, dynamic>> parsedSlots = [];
-
-          data.forEach((courtName, courtData) {
-            final courtMap = courtData as Map<String, dynamic>;
-            courtMap.forEach((hourType, daysMap) {
-              if (daysMap is Map<String, dynamic>) {
-                daysMap.forEach((dayType, slotList) {
-                  if (slotList is List &&
-                      isSlotForSelectedDay(dayType, selectedDayName)) {
-                    for (var slot in slotList) {
-                      parsedSlots.add({
-                        "court": courtName,
-                        "hourType": hourType,
-                        "dayType": dayType,
-                        "time": slot["time"].toString(),
-                        "price": int.tryParse(slot["price"].toString()) ?? 0,
-                      });
-                    }
-                  }
-                });
-              }
-            });
-          });
-        print(data);
-        print(responseData);
-        print(response);
-          final currentSelected = selectedSlots.where((sel) {
-            return parsedSlots.any((p) =>
-            p['court'] == sel['court'] &&
-                p['hourType'] == sel['hourType'] &&
-                p['time'] == sel['time']);
-          }).toList();
-
-          setState(() {
-            courts = parsedSlots;
-            selectedSlots = currentSelected;
-            totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
-
-            final courtNames = _getCourtNames();
-            if (courtNames.isNotEmpty &&
-                (selectedCourt == null || !courtNames.contains(selectedCourt))) {
-              selectedCourt = courtNames.first;
-            }
-            final hourTypes = _getHourTypesForCourt(selectedCourt);
-            if (hourTypes.isNotEmpty &&
-                (selectedHourType == null ||
-                    !hourTypes.contains(selectedHourType))) {
-              selectedHourType = hourTypes.first;
-            }
-          });
-        } else {
-          setState(() {
-            courts = [];
-            selectedSlots.clear();
-            totalPrice = 0;
-            error = responseData["message"]?.toString() ?? "No data";
-          });
-        }
-      } else {
-        setState(() => error = "Server error ${response.statusCode}");
-      }
-    } catch (e) {
-      setState(() => error = "Error: $e");
-    } finally {
-      setState(() => isLoading = false);
-    }
-  }
-
-  // ---------------------- Helpers ----------------------
-  List<String> _getCourtNames() {
-    final names = courts.map((s) => s['court'].toString()).toSet().toList();
-    names.sort();
-    return names;
-  }
-
-  List<String> _getHourTypesForCourt(String? court) {
-    if (court == null) return [];
-    final hourTypes = courts
-        .where((s) => s['court'] == court)
-        .map((s) => s['hourType'].toString())
-        .toSet()
-        .toList();
-    hourTypes.sort();
-    return hourTypes;
-  }
-
-  List<Map<String, dynamic>> _getSlotsForCourtAndHour(
-      String? court, String? hourType) {
-    if (court == null || hourType == null) return [];
-    final list = courts
-        .where((s) => s['court'] == court && s['hourType'] == hourType)
-        .toList();
-    list.sort((a, b) => a['time'].toString().compareTo(b['time'].toString()));
-    return list;
-  }
-
-  void toggleSlot(Map<String, dynamic> slot) {
-    setState(() {
-      final exists = selectedSlots.any((s) =>
-      s['court'] == slot['court'] &&
-          s['hourType'] == slot['hourType'] &&
-          s['time'] == slot['time']);
-      if (exists) {
-        selectedSlots.removeWhere((s) =>
-        s['court'] == slot['court'] &&
-            s['hourType'] == slot['hourType'] &&
-            s['time'] == slot['time']);
-      } else {
-        selectedSlots.add(slot);
-      }
-      totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
-    });
-  }
-
-  void removeAllSlots() {
-    setState(() {
-      selectedSlots.clear();
-      totalPrice = 0;
-    });
-  }
-
-  // ---------------------- UI ----------------------
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: _buildAppBar(),
-      body: Column(
-        children: [
-          Expanded(child: _buildBody()),
-          _buildBottomBar(),
-        ],
-      ),
-    );
-  }
-
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      backgroundColor: Colors.white,
-      elevation: 0,
-      leading: InkWell(
-        onTap: (){
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => Viewgame(locationName: widget.location,)),
-          );
-        },
-        child: const Icon(
-          Icons.arrow_back_ios_new,
-          color: Colors.black87,
-          size: 18,
-        ),
-      ),
-      title: const Text(
-        "Book and Play",
-        style: TextStyle(
-          color: Colors.black,
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-        ),
-        textAlign: TextAlign.center
-      ),
-      centerTitle: false,
-      actions: [
-        if (selectedSlots.isNotEmpty)
-          TextButton(
-            onPressed: removeAllSlots,
-            child: const Text(
-              "Clear All",
-              style: TextStyle(
-                color: Colors.red,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildBody() {
-    if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(
-          color: Color(0xFF6366F1),
-        ),
-      );
-    }
-    if (error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.red.shade300,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              error!,
-              style: const TextStyle(
-                color: Colors.red,
-                fontSize: 16,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: fetchCourtsWisePrice,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6366F1),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-              ),
-              child: const Text(
-                "Retry",
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 20),
-          _buildGameTitle(),
-          const SizedBox(height: 24),
-          _buildCalendar(),
-          const SizedBox(height: 24),
-          _buildCourtsList(),
-          const SizedBox(height: 100), // Extra space for bottom bar
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGameTitle() {
-    return Center(
-      child: Column(
-        children: [
-          Text(
-            widget.game,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            widget.location,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCalendar() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A237E),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF1A237E).withOpacity(0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                DateFormat('MMMM yyyy').format(_selectedDay),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedDay = DateTime(
-                          _selectedDay.year,
-                          _selectedDay.month - 1,
-                          1,
-                        );
-                      });
-                      fetchCourtsWisePrice();
-                    },
-                    child: const Icon(
-                      Icons.keyboard_arrow_left,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedDay = DateTime(
-                          _selectedDay.year,
-                          _selectedDay.month + 1,
-                          1,
-                        );
-                      });
-                      fetchCourtsWisePrice();
-                    },
-                    child: const Icon(
-                      Icons.keyboard_arrow_right,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildWeekDaysHeader(),
-          const SizedBox(height: 12),
-          _buildCalendarGrid(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWeekDaysHeader() {
-    const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-    return Row(
-      children: days.map((day) => Expanded(
-        child: Center(
-          child: Text(
-            day,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      )).toList(),
-    );
-  }
-
-  Widget _buildCalendarGrid() {
-    final firstDayOfMonth = DateTime(_selectedDay.year, _selectedDay.month, 1);
-    final lastDayOfMonth = DateTime(_selectedDay.year, _selectedDay.month + 1, 0);
-    final startDate = firstDayOfMonth.subtract(Duration(days: firstDayOfMonth.weekday % 7));
-    final today = DateTime.now();
-
-    return Column(
-      children: List.generate(6, (weekIndex) {
-        return Row(
-          children: List.generate(7, (dayIndex) {
-            final date = startDate.add(Duration(days: weekIndex * 7 + dayIndex));
-            final isCurrentMonth = date.month == _selectedDay.month;
-            final isSelected = isSameDate(date, _selectedDay);
-            final isToday = isSameDate(date, today);
-            final isPast = date.isBefore(today) && !isToday;
-
-            if (!isCurrentMonth) {
-              return const Expanded(child: SizedBox(height: 40));
-            }
-
-            return Expanded(
-              child: GestureDetector(
-                onTap: isPast ? null : () {
-                  setState(() => _selectedDay = date);
-                  fetchCourtsWisePrice();
-                },
-                child: Container(
-                  height: 40,
-                  margin: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? Colors.white
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                    border: isToday && !isSelected
-                        ? Border.all(color: Colors.white70, width: 1)
-                        : null,
-                  ),
-                  child: Center(
-                    child: Text(
-                      date.day.toString(),
-                      style: TextStyle(
-                        color: isPast
-                            ? Colors.white38
-                            : (isSelected
-                            ? const Color(0xFF1A237E)
-                            : Colors.white),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
-        );
-      }).where((widget) => widget != null).take(5).toList(),
-    );
-  }
-
-  Widget _buildCourtsList() {
-    final courtNames = _getCourtNames();
-    if (courtNames.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(20),
-        child: Center(
-          child: Column(
-            children: [
-              Icon(
-                Icons.sports_tennis,
-                size: 64,
-                color: Colors.grey.shade400,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                "No courts available for this date.",
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontSize: 16,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      children: [
-        ...courtNames.map((court) => _buildCourtCard(court)).toList(),
-        if (selectedSlots.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          _buildSelectedSlotsList(),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildCourtCard(String court) {
-    final hourTypes = _getHourTypesForCourt(court);
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 5,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          title: Row(
-            children: [
-              Icon(
-                Icons.sports_tennis,
-                color: const Color(0xFF1A237E),
-                size: 20,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                court,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              const Spacer(),
-            ],
-          ),
-          trailing: const Icon(
-            Icons.keyboard_arrow_down,
-            color: Color(0xFF1A237E),
-          ),
-          children: [
-            if (hourTypes.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: hourTypes.map((hourType) {
-                    final slots = _getSlotsForCourtAndHour(court, hourType);
-                    if (slots.isEmpty) return const SizedBox.shrink();
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: hourType.toLowerCase().contains('happy')
-                                ? Colors.orange.shade100
-                                : const Color(0xFF1A237E).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            hourType,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: hourType.toLowerCase().contains('happy')
-                                  ? Colors.orange.shade700
-                                  : const Color(0xFF1A237E),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: slots.map((slot) => _buildSlotChip(slot)).toList(),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                    );
-                  }).toList(),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSlotChip(Map<String, dynamic> slot) {
-    final isSelected = selectedSlots.any((s) =>
-    s['court'] == slot['court'] &&
-        s['hourType'] == slot['hourType'] &&
-        s['time'] == slot['time']);
-    final isSoldOut = (slot['price'] == 0);
-
-    return GestureDetector(
-      onTap: isSoldOut ? null : () => toggleSlot(slot),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF1A237E)
-              : (isSoldOut ? Colors.grey.shade300 : Colors.white),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected
-                ? const Color(0xFF1A237E)
-                : (isSoldOut ? Colors.grey.shade300 : Colors.grey.shade300),
-            width: isSelected ? 2 : 1,
-          ),
-          boxShadow: isSelected ? [
-            BoxShadow(
-              color: const Color(0xFF1A237E).withOpacity(0.3),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ] : null,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.access_time,
-                  size: 14,
-                  color: isSelected
-                      ? Colors.white
-                      : (isSoldOut ? Colors.grey : Colors.grey.shade600),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  slot['time'],
-                  style: TextStyle(
-                    color: isSelected
-                        ? Colors.white
-                        : (isSoldOut ? Colors.grey : Colors.black87),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              isSoldOut ? "Sold Out" : "₹${slot['price']}",
-              style: TextStyle(
-                color: isSelected
-                    ? Colors.white70
-                    : (isSoldOut ? Colors.grey : Colors.grey.shade600),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSelectedSlotsList() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.green.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.green.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.green.shade100,
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.check_circle,
-                color: Colors.green.shade600,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                "Selected Slots",
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.green.shade700,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                "${selectedSlots.length} slot${selectedSlots.length > 1 ? 's' : ''}",
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.green.shade600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Column(
-            children: selectedSlots.map((slot) => _buildSelectedSlotItem(slot)).toList(),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(
-              color: Colors.green.shade100,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  "Total Amount",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.green.shade700,
-                  ),
-                ),
-                Text(
-                  "₹$totalPrice",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green.shade700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Widget _buildSelectedSlotItem(Map<String, dynamic> slot) {
-  //   return Container(
-  //     margin: const EdgeInsets.only(bottom: 8),
-  //     padding: const EdgeInsets.all(12),
-  //     decoration: BoxDecoration(
-  //       color: Colors.white,
-  //       borderRadius: BorderRadius.circular(8),
-  //       border: Border.all(color: Colors.green.shade200),
-  //     ),
-  //     child: Row(
-  //       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  //       children: [
-  //         Expanded(
-  //           child: Column(
-  //             crossAxisAlignment: CrossAxisAlignment.start,
-  //             children: [
-  //               Text(
-  //                 slot['court'],
-  //                 style: const TextStyle(
-  //                   fontSize: 14,
-  //                   fontWeight: FontWeight.w600,
-  //                   color: Colors.black87,
-  //                 ),
-  //               ),
-  //               const SizedBox(height: 4),
-  //               Row(
-  //                 children: [
-  //                   Icon(
-  //                     Icons.access_time,
-  //                     size: 16,
-  //                     color: Colors.grey.shade600,
-  //                   ),
-  //                   const SizedBox(width: 4),
-  //                   Text(
-  //                     slot['time'],
-  //                     style: TextStyle(
-  //                       fontSize: 13,
-  //                       color: Colors.grey.shade600,
-  //                     ),
-  //                   ),
-  //                   const SizedBox(width: 16),
-  //                   Icon(
-  //                     Icons.category,
-  //                     size: 16,
-  //                     color: Colors.grey.shade600,
-  //                   ),
-  //                   const SizedBox(width: 4),
-  //                   Text(
-  //                     slot['hourType'],
-  //                     style: TextStyle(
-  //                       fontSize: 13,
-  //                       color: Colors.grey.shade600,
-  //                     ),
-  //                   ),
-  //                 ],
-  //               ),
-  //             ],
-  //           ),
-  //         ),
-  //         Text(
-  //           "₹${slot['price']}",
-  //           style: const TextStyle(
-  //             fontSize: 16,
-  //             fontWeight: FontWeight.w600,
-  //             color: Colors.black87,
-  //           ),
-  //         ),
-  //         const SizedBox(width: 12),
-  //         GestureDetector(
-  //           onTap: () => toggleSlot(slot),
-  //           child: Container(
-  //             padding: const EdgeInsets.all(6),
-  //             decoration: BoxDecoration(
-  //               color: Colors.red.shade100,
-  //               borderRadius: BorderRadius.circular(6),
-  //             ),
-  //             child: Icon(
-  //               Icons.close,
-  //               size: 16,
-  //               color: Colors.red.shade600,
-  //             ),
-  //           ),
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
-  Widget _buildSelectedSlotItem(Map<String, dynamic> slot) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.green.shade200),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Left side - details
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  slot['court'] ?? '',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(Icons.access_time, size: 16, color: Colors.grey.shade600),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        slot['time'] ?? '',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Icon(Icons.category, size: 16, color: Colors.grey.shade600),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        slot['hourType'] ?? '',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // Right side - Price + Close button
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                "₹${slot['price'] ?? ''}",
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () => toggleSlot(slot),
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade100,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Icon(Icons.close, size: 16, color: Colors.red.shade600),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-
-  Widget _buildBottomBar() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.shade300,
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: selectedSlots.isEmpty
-                    ? Colors.grey.shade400
-                    : const Color(0xFF1A237E),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: selectedSlots.isEmpty ? 0 : 2,
-              ),
-                onPressed: selectedSlots.isEmpty
-                    ? null
-                    : () async {
-                  try {
-                    final loggedIn = await ApiService.isLoggedIn();
-                    if (loggedIn) {
-                      // Get user details for payment
-                      final userDetails = ApiService.currentUser;
-
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => PaymentScreen(
-                            bookingDetails: {
-                              "location": widget.location,
-                              "game": widget.game,
-                              "slots": selectedSlots,
-                              "price": totalPrice, // Changed from totalPrice to price
-                              "date": DateFormat('yyyy-MM-dd').format(_selectedDay),
-                              "phone": userDetails?['phone'] ?? '', // Add phone for Razorpay
-                              "cash": 0, // Initialize cash amount
-                            },
-                          ),
-                        ),
-                      );
-                    } else {
-                      // Show login dialog or navigate to login
-                      _showNotLoggedInPopup();
-                    }
-                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text("Error: $e"),
-                        backgroundColor: Colors.red,
-                        behavior: SnackBarBehavior.floating,
-                        margin: EdgeInsets.all(16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    );
-                  }
-                },
-
-
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (selectedSlots.isNotEmpty) ...[
-                    Text(
-                      "₹$totalPrice • ",
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                  Text(
-                    selectedSlots.isEmpty
-                        ? "Select slots to proceed"
-                        : "Proceed to Payment",
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  if (selectedSlots.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    const Icon(
-                      Icons.arrow_forward,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  bool isSameDate(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
-
-// Add this helper method to your class
-//   void _showLoginRequiredDialog() {
-//     showDialog(
-//       context: context,
-//       builder: (context) => AlertDialog(
-//         shape: RoundedRectangleBorder(
-//           borderRadius: BorderRadius.circular(16),
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// class SlotBookingScreen extends StatefulWidget {
+//   final String location;
+//   final String game;
+//
+//   const SlotBookingScreen({
+//     super.key,
+//     required this.location,
+//     required this.game,
+//   });
+//
+//   @override
+//   State<SlotBookingScreen> createState() => _SlotBookingScreenState();
+// }
+//
+// class _SlotBookingScreenState extends State<SlotBookingScreen> {
+//   DateTime _selectedDay = DateTime.now();
+//   bool isLoading = false;
+//   String? error;
+//
+//   List<Map<String, dynamic>> courts = [];
+//   String? selectedCourt;
+//   String? selectedHourType;
+//
+//   List<Map<String, dynamic>> selectedSlots = [];
+//   int totalPrice = 0;
+//
+//   @override
+//   void initState() {
+//     super.initState();
+//     fetchCourtsWisePrice();
+//   }
+//
+//   // ---------------------- Day matcher ----------------------
+//   bool isSlotForSelectedDay(String dayKey, String selectedDayName) {
+//     dayKey = dayKey.toLowerCase().trim();
+//     selectedDayName = selectedDayName.toLowerCase();
+//
+//     final dayMap = {
+//       'mon': 'monday',
+//       'tue': 'tuesday',
+//       'wed': 'wednesday',
+//       'thu': 'thursday',
+//       'fri': 'friday',
+//       'sat': 'saturday',
+//       'sun': 'sunday'
+//     };
+//
+//     if (dayMap.containsKey(dayKey)) {
+//       return dayMap[dayKey] == selectedDayName;
+//     }
+//
+//     if (dayKey.contains('–')) {
+//       final parts = dayKey.split('–').map((d) => d.trim()).toList();
+//       if (parts.length == 2) {
+//         final daysOrder = [
+//           'monday',
+//           'tuesday',
+//           'wednesday',
+//           'thursday',
+//           'friday',
+//           'saturday',
+//           'sunday'
+//         ];
+//         final start = dayMap[parts[0]] ?? parts[0];
+//         final end = dayMap[parts[1]] ?? parts[1];
+//
+//         final startIndex = daysOrder.indexOf(start);
+//         final endIndex = daysOrder.indexOf(end);
+//
+//         if (startIndex != -1 && endIndex != -1) {
+//           if (startIndex <= endIndex) {
+//             return daysOrder.sublist(startIndex, endIndex + 1).contains(selectedDayName);
+//           } else {
+//             return (daysOrder.sublist(startIndex) + daysOrder.sublist(0, endIndex + 1))
+//                 .contains(selectedDayName);
+//           }
+//         }
+//       }
+//     }
+//
+//     if (dayKey.contains('all') || dayKey.contains('every')) return true;
+//     return dayKey == selectedDayName;
+//   }
+//
+//   // ---------------------- API fetch ----------------------
+//   Future<void> fetchCourtsWisePrice() async {
+//     setState(() {
+//       isLoading = true;
+//       error = null;
+//     });
+//
+//     final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDay);
+//     final selectedDayName = DateFormat('EEEE').format(_selectedDay);
+//
+//     final url = Uri.https(
+//       "nahatasports.com",
+//       "/api/courts_wise_price",
+//       {
+//         "date": formattedDate,
+//         "sport_name": widget.game,
+//         "location": widget.location,
+//       },
+//     );
+//
+//     try {
+//       final response = await http.get(url);
+//       if (response.statusCode == 200) {
+//         final responseData = json.decode(response.body);
+//         if (responseData["status"] == "success") {
+//           final data = responseData["data"] as Map<String, dynamic>;
+//           final List<Map<String, dynamic>> parsedSlots = [];
+//
+//           data.forEach((courtName, courtData) {
+//             final courtMap = courtData as Map<String, dynamic>;
+//             courtMap.forEach((hourType, daysMap) {
+//               if (daysMap is Map<String, dynamic>) {
+//                 daysMap.forEach((dayType, slotList) {
+//                   if (slotList is List &&
+//                       isSlotForSelectedDay(dayType, selectedDayName)) {
+//                     for (var slot in slotList) {
+//                       parsedSlots.add({
+//                         "court": courtName,
+//                         "hourType": hourType,
+//                         "dayType": dayType,
+//                         "time": slot["time"].toString(),
+//                         "price": int.tryParse(slot["price"].toString()) ?? 0,
+//                       });
+//                     }
+//                   }
+//                 });
+//               }
+//             });
+//           });
+//         print(data);
+//         print(responseData);
+//         print(response);
+//           final currentSelected = selectedSlots.where((sel) {
+//             return parsedSlots.any((p) =>
+//             p['court'] == sel['court'] &&
+//                 p['hourType'] == sel['hourType'] &&
+//                 p['time'] == sel['time']);
+//           }).toList();
+//
+//           setState(() {
+//             courts = parsedSlots;
+//             selectedSlots = currentSelected;
+//             totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
+//
+//             final courtNames = _getCourtNames();
+//             if (courtNames.isNotEmpty &&
+//                 (selectedCourt == null || !courtNames.contains(selectedCourt))) {
+//               selectedCourt = courtNames.first;
+//             }
+//             final hourTypes = _getHourTypesForCourt(selectedCourt);
+//             if (hourTypes.isNotEmpty &&
+//                 (selectedHourType == null ||
+//                     !hourTypes.contains(selectedHourType))) {
+//               selectedHourType = hourTypes.first;
+//             }
+//           });
+//         } else {
+//           setState(() {
+//             courts = [];
+//             selectedSlots.clear();
+//             totalPrice = 0;
+//             error = responseData["message"]?.toString() ?? "No data";
+//           });
+//         }
+//       } else {
+//         setState(() => error = "Server error ${response.statusCode}");
+//       }
+//     } catch (e) {
+//       setState(() => error = "Error: $e");
+//     } finally {
+//       setState(() => isLoading = false);
+//     }
+//   }
+//
+//   // ---------------------- Helpers ----------------------
+//   List<String> _getCourtNames() {
+//     final names = courts.map((s) => s['court'].toString()).toSet().toList();
+//     names.sort();
+//     return names;
+//   }
+//
+//   List<String> _getHourTypesForCourt(String? court) {
+//     if (court == null) return [];
+//     final hourTypes = courts
+//         .where((s) => s['court'] == court)
+//         .map((s) => s['hourType'].toString())
+//         .toSet()
+//         .toList();
+//     hourTypes.sort();
+//     return hourTypes;
+//   }
+//
+//   List<Map<String, dynamic>> _getSlotsForCourtAndHour(
+//       String? court, String? hourType) {
+//     if (court == null || hourType == null) return [];
+//     final list = courts
+//         .where((s) => s['court'] == court && s['hourType'] == hourType)
+//         .toList();
+//     list.sort((a, b) => a['time'].toString().compareTo(b['time'].toString()));
+//     return list;
+//   }
+//
+//   void toggleSlot(Map<String, dynamic> slot) {
+//     setState(() {
+//       final exists = selectedSlots.any((s) =>
+//       s['court'] == slot['court'] &&
+//           s['hourType'] == slot['hourType'] &&
+//           s['time'] == slot['time']);
+//       if (exists) {
+//         selectedSlots.removeWhere((s) =>
+//         s['court'] == slot['court'] &&
+//             s['hourType'] == slot['hourType'] &&
+//             s['time'] == slot['time']);
+//       } else {
+//         selectedSlots.add(slot);
+//       }
+//       totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
+//     });
+//   }
+//
+//   void removeAllSlots() {
+//     setState(() {
+//       selectedSlots.clear();
+//       totalPrice = 0;
+//     });
+//   }
+//
+//   // ---------------------- UI ----------------------
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       backgroundColor: Colors.white,
+//       appBar: _buildAppBar(),
+//       body: Column(
+//         children: [
+//           Expanded(child: _buildBody()),
+//           _buildBottomBar(),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   PreferredSizeWidget _buildAppBar() {
+//     return AppBar(
+//       backgroundColor: Colors.white,
+//       elevation: 0,
+//       leading: InkWell(
+//         onTap: (){
+//           Navigator.pushReplacement(
+//             context,
+//             MaterialPageRoute(builder: (context) => Viewgame(locationName: widget.location,)),
+//           );
+//         },
+//         child: const Icon(
+//           Icons.arrow_back_ios_new,
+//           color: Colors.black87,
+//           size: 18,
 //         ),
-//         title: Row(
-//           children: [
-//             Icon(Icons.login, color: Colors.blue, size: 28),
-//             SizedBox(width: 12),
-//             Text(
-//               "Login Required",
+//       ),
+//       title: const Text(
+//         "Book and Play",
+//         style: TextStyle(
+//           color: Colors.black,
+//           fontSize: 18,
+//           fontWeight: FontWeight.w600,
+//         ),
+//         textAlign: TextAlign.center
+//       ),
+//       centerTitle: false,
+//       actions: [
+//         if (selectedSlots.isNotEmpty)
+//           TextButton(
+//             onPressed: removeAllSlots,
+//             child: const Text(
+//               "Clear All",
 //               style: TextStyle(
-//                 fontSize: 18,
-//                 fontWeight: FontWeight.bold,
+//                 color: Colors.red,
+//                 fontWeight: FontWeight.w600,
+//               ),
+//             ),
+//           ),
+//       ],
+//     );
+//   }
+//
+//   Widget _buildBody() {
+//     if (isLoading) {
+//       return const Center(
+//         child: CircularProgressIndicator(
+//           color: Color(0xFF6366F1),
+//         ),
+//       );
+//     }
+//     if (error != null) {
+//       return Center(
+//         child: Column(
+//           mainAxisSize: MainAxisSize.min,
+//           children: [
+//             Icon(
+//               Icons.error_outline,
+//               size: 64,
+//               color: Colors.red.shade300,
+//             ),
+//             const SizedBox(height: 16),
+//             Text(
+//               error!,
+//               style: const TextStyle(
+//                 color: Colors.red,
+//                 fontSize: 16,
+//               ),
+//               textAlign: TextAlign.center,
+//             ),
+//             const SizedBox(height: 20),
+//             ElevatedButton(
+//               onPressed: fetchCourtsWisePrice,
+//               style: ElevatedButton.styleFrom(
+//                 backgroundColor: const Color(0xFF6366F1),
+//                 padding: const EdgeInsets.symmetric(
+//                   horizontal: 24,
+//                   vertical: 12,
+//                 ),
+//               ),
+//               child: const Text(
+//                 "Retry",
+//                 style: TextStyle(color: Colors.white),
 //               ),
 //             ),
 //           ],
 //         ),
-//         content: Text(
-//           "Please log in to continue with your booking.",
-//           style: TextStyle(fontSize: 16),
-//         ),
-//         actions: [
-//           TextButton(
-//             onPressed: () => Navigator.pop(context),
-//             child: Text("Cancel"),
-//           ),
-//           ElevatedButton(
-//             onPressed: () {
-//               Navigator.pop(context);
-//               Navigator.push(
-//                 context,
-//                 MaterialPageRoute(
-//                   builder: (_) => const LoginScreen(),
-//                 ),
-//               );
-//             },
-//             style: ElevatedButton.styleFrom(
-//               backgroundColor: Colors.blue,
-//               foregroundColor: Colors.white,
-//               shape: RoundedRectangleBorder(
-//                 borderRadius: BorderRadius.circular(8),
-//               ),
+//       );
+//     }
+//
+//     return SingleChildScrollView(
+//       child: Column(
+//         crossAxisAlignment: CrossAxisAlignment.start,
+//         children: [
+//           const SizedBox(height: 20),
+//           _buildGameTitle(),
+//           const SizedBox(height: 24),
+//           _buildCalendar(),
+//           const SizedBox(height: 24),
+//           _buildCourtsList(),
+//           const SizedBox(height: 100), // Extra space for bottom bar
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _buildGameTitle() {
+//     return Center(
+//       child: Column(
+//         children: [
+//           Text(
+//             widget.game,
+//             style: const TextStyle(
+//               fontSize: 20,
+//               fontWeight: FontWeight.w600,
+//               color: Colors.black87,
 //             ),
-//             child: Text("Login"),
+//           ),
+//           const SizedBox(height: 8),
+//           Text(
+//             widget.location,
+//             style: TextStyle(
+//               fontSize: 14,
+//               color: Colors.grey.shade600,
+//             ),
 //           ),
 //         ],
 //       ),
 //     );
 //   }
-  void _showNotLoggedInPopup() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Icon with background
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.lock_outline,
-                    size: 48, color: Colors.orange),
-              ),
-              const SizedBox(height: 20),
+//
+//   Widget _buildCalendar() {
+//     return Container(
+//       margin: const EdgeInsets.symmetric(horizontal: 20),
+//       padding: const EdgeInsets.all(20),
+//       decoration: BoxDecoration(
+//         color: const Color(0xFF1A237E),
+//         borderRadius: BorderRadius.circular(16),
+//         boxShadow: [
+//           BoxShadow(
+//             color: const Color(0xFF1A237E).withOpacity(0.3),
+//             blurRadius: 10,
+//             offset: const Offset(0, 4),
+//           ),
+//         ],
+//       ),
+//       child: Column(
+//         children: [
+//           Row(
+//             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//             children: [
+//               Text(
+//                 DateFormat('MMMM yyyy').format(_selectedDay),
+//                 style: const TextStyle(
+//                   color: Colors.white,
+//                   fontSize: 18,
+//                   fontWeight: FontWeight.w600,
+//                 ),
+//               ),
+//               Row(
+//                 children: [
+//                   GestureDetector(
+//                     onTap: () {
+//                       setState(() {
+//                         _selectedDay = DateTime(
+//                           _selectedDay.year,
+//                           _selectedDay.month - 1,
+//                           1,
+//                         );
+//                       });
+//                       fetchCourtsWisePrice();
+//                     },
+//                     child: const Icon(
+//                       Icons.keyboard_arrow_left,
+//                       color: Colors.white,
+//                     ),
+//                   ),
+//                   const SizedBox(width: 8),
+//                   GestureDetector(
+//                     onTap: () {
+//                       setState(() {
+//                         _selectedDay = DateTime(
+//                           _selectedDay.year,
+//                           _selectedDay.month + 1,
+//                           1,
+//                         );
+//                       });
+//                       fetchCourtsWisePrice();
+//                     },
+//                     child: const Icon(
+//                       Icons.keyboard_arrow_right,
+//                       color: Colors.white,
+//                     ),
+//                   ),
+//                 ],
+//               ),
+//             ],
+//           ),
+//           const SizedBox(height: 16),
+//           _buildWeekDaysHeader(),
+//           const SizedBox(height: 12),
+//           _buildCalendarGrid(),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _buildWeekDaysHeader() {
+//     const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+//     return Row(
+//       children: days.map((day) => Expanded(
+//         child: Center(
+//           child: Text(
+//             day,
+//             style: const TextStyle(
+//               color: Colors.white70,
+//               fontSize: 12,
+//               fontWeight: FontWeight.w500,
+//             ),
+//           ),
+//         ),
+//       )).toList(),
+//     );
+//   }
+//
+//   Widget _buildCalendarGrid() {
+//     final firstDayOfMonth = DateTime(_selectedDay.year, _selectedDay.month, 1);
+//     final lastDayOfMonth = DateTime(_selectedDay.year, _selectedDay.month + 1, 0);
+//     final startDate = firstDayOfMonth.subtract(Duration(days: firstDayOfMonth.weekday % 7));
+//     final today = DateTime.now();
+//
+//     return Column(
+//       children: List.generate(6, (weekIndex) {
+//         return Row(
+//           children: List.generate(7, (dayIndex) {
+//             final date = startDate.add(Duration(days: weekIndex * 7 + dayIndex));
+//             final isCurrentMonth = date.month == _selectedDay.month;
+//             final isSelected = isSameDate(date, _selectedDay);
+//             final isToday = isSameDate(date, today);
+//             final isPast = date.isBefore(today) && !isToday;
+//
+//             if (!isCurrentMonth) {
+//               return const Expanded(child: SizedBox(height: 40));
+//             }
+//
+//             return Expanded(
+//               child: GestureDetector(
+//                 onTap: isPast ? null : () {
+//                   setState(() => _selectedDay = date);
+//                   fetchCourtsWisePrice();
+//                 },
+//                 child: Container(
+//                   height: 40,
+//                   margin: const EdgeInsets.all(2),
+//                   decoration: BoxDecoration(
+//                     color: isSelected
+//                         ? Colors.white
+//                         : Colors.transparent,
+//                     borderRadius: BorderRadius.circular(8),
+//                     border: isToday && !isSelected
+//                         ? Border.all(color: Colors.white70, width: 1)
+//                         : null,
+//                   ),
+//                   child: Center(
+//                     child: Text(
+//                       date.day.toString(),
+//                       style: TextStyle(
+//                         color: isPast
+//                             ? Colors.white38
+//                             : (isSelected
+//                             ? const Color(0xFF1A237E)
+//                             : Colors.white),
+//                         fontWeight: FontWeight.w600,
+//                         fontSize: 16,
+//                       ),
+//                     ),
+//                   ),
+//                 ),
+//               ),
+//             );
+//           }),
+//         );
+//       }).where((widget) => widget != null).take(5).toList(),
+//     );
+//   }
+//
+//   Widget _buildCourtsList() {
+//     final courtNames = _getCourtNames();
+//     if (courtNames.isEmpty) {
+//       return Padding(
+//         padding: const EdgeInsets.all(20),
+//         child: Center(
+//           child: Column(
+//             children: [
+//               Icon(
+//                 Icons.sports_tennis,
+//                 size: 64,
+//                 color: Colors.grey.shade400,
+//               ),
+//               const SizedBox(height: 16),
+//               const Text(
+//                 "No courts available for this date.",
+//                 style: TextStyle(
+//                   color: Colors.grey,
+//                   fontSize: 16,
+//                 ),
+//                 textAlign: TextAlign.center,
+//               ),
+//             ],
+//           ),
+//         ),
+//       );
+//     }
+//
+//     return Column(
+//       children: [
+//         ...courtNames.map((court) => _buildCourtCard(court)).toList(),
+//         if (selectedSlots.isNotEmpty) ...[
+//           const SizedBox(height: 24),
+//           _buildSelectedSlotsList(),
+//         ],
+//       ],
+//     );
+//   }
+//
+//   Widget _buildCourtCard(String court) {
+//     final hourTypes = _getHourTypesForCourt(court);
+//
+//     return Container(
+//       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+//       decoration: BoxDecoration(
+//         color: Colors.grey.shade50,
+//         borderRadius: BorderRadius.circular(12),
+//         border: Border.all(color: Colors.grey.shade200),
+//         boxShadow: [
+//           BoxShadow(
+//             color: Colors.black.withOpacity(0.05),
+//             blurRadius: 5,
+//             offset: const Offset(0, 2),
+//           ),
+//         ],
+//       ),
+//       child: Theme(
+//         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+//         child: ExpansionTile(
+//           title: Row(
+//             children: [
+//               Icon(
+//                 Icons.sports_tennis,
+//                 color: const Color(0xFF1A237E),
+//                 size: 20,
+//               ),
+//               const SizedBox(width: 12),
+//               Text(
+//                 court,
+//                 style: const TextStyle(
+//                   fontSize: 16,
+//                   fontWeight: FontWeight.w600,
+//                   color: Colors.black87,
+//                 ),
+//               ),
+//               const Spacer(),
+//             ],
+//           ),
+//           trailing: const Icon(
+//             Icons.keyboard_arrow_down,
+//             color: Color(0xFF1A237E),
+//           ),
+//           children: [
+//             if (hourTypes.isNotEmpty)
+//               Padding(
+//                 padding: const EdgeInsets.all(16),
+//                 child: Column(
+//                   children: hourTypes.map((hourType) {
+//                     final slots = _getSlotsForCourtAndHour(court, hourType);
+//                     if (slots.isEmpty) return const SizedBox.shrink();
+//
+//                     return Column(
+//                       crossAxisAlignment: CrossAxisAlignment.start,
+//                       children: [
+//                         Container(
+//                           padding: const EdgeInsets.symmetric(
+//                             horizontal: 12,
+//                             vertical: 6,
+//                           ),
+//                           decoration: BoxDecoration(
+//                             color: hourType.toLowerCase().contains('happy')
+//                                 ? Colors.orange.shade100
+//                                 : const Color(0xFF1A237E).withOpacity(0.1),
+//                             borderRadius: BorderRadius.circular(6),
+//                           ),
+//                           child: Text(
+//                             hourType,
+//                             style: TextStyle(
+//                               fontSize: 14,
+//                               fontWeight: FontWeight.w600,
+//                               color: hourType.toLowerCase().contains('happy')
+//                                   ? Colors.orange.shade700
+//                                   : const Color(0xFF1A237E),
+//                             ),
+//                           ),
+//                         ),
+//                         const SizedBox(height: 12),
+//                         Wrap(
+//                           spacing: 8,
+//                           runSpacing: 8,
+//                           children: slots.map((slot) => _buildSlotChip(slot)).toList(),
+//                         ),
+//                         const SizedBox(height: 16),
+//                       ],
+//                     );
+//                   }).toList(),
+//                 ),
+//               ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+//
+//   Widget _buildSlotChip(Map<String, dynamic> slot) {
+//     final isSelected = selectedSlots.any((s) =>
+//     s['court'] == slot['court'] &&
+//         s['hourType'] == slot['hourType'] &&
+//         s['time'] == slot['time']);
+//     final isSoldOut = (slot['price'] == 0);
+//
+//     return GestureDetector(
+//       onTap: isSoldOut ? null : () => toggleSlot(slot),
+//       child: AnimatedContainer(
+//         duration: const Duration(milliseconds: 200),
+//         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+//         decoration: BoxDecoration(
+//           color: isSelected
+//               ? const Color(0xFF1A237E)
+//               : (isSoldOut ? Colors.grey.shade300 : Colors.white),
+//           borderRadius: BorderRadius.circular(8),
+//           border: Border.all(
+//             color: isSelected
+//                 ? const Color(0xFF1A237E)
+//                 : (isSoldOut ? Colors.grey.shade300 : Colors.grey.shade300),
+//             width: isSelected ? 2 : 1,
+//           ),
+//           boxShadow: isSelected ? [
+//             BoxShadow(
+//               color: const Color(0xFF1A237E).withOpacity(0.3),
+//               blurRadius: 8,
+//               offset: const Offset(0, 2),
+//             ),
+//           ] : null,
+//         ),
+//         child: Column(
+//           mainAxisSize: MainAxisSize.min,
+//           children: [
+//             Row(
+//               mainAxisSize: MainAxisSize.min,
+//               children: [
+//                 Icon(
+//                   Icons.access_time,
+//                   size: 14,
+//                   color: isSelected
+//                       ? Colors.white
+//                       : (isSoldOut ? Colors.grey : Colors.grey.shade600),
+//                 ),
+//                 const SizedBox(width: 4),
+//                 Text(
+//                   slot['time'],
+//                   style: TextStyle(
+//                     color: isSelected
+//                         ? Colors.white
+//                         : (isSoldOut ? Colors.grey : Colors.black87),
+//                     fontWeight: FontWeight.w600,
+//                     fontSize: 14,
+//                   ),
+//                 ),
+//               ],
+//             ),
+//             const SizedBox(height: 4),
+//             Text(
+//               isSoldOut ? "Sold Out" : "₹${slot['price']}",
+//               style: TextStyle(
+//                 color: isSelected
+//                     ? Colors.white70
+//                     : (isSoldOut ? Colors.grey : Colors.grey.shade600),
+//                 fontSize: 12,
+//                 fontWeight: FontWeight.w500,
+//               ),
+//             ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+//
+//   Widget _buildSelectedSlotsList() {
+//     return Container(
+//       margin: const EdgeInsets.symmetric(horizontal: 20),
+//       padding: const EdgeInsets.all(20),
+//       decoration: BoxDecoration(
+//         color: Colors.green.shade50,
+//         borderRadius: BorderRadius.circular(12),
+//         border: Border.all(color: Colors.green.shade200),
+//         boxShadow: [
+//           BoxShadow(
+//             color: Colors.green.shade100,
+//             blurRadius: 10,
+//             offset: const Offset(0, 4),
+//           ),
+//         ],
+//       ),
+//       child: Column(
+//         crossAxisAlignment: CrossAxisAlignment.start,
+//         children: [
+//           Row(
+//             children: [
+//               Icon(
+//                 Icons.check_circle,
+//                 color: Colors.green.shade600,
+//                 size: 20,
+//               ),
+//               const SizedBox(width: 8),
+//               Text(
+//                 "Selected Slots",
+//                 style: TextStyle(
+//                   fontSize: 16,
+//                   fontWeight: FontWeight.w600,
+//                   color: Colors.green.shade700,
+//                 ),
+//               ),
+//               const Spacer(),
+//               Text(
+//                 "${selectedSlots.length} slot${selectedSlots.length > 1 ? 's' : ''}",
+//                 style: TextStyle(
+//                   fontSize: 14,
+//                   color: Colors.green.shade600,
+//                 ),
+//               ),
+//             ],
+//           ),
+//           const SizedBox(height: 16),
+//           Column(
+//             children: selectedSlots.map((slot) => _buildSelectedSlotItem(slot)).toList(),
+//           ),
+//           const SizedBox(height: 16),
+//           Container(
+//             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+//             decoration: BoxDecoration(
+//               color: Colors.green.shade100,
+//               borderRadius: BorderRadius.circular(8),
+//             ),
+//             child: Row(
+//               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//               children: [
+//                 Text(
+//                   "Total Amount",
+//                   style: TextStyle(
+//                     fontSize: 16,
+//                     fontWeight: FontWeight.w600,
+//                     color: Colors.green.shade700,
+//                   ),
+//                 ),
+//                 Text(
+//                   "₹$totalPrice",
+//                   style: TextStyle(
+//                     fontSize: 18,
+//                     fontWeight: FontWeight.bold,
+//                     color: Colors.green.shade700,
+//                   ),
+//                 ),
+//               ],
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   // Widget _buildSelectedSlotItem(Map<String, dynamic> slot) {
+//   //   return Container(
+//   //     margin: const EdgeInsets.only(bottom: 8),
+//   //     padding: const EdgeInsets.all(12),
+//   //     decoration: BoxDecoration(
+//   //       color: Colors.white,
+//   //       borderRadius: BorderRadius.circular(8),
+//   //       border: Border.all(color: Colors.green.shade200),
+//   //     ),
+//   //     child: Row(
+//   //       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//   //       children: [
+//   //         Expanded(
+//   //           child: Column(
+//   //             crossAxisAlignment: CrossAxisAlignment.start,
+//   //             children: [
+//   //               Text(
+//   //                 slot['court'],
+//   //                 style: const TextStyle(
+//   //                   fontSize: 14,
+//   //                   fontWeight: FontWeight.w600,
+//   //                   color: Colors.black87,
+//   //                 ),
+//   //               ),
+//   //               const SizedBox(height: 4),
+//   //               Row(
+//   //                 children: [
+//   //                   Icon(
+//   //                     Icons.access_time,
+//   //                     size: 16,
+//   //                     color: Colors.grey.shade600,
+//   //                   ),
+//   //                   const SizedBox(width: 4),
+//   //                   Text(
+//   //                     slot['time'],
+//   //                     style: TextStyle(
+//   //                       fontSize: 13,
+//   //                       color: Colors.grey.shade600,
+//   //                     ),
+//   //                   ),
+//   //                   const SizedBox(width: 16),
+//   //                   Icon(
+//   //                     Icons.category,
+//   //                     size: 16,
+//   //                     color: Colors.grey.shade600,
+//   //                   ),
+//   //                   const SizedBox(width: 4),
+//   //                   Text(
+//   //                     slot['hourType'],
+//   //                     style: TextStyle(
+//   //                       fontSize: 13,
+//   //                       color: Colors.grey.shade600,
+//   //                     ),
+//   //                   ),
+//   //                 ],
+//   //               ),
+//   //             ],
+//   //           ),
+//   //         ),
+//   //         Text(
+//   //           "₹${slot['price']}",
+//   //           style: const TextStyle(
+//   //             fontSize: 16,
+//   //             fontWeight: FontWeight.w600,
+//   //             color: Colors.black87,
+//   //           ),
+//   //         ),
+//   //         const SizedBox(width: 12),
+//   //         GestureDetector(
+//   //           onTap: () => toggleSlot(slot),
+//   //           child: Container(
+//   //             padding: const EdgeInsets.all(6),
+//   //             decoration: BoxDecoration(
+//   //               color: Colors.red.shade100,
+//   //               borderRadius: BorderRadius.circular(6),
+//   //             ),
+//   //             child: Icon(
+//   //               Icons.close,
+//   //               size: 16,
+//   //               color: Colors.red.shade600,
+//   //             ),
+//   //           ),
+//   //         ),
+//   //       ],
+//   //     ),
+//   //   );
+//   // }
+//   Widget _buildSelectedSlotItem(Map<String, dynamic> slot) {
+//     return Container(
+//       margin: const EdgeInsets.only(bottom: 8),
+//       padding: const EdgeInsets.all(12),
+//       decoration: BoxDecoration(
+//         color: Colors.white,
+//         borderRadius: BorderRadius.circular(8),
+//         border: Border.all(color: Colors.green.shade200),
+//       ),
+//       child: Row(
+//         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//         crossAxisAlignment: CrossAxisAlignment.center,
+//         children: [
+//           // Left side - details
+//           Expanded(
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 Text(
+//                   slot['court'] ?? '',
+//                   style: const TextStyle(
+//                     fontSize: 14,
+//                     fontWeight: FontWeight.w600,
+//                     color: Colors.black87,
+//                   ),
+//                   overflow: TextOverflow.ellipsis,
+//                 ),
+//                 const SizedBox(height: 4),
+//                 Row(
+//                   children: [
+//                     Icon(Icons.access_time, size: 16, color: Colors.grey.shade600),
+//                     const SizedBox(width: 4),
+//                     Flexible(
+//                       child: Text(
+//                         slot['time'] ?? '',
+//                         style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+//                         overflow: TextOverflow.ellipsis,
+//                       ),
+//                     ),
+//                     const SizedBox(width: 16),
+//                     Icon(Icons.category, size: 16, color: Colors.grey.shade600),
+//                     const SizedBox(width: 4),
+//                     Flexible(
+//                       child: Text(
+//                         slot['hourType'] ?? '',
+//                         style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+//                         overflow: TextOverflow.ellipsis,
+//                       ),
+//                     ),
+//                   ],
+//                 ),
+//               ],
+//             ),
+//           ),
+//
+//           // Right side - Price + Close button
+//           Row(
+//             mainAxisSize: MainAxisSize.min,
+//             children: [
+//               Text(
+//                 "₹${slot['price'] ?? ''}",
+//                 style: const TextStyle(
+//                   fontSize: 16,
+//                   fontWeight: FontWeight.w600,
+//                   color: Colors.black87,
+//                 ),
+//               ),
+//               const SizedBox(width: 12),
+//               GestureDetector(
+//                 onTap: () => toggleSlot(slot),
+//                 child: Container(
+//                   padding: const EdgeInsets.all(6),
+//                   decoration: BoxDecoration(
+//                     color: Colors.red.shade100,
+//                     borderRadius: BorderRadius.circular(6),
+//                   ),
+//                   child: Icon(Icons.close, size: 16, color: Colors.red.shade600),
+//                 ),
+//               ),
+//             ],
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//
+//   Widget _buildBottomBar() {
+//     return Container(
+//       padding: const EdgeInsets.all(20),
+//       decoration: BoxDecoration(
+//         color: Colors.white,
+//         boxShadow: [
+//           BoxShadow(
+//             color: Colors.grey.shade300,
+//             blurRadius: 10,
+//             offset: const Offset(0, -2),
+//           ),
+//         ],
+//       ),
+//       child: Column(
+//         mainAxisSize: MainAxisSize.min,
+//         children: [
+//           SizedBox(
+//             width: double.infinity,
+//             child: ElevatedButton(
+//               style: ElevatedButton.styleFrom(
+//                 backgroundColor: selectedSlots.isEmpty
+//                     ? Colors.grey.shade400
+//                     : const Color(0xFF1A237E),
+//                 padding: const EdgeInsets.symmetric(vertical: 16),
+//                 shape: RoundedRectangleBorder(
+//                   borderRadius: BorderRadius.circular(12),
+//                 ),
+//                 elevation: selectedSlots.isEmpty ? 0 : 2,
+//               ),
+//                 onPressed: selectedSlots.isEmpty
+//                     ? null
+//                     : () async {
+//                   try {
+//                     final loggedIn = await ApiService.isLoggedIn();
+//                     if (loggedIn) {
+//                       // Get user details for payment
+//                       final userDetails = ApiService.currentUser;
+//
+//                       Navigator.push(
+//                         context,
+//                         MaterialPageRoute(
+//                           builder: (context) => PaymentScreen(
+//                             bookingDetails: {
+//                               "location": widget.location,
+//                               "game": widget.game,
+//                               "slots": selectedSlots,
+//                               "price": totalPrice, // Changed from totalPrice to price
+//                               "date": DateFormat('yyyy-MM-dd').format(_selectedDay),
+//                               "phone": userDetails?['phone'] ?? '', // Add phone for Razorpay
+//                               "cash": 0, // Initialize cash amount
+//                             },
+//                           ),
+//                         ),
+//                       );
+//                     } else {
+//                       // Show login dialog or navigate to login
+//                       _showNotLoggedInPopup();
+//                     }
+//                   } catch (e) {
+//                     ScaffoldMessenger.of(context).showSnackBar(
+//                       SnackBar(
+//                         content: Text("Error: $e"),
+//                         backgroundColor: Colors.red,
+//                         behavior: SnackBarBehavior.floating,
+//                         margin: EdgeInsets.all(16),
+//                         shape: RoundedRectangleBorder(
+//                           borderRadius: BorderRadius.circular(8),
+//                         ),
+//                       ),
+//                     );
+//                   }
+//                 },
+//
+//
+//               child: Row(
+//                 mainAxisAlignment: MainAxisAlignment.center,
+//                 children: [
+//                   if (selectedSlots.isNotEmpty) ...[
+//                     Text(
+//                       "₹$totalPrice • ",
+//                       style: const TextStyle(
+//                         fontSize: 16,
+//                         fontWeight: FontWeight.bold,
+//                         color: Colors.white,
+//                       ),
+//                     ),
+//                   ],
+//                   Text(
+//                     selectedSlots.isEmpty
+//                         ? "Select slots to proceed"
+//                         : "Proceed to Payment",
+//                     style: const TextStyle(
+//                       fontSize: 16,
+//                       fontWeight: FontWeight.w600,
+//                       color: Colors.white,
+//                     ),
+//                   ),
+//                   if (selectedSlots.isNotEmpty) ...[
+//                     const SizedBox(width: 8),
+//                     const Icon(
+//                       Icons.arrow_forward,
+//                       color: Colors.white,
+//                       size: 20,
+//                     ),
+//                   ],
+//                 ],
+//               ),
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   bool isSameDate(DateTime a, DateTime b) =>
+//       a.year == b.year && a.month == b.month && a.day == b.day;
+//
+// // Add this helper method to your class
+// //   void _showLoginRequiredDialog() {
+// //     showDialog(
+// //       context: context,
+// //       builder: (context) => AlertDialog(
+// //         shape: RoundedRectangleBorder(
+// //           borderRadius: BorderRadius.circular(16),
+// //         ),
+// //         title: Row(
+// //           children: [
+// //             Icon(Icons.login, color: Colors.blue, size: 28),
+// //             SizedBox(width: 12),
+// //             Text(
+// //               "Login Required",
+// //               style: TextStyle(
+// //                 fontSize: 18,
+// //                 fontWeight: FontWeight.bold,
+// //               ),
+// //             ),
+// //           ],
+// //         ),
+// //         content: Text(
+// //           "Please log in to continue with your booking.",
+// //           style: TextStyle(fontSize: 16),
+// //         ),
+// //         actions: [
+// //           TextButton(
+// //             onPressed: () => Navigator.pop(context),
+// //             child: Text("Cancel"),
+// //           ),
+// //           ElevatedButton(
+// //             onPressed: () {
+// //               Navigator.pop(context);
+// //               Navigator.push(
+// //                 context,
+// //                 MaterialPageRoute(
+// //                   builder: (_) => const LoginScreen(),
+// //                 ),
+// //               );
+// //             },
+// //             style: ElevatedButton.styleFrom(
+// //               backgroundColor: Colors.blue,
+// //               foregroundColor: Colors.white,
+// //               shape: RoundedRectangleBorder(
+// //                 borderRadius: BorderRadius.circular(8),
+// //               ),
+// //             ),
+// //             child: Text("Login"),
+// //           ),
+// //         ],
+// //       ),
+// //     );
+// //   }
+//   void _showNotLoggedInPopup() {
+//     showDialog(
+//       context: context,
+//       barrierDismissible: false,
+//       builder: (_) => Dialog(
+//         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+//         child: Padding(
+//           padding: const EdgeInsets.all(20),
+//           child: Column(
+//             mainAxisSize: MainAxisSize.min,
+//             children: [
+//               // Icon with background
+//               Container(
+//                 padding: const EdgeInsets.all(16),
+//                 decoration: BoxDecoration(
+//                   color: Colors.orange.withOpacity(0.15),
+//                   shape: BoxShape.circle,
+//                 ),
+//                 child: const Icon(Icons.lock_outline,
+//                     size: 48, color: Colors.orange),
+//               ),
+//               const SizedBox(height: 20),
+//
+//               // Title
+//               const Text(
+//                 "Login Required",
+//                 style: TextStyle(
+//                   fontSize: 20,
+//                   fontWeight: FontWeight.bold,
+//                 ),
+//               ),
+//
+//               const SizedBox(height: 10),
+//
+//               // Description
+//               const Text(
+//                 "You need to log in to continue.\nRedirecting you shortly...",
+//                 textAlign: TextAlign.center,
+//                 style: TextStyle(fontSize: 14, color: Colors.black87),
+//               ),
+//
+//               const SizedBox(height: 24),
+//
+//               // Loading Indicator
+//               const CircularProgressIndicator(
+//                 strokeWidth: 2,
+//                 valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+//               ),
+//
+//               const SizedBox(height: 12),
+//
+//               const Text(
+//                 "Please wait...",
+//                 style: TextStyle(fontSize: 12, color: Colors.grey),
+//               ),
+//             ],
+//           ),
+//         ),
+//       ),
+//     );
+//
+//     // Auto-redirect after delay
+//     Future.delayed(const Duration(seconds: 2), () {
+//       if (!mounted) return;
+//       Navigator.pop(context); // Close popup
+//       Navigator.pushAndRemoveUntil(
+//         context,
+//         MaterialPageRoute(builder: (context) => const LoginScreen()),
+//             (route) => false,
+//       );
+//     });
+//   }
+//
+//   // void _showNotLoggedInPopup() {
+//   //   showDialog(
+//   //     context: context,
+//   //     barrierDismissible: false,
+//   //     builder: (_) => AlertDialog(
+//   //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+//   //       title: const Text("Not Logged In"),
+//   //       content: Column(
+//   //         mainAxisSize: MainAxisSize.min,
+//   //         children: const [
+//   //           Icon(Icons.warning_amber_rounded, size: 50, color: Colors.orange),
+//   //           SizedBox(height: 16),
+//   //           Text(
+//   //             "You are not logged in.\nRedirecting to Login Screen...",
+//   //             textAlign: TextAlign.center,
+//   //           ),
+//   //         ],
+//   //       ),
+//   //     ),
+//   //   );
+//   //
+//   //   Future.delayed(const Duration(seconds: 3), () {
+//   //     if (!mounted) return;
+//   //     Navigator.pop(context);  // Close the popup
+//   //     Navigator.pushAndRemoveUntil(
+//   //       context,
+//   //       MaterialPageRoute(builder: (context) => LoginScreen()),
+//   //           (route) => false,
+//   //     );
+//   //   });
+//   // }
+//
+// }
+// /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-              // Title
-              const Text(
-                "Login Required",
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
 
-              const SizedBox(height: 10),
 
-              // Description
-              const Text(
-                "You need to log in to continue.\nRedirecting you shortly...",
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: Colors.black87),
-              ),
 
-              const SizedBox(height: 24),
 
-              // Loading Indicator
-              const CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
-              ),
 
-              const SizedBox(height: 12),
 
-              const Text(
-                "Please wait...",
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
 
-    // Auto-redirect after delay
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      Navigator.pop(context); // Close popup
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-            (route) => false,
-      );
-    });
-  }
 
-  // void _showNotLoggedInPopup() {
-  //   showDialog(
-  //     context: context,
-  //     barrierDismissible: false,
-  //     builder: (_) => AlertDialog(
-  //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-  //       title: const Text("Not Logged In"),
-  //       content: Column(
-  //         mainAxisSize: MainAxisSize.min,
-  //         children: const [
-  //           Icon(Icons.warning_amber_rounded, size: 50, color: Colors.orange),
-  //           SizedBox(height: 16),
-  //           Text(
-  //             "You are not logged in.\nRedirecting to Login Screen...",
-  //             textAlign: TextAlign.center,
-  //           ),
-  //         ],
-  //       ),
-  //     ),
-  //   );
-  //
-  //   Future.delayed(const Duration(seconds: 3), () {
-  //     if (!mounted) return;
-  //     Navigator.pop(context);  // Close the popup
-  //     Navigator.pushAndRemoveUntil(
-  //       context,
-  //       MaterialPageRoute(builder: (context) => LoginScreen()),
-  //           (route) => false,
-  //     );
-  //   });
-  // }
 
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 //
 // class SlotBookingScreen extends StatefulWidget {
@@ -1941,3 +2042,1347 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
 
 
 
+class SlotBookingScreen extends StatefulWidget {
+  final String location;
+  final String game;
+
+  const SlotBookingScreen({
+    super.key,
+    required this.location,
+    required this.game,
+  });
+
+  @override
+  State<SlotBookingScreen> createState() => _SlotBookingScreenState();
+}
+
+class _SlotBookingScreenState extends State<SlotBookingScreen> {
+  static const brandBlue = Color(0xFF1A237E);
+
+  DateTime _selectedDay = DateTime.now();
+  bool isLoading = false;
+  String? error;
+
+  List<Map<String, dynamic>> courts = [];
+  String? selectedCourt;
+  String? selectedHourType;
+
+  List<Map<String, dynamic>> selectedSlots = [];
+  int totalPrice = 0;
+
+  // For horizontal calendar
+  late ScrollController _dateScrollController;
+  List<DateTime> _dateList = [];
+
+  // For hour type tabs
+  String? selectedHourTypeTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _dateScrollController = ScrollController();
+    _generateDateList();
+    fetchCourtsWisePrice();
+  }
+
+  @override
+  void dispose() {
+    _dateScrollController.dispose();
+    super.dispose();
+  }
+
+  void _generateDateList() {
+    _dateList = List.generate(
+      60,
+          (index) => DateTime.now().add(Duration(days: index)),
+    );
+  }
+
+  // ---------------------- Day matcher ----------------------
+  bool isSlotForSelectedDay(String dayKey, String selectedDayName) {
+    dayKey = dayKey.toLowerCase().trim();
+    selectedDayName = selectedDayName.toLowerCase();
+
+    final dayMap = {
+      'mon': 'monday',
+      'tue': 'tuesday',
+      'wed': 'wednesday',
+      'thu': 'thursday',
+      'fri': 'friday',
+      'sat': 'saturday',
+      'sun': 'sunday'
+    };
+
+    if (dayMap.containsKey(dayKey)) {
+      return dayMap[dayKey] == selectedDayName;
+    }
+
+    if (dayKey.contains('–')) {
+      final parts = dayKey.split('–').map((d) => d.trim()).toList();
+      if (parts.length == 2) {
+        final daysOrder = [
+          'monday',
+          'tuesday',
+          'wednesday',
+          'thursday',
+          'friday',
+          'saturday',
+          'sunday'
+        ];
+        final start = dayMap[parts[0]] ?? parts[0];
+        final end = dayMap[parts[1]] ?? parts[1];
+
+        final startIndex = daysOrder.indexOf(start);
+        final endIndex = daysOrder.indexOf(end);
+
+        if (startIndex != -1 && endIndex != -1) {
+          if (startIndex <= endIndex) {
+            return daysOrder.sublist(startIndex, endIndex + 1).contains(selectedDayName);
+          } else {
+            return (daysOrder.sublist(startIndex) + daysOrder.sublist(0, endIndex + 1))
+                .contains(selectedDayName);
+          }
+        }
+      }
+    }
+
+    if (dayKey.contains('all') || dayKey.contains('every')) return true;
+    return dayKey == selectedDayName;
+  }
+
+
+  Future<void> fetchCourtsWisePrice() async {
+    setState(() {
+      isLoading = true;
+      error = null;
+    });
+
+    final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDay);
+    final selectedDayName = DateFormat('EEEE').format(_selectedDay);
+
+    final url = Uri.https(
+      "nahatasports.com",
+      "/api/courts_wise_price",
+      {
+        "date": formattedDate,
+        "sport_name": widget.game,
+        "location": widget.location,
+      },
+    );
+
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        if (responseData["status"] == "success") {
+          final data = responseData["data"] as Map<String, dynamic>;
+          final List<Map<String, dynamic>> parsedSlots = [];
+
+          data.forEach((courtName, courtData) {
+            final courtMap = courtData as Map<String, dynamic>;
+            courtMap.forEach((hourType, daysMap) {
+              if (daysMap is Map<String, dynamic>) {
+                daysMap.forEach((dayType, slotList) {
+                  if (slotList is List &&
+                      isSlotForSelectedDay(dayType, selectedDayName)) {
+                    for (var slot in slotList) {
+                      parsedSlots.add({
+                        "court": courtName,
+                        "hourType": hourType,
+                        "dayType": dayType,
+                        "time": slot["time"].toString(),
+                        "price": int.tryParse(slot["price"].toString()) ?? 0,
+                        "date": formattedDate, // Add date to each slot
+                      });
+                    }
+                  }
+                });
+              }
+            });
+          });
+
+          // Keep selected slots from other dates, only update current date
+          final otherDateSlots = selectedSlots.where((sel) => sel['date'] != formattedDate).toList();
+          final currentDateSlots = selectedSlots.where((sel) {
+            return sel['date'] == formattedDate && parsedSlots.any((p) =>
+            p['court'] == sel['court'] &&
+                p['hourType'] == sel['hourType'] &&
+                p['time'] == sel['time'] &&
+                p['date'] == sel['date']);
+          }).toList();
+
+          setState(() {
+            courts = parsedSlots;
+            // Combine slots from other dates with current date selections
+            selectedSlots = [...otherDateSlots, ...currentDateSlots];
+            totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
+
+            final courtNames = _getCourtNames();
+            if (courtNames.isNotEmpty) {
+              selectedCourt = courtNames.first;
+            }
+
+            if (selectedCourt != null) {
+              final hourTypes = _getHourTypesForCourt(selectedCourt);
+              if (hourTypes.isNotEmpty) {
+                selectedHourTypeTab = hourTypes.first;
+              }
+            }
+          });
+        } else {
+          setState(() {
+            courts = [];
+            error = responseData["message"]?.toString() ?? "No data";
+          });
+        }
+      } else {
+        setState(() => error = "Server error ${response.statusCode}");
+      }
+    } catch (e) {
+      setState(() => error = "Error: $e");
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  // ---------------------- Helpers ----------------------
+  List<String> _getCourtNames() {
+    final names = courts.map((s) => s['court'].toString()).toSet().toList();
+    names.sort();
+    return names;
+  }
+
+  List<Map<String, dynamic>> _getSlotsForCourtAndHour(
+      String? court, String? hourType) {
+    if (court == null || hourType == null) return [];
+    final list = courts
+        .where((s) => s['court'] == court && s['hourType'] == hourType)
+        .toList();
+    list.sort((a, b) => a['time'].toString().compareTo(b['time'].toString()));
+    return list;
+  }
+
+  List<String> _getHourTypesForCourt(String? court) {
+    if (court == null) return [];
+    final hourTypes = courts
+        .where((s) => s['court'] == court)
+        .map((s) => s['hourType'].toString())
+        .toSet()
+        .toList();
+    hourTypes.sort();
+    return hourTypes;
+  }
+  void toggleSlot(Map<String, dynamic> slot) {
+    setState(() {
+      final exists = selectedSlots.any((s) =>
+      s['court'] == slot['court'] &&
+          s['hourType'] == slot['hourType'] &&
+          s['time'] == slot['time'] &&
+          s['date'] == slot['date']);
+
+      if (exists) {
+        selectedSlots.removeWhere((s) =>
+        s['court'] == slot['court'] &&
+            s['hourType'] == slot['hourType'] &&
+            s['time'] == slot['time'] &&
+            s['date'] == slot['date']);
+      } else {
+        selectedSlots.add(slot);
+      }
+      totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
+    });
+  }
+  // void toggleSlot(Map<String, dynamic> slot) {
+
+  //   setState(() {
+  //     final exists = selectedSlots.any((s) =>
+  //     s['court'] == slot['court'] &&
+  //         s['hourType'] == slot['hourType'] &&
+  //         s['time'] == slot['time']);
+  //     if (exists) {
+  //       selectedSlots.removeWhere((s) =>
+  //       s['court'] == slot['court'] &&
+  //           s['hourType'] == slot['hourType'] &&
+  //           s['time'] == slot['time']);
+  //     } else {
+  //       selectedSlots.add(slot);
+  //     }
+  //     totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
+  //   });
+  // }
+  void _showConfirmationBottomSheet() {
+    // Group slots by date
+    Map<String, List<Map<String, dynamic>>> groupedSlots = {};
+
+    for (var slot in selectedSlots) {
+      final date = slot['date'] as String;
+      final dateKey = DateFormat('dd MMM yyyy').format(DateTime.parse(date));
+
+      if (!groupedSlots.containsKey(dateKey)) {
+        groupedSlots[dateKey] = [];
+      }
+      groupedSlots[dateKey]!.add(slot);
+    }
+
+    // Sort dates
+    final sortedDates = groupedSlots.keys.toList()
+      ..sort((a, b) {
+        final dateA = DateFormat('dd MMM yyyy').parse(a);
+        final dateB = DateFormat('dd MMM yyyy').parse(b);
+        return dateA.compareTo(dateB);
+      });
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.75,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  "Confirm your selection",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close, size: 20),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Scrollable content
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Display slots grouped by date
+                    ...sortedDates.map((dateKey) {
+                      final slotsForDate = groupedSlots[dateKey]!;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Date header
+                          Container(
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: brandBlue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              dateKey,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: brandBlue,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Slots for this date
+                          ...slotsForDate.map((slot) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        slot['time'],
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        slot['court'],
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  "₹${slot['price']}",
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )),
+                          const SizedBox(height: 16),
+                        ],
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  try {
+                    final loggedIn = await ApiService.isLoggedIn();
+                    if (loggedIn) {
+                      final userDetails = ApiService.currentUser;
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PaymentScreen(
+                            bookingDetails: {
+                              "location": widget.location,
+                              "game": widget.game,
+                              "slots": selectedSlots,
+                              "price": totalPrice,
+                              "date": DateFormat('yyyy-MM-dd').format(_selectedDay),
+                              "phone": userDetails?['phone'] ?? '',
+                              "cash": 0,
+                            },
+                          ),
+                        ),
+                      );
+                    } else {
+                      _showNotLoggedInPopup();
+                    }
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("Error: $e"),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: brandBlue,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  "CONFIRM SLOTS",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  // void _showConfirmationBottomSheet() {
+  //   showModalBottomSheet(
+  //     context: context,
+  //     shape: const RoundedRectangleBorder(
+  //       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  //     ),
+  //     builder: (context) => Container(
+  //       padding: const EdgeInsets.all(24),
+  //       child: Column(
+  //         mainAxisSize: MainAxisSize.min,
+  //         crossAxisAlignment: CrossAxisAlignment.start,
+  //         children: [
+  //           Row(
+  //             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  //             children: [
+  //               const Text(
+  //                 "Confirm your selection",
+  //                 style: TextStyle(
+  //                   fontSize: 18,
+  //                   fontWeight: FontWeight.w600,
+  //                 ),
+  //               ),
+  //               GestureDetector(
+  //                 onTap: () => Navigator.pop(context),
+  //                 child: Container(
+  //                   padding: const EdgeInsets.all(6),
+  //                   decoration: BoxDecoration(
+  //                     color: Colors.grey.shade200,
+  //                     shape: BoxShape.circle,
+  //                   ),
+  //                   child: const Icon(Icons.close, size: 20),
+  //                 ),
+  //               ),
+  //             ],
+  //           ),
+  //           const SizedBox(height: 20),
+  //           Text(
+  //             DateFormat('dd MMM yyyy').format(_selectedDay),
+  //             style: TextStyle(
+  //               fontSize: 14,
+  //               color: Colors.grey.shade600,
+  //               fontWeight: FontWeight.w500,
+  //             ),
+  //           ),
+  //           const SizedBox(height: 16),
+  //           ...selectedSlots.map((slot) => Padding(
+  //             padding: const EdgeInsets.only(bottom: 12),
+  //             child: Row(
+  //               children: [
+  //                 Expanded(
+  //                   child: Column(
+  //                     crossAxisAlignment: CrossAxisAlignment.start,
+  //                     children: [
+  //                       Text(
+  //                         slot['time'],
+  //                         style: const TextStyle(
+  //                           fontSize: 15,
+  //                           fontWeight: FontWeight.w600,
+  //                         ),
+  //                       ),
+  //                       const SizedBox(height: 2),
+  //                       Text(
+  //                         slot['court'],
+  //                         style: TextStyle(
+  //                           fontSize: 13,
+  //                           color: Colors.grey.shade600,
+  //                         ),
+  //                       ),
+  //                     ],
+  //                   ),
+  //                 ),
+  //                 Text(
+  //                   "₹${slot['price']}",
+  //                   style: const TextStyle(
+  //                     fontSize: 15,
+  //                     fontWeight: FontWeight.w600,
+  //                   ),
+  //                 ),
+  //               ],
+  //             ),
+  //           )),
+  //           const SizedBox(height: 24),
+  //           SizedBox(
+  //             width: double.infinity,
+  //             child: ElevatedButton(
+  //               onPressed: () async {
+  //                 Navigator.pop(context);
+  //                 try {
+  //                   final loggedIn = await ApiService.isLoggedIn();
+  //                   if (loggedIn) {
+  //                     final userDetails = ApiService.currentUser;
+  //                     Navigator.push(
+  //                       context,
+  //                       MaterialPageRoute(
+  //                         builder: (context) => PaymentScreen(
+  //                           bookingDetails: {
+  //                             "location": widget.location,
+  //                             "game": widget.game,
+  //                             "slots": selectedSlots,
+  //                             "price": totalPrice,
+  //                             "date": DateFormat('yyyy-MM-dd').format(_selectedDay),
+  //                             "phone": userDetails?['phone'] ?? '',
+  //                             "cash": 0,
+  //                           },
+  //                         ),
+  //                       ),
+  //                     );
+  //                   } else {
+  //                     _showNotLoggedInPopup();
+  //                   }
+  //                 } catch (e) {
+  //                   ScaffoldMessenger.of(context).showSnackBar(
+  //                     SnackBar(
+  //                       content: Text("Error: $e"),
+  //                       backgroundColor: Colors.red,
+  //                     ),
+  //                   );
+  //                 }
+  //               },
+  //               style: ElevatedButton.styleFrom(
+  //                 backgroundColor: brandBlue,
+  //                 padding: const EdgeInsets.symmetric(vertical: 16),
+  //                 shape: RoundedRectangleBorder(
+  //                   borderRadius: BorderRadius.circular(12),
+  //                 ),
+  //               ),
+  //               child: const Text(
+  //                 "CONFIRM SLOTS",
+  //                 style: TextStyle(
+  //                   color: Colors.white,
+  //                   fontSize: 15,
+  //                   fontWeight: FontWeight.w600,
+  //                 ),
+  //               ),
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
+
+  // ---------------------- UI ----------------------
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: _buildAppBar(),
+      body: Column(
+        children: [
+          Expanded(child: _buildBody()),
+          if (selectedSlots.isNotEmpty) _buildBottomBar(),
+        ],
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      leading: InkWell(
+        onTap: () {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => Viewgame(locationName: widget.location),
+            ),
+          );
+        },
+        child: const Icon(
+          Icons.arrow_back_ios_new,
+          color: Colors.black87,
+          size: 20,
+        ),
+      ),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.game,
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            "at ${widget.location}",
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
+      ),
+      centerTitle: false,
+    );
+  }
+
+  Widget _buildBody() {
+    if (isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: brandBlue),
+      );
+    }
+    if (error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+            const SizedBox(height: 16),
+            Text(
+              error!,
+              style: const TextStyle(color: Colors.red, fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: fetchCourtsWisePrice,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: brandBlue,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              child: const Text("Retry", style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        _buildHorizontalCalendar(),
+        const SizedBox(height: 20),
+        _buildAvailableCourts(),
+        const SizedBox(height: 20),
+        Expanded(child: _buildSlotsSection()),
+      ],
+    );
+  }
+
+  Widget _buildHorizontalCalendar() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text(
+            DateFormat('MMMM yyyy').format(_selectedDay),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 80,
+          child: ListView.builder(
+            controller: _dateScrollController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _dateList.length,
+            itemBuilder: (context, index) {
+              final date = _dateList[index];
+              final isSelected = isSameDate(date, _selectedDay);
+              final isToday = isSameDate(date, DateTime.now());
+              final isPast = date.isBefore(DateTime.now()) && !isToday;
+
+              return GestureDetector(
+                onTap: isPast
+                    ? null
+                    : () {
+                  setState(() => _selectedDay = date);
+                  fetchCourtsWisePrice();
+                },
+                child: Container(
+                  width: 60,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: isSelected ? brandBlue : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected
+                          ? brandBlue
+                          : (isToday ? brandBlue : Colors.grey.shade300),
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        DateFormat('EEE').format(date).toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: isPast
+                              ? Colors.grey.shade400
+                              : (isSelected ? Colors.white : Colors.grey.shade600),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        date.day.toString(),
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: isPast
+                              ? Colors.grey.shade400
+                              : (isSelected ? Colors.white : Colors.black87),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAvailableCourts() {
+    final courtNames = _getCourtNames();
+    if (courtNames.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text(
+            "Available Slots(${courtNames.length})",
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 42,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: courtNames.length,
+            itemBuilder: (context, index) {
+              final court = courtNames[index];
+              final isSelected = selectedCourt == court;
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    selectedCourt = court;
+                    // Reset hour type tab when court changes
+                    final hourTypes = _getHourTypesForCourt(court);
+                    if (hourTypes.isNotEmpty) {
+                      selectedHourTypeTab = hourTypes.first;
+                    }
+                  });
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected ? brandBlue : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected ? brandBlue : Colors.grey.shade300,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      court,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: isSelected ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSlotsSection() {
+    if (selectedCourt == null) {
+      return const Center(
+        child: Text("Select a court to view slots"),
+      );
+    }
+
+    final hourTypes = _getHourTypesForCourt(selectedCourt);
+    if (hourTypes.isEmpty) {
+      return const Center(
+        child: Text("No slots available"),
+      );
+    }
+
+    // Set default tab if not set
+    if (selectedHourTypeTab == null || !hourTypes.contains(selectedHourTypeTab)) {
+      selectedHourTypeTab = hourTypes.first;
+    }
+
+    return Column(
+      children: [
+        // Hour Type Tabs
+        Container(
+          height: 45,
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            children: hourTypes.map((hourType) {
+              final isSelected = selectedHourTypeTab == hourType;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      selectedHourTypeTab = hourType;
+                    });
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    decoration: BoxDecoration(
+                      color: isSelected ? brandBlue : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected ? brandBlue : Colors.grey.shade300,
+                      ),
+                    ),
+                    margin: EdgeInsets.only(
+                      right: hourTypes.indexOf(hourType) == hourTypes.length - 1 ? 0 : 8,
+                    ),
+                    child: Center(
+                      child: Text(
+                        hourType,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // Animated Slots Display
+        Expanded(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            switchInCurve: Curves.easeInOut,
+            switchOutCurve: Curves.easeInOut,
+            transitionBuilder: (Widget child, Animation<double> animation) {
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.1, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              );
+            },
+            child: _buildSlotsList(selectedHourTypeTab!),
+          ),
+        ),
+      ],
+    );
+  }
+  Widget _buildSlotsList(String hourType) {
+    final slots = _getSlotsForCourtAndHour(selectedCourt, hourType);
+
+    if (slots.isEmpty) {
+      return Center(
+        key: ValueKey('empty_$hourType'),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.event_busy, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text(
+              "No slots available for $hourType",
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      key: ValueKey(hourType),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      itemCount: slots.length,
+      itemBuilder: (context, index) => _buildSlotChip(slots[index]),
+    );
+  }
+
+  // Widget _buildSlotChip(Map<String, dynamic> slot) {
+  //   final isSelected = selectedSlots.any((s) =>
+  //   s['court'] == slot['court'] &&
+  //       s['hourType'] == slot['hourType'] &&
+  //       s['time'] == slot['time']);
+  //   final isSoldOut = (slot['price'] == 0);
+  //
+  //   return Container(
+  //     width: double.infinity,
+  //     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+  //     margin: const EdgeInsets.only(bottom: 12),
+  //     decoration: BoxDecoration(
+  //       color: isSelected
+  //           ? brandBlue
+  //           : (isSoldOut ? Colors.grey.shade200 : Colors.white),
+  //       borderRadius: BorderRadius.circular(12),
+  //       border: Border.all(
+  //         color: isSelected
+  //             ? brandBlue
+  //             : (isSoldOut ? Colors.grey.shade300 : Colors.grey.shade300),
+  //         width: 1,
+  //       ),
+  //     ),
+  //     child: InkWell(
+  //       onTap: isSoldOut ? null : () => toggleSlot(slot),
+  //       child: Row(
+  //         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  //         children: [
+  //           Row(
+  //             children: [
+  //               Text(
+  //                 slot['time'],
+  //                 style: TextStyle(
+  //                   color: isSelected
+  //                       ? Colors.white
+  //                       : (isSoldOut ? Colors.grey : Colors.black87),
+  //                   fontWeight: FontWeight.w600,
+  //                   fontSize: 15,
+  //                 ),
+  //               ),
+  //               const SizedBox(width: 12),
+  //               Text(
+  //                 isSoldOut ? "Sold Out" : "₹${slot['price']}",
+  //                 style: TextStyle(
+  //                   color: isSelected
+  //                       ? Colors.white
+  //                       : (isSoldOut ? Colors.grey : Colors.grey.shade600),
+  //                   fontSize: 14,
+  //                 ),
+  //               ),
+  //             ],
+  //           ),
+  //           Container(
+  //             padding: const EdgeInsets.all(6),
+  //             decoration: BoxDecoration(
+  //               color: isSelected ? Colors.white : brandBlue,
+  //               shape: BoxShape.circle,
+  //             ),
+  //             child: Icon(
+  //               Icons.add,
+  //               color: isSelected ? brandBlue : Colors.white,
+  //               size: 20,
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
+
+  Widget _buildSlotChip(Map<String, dynamic> slot) {
+    final isSelected = selectedSlots.any((s) =>
+    s['court'] == slot['court'] &&
+        s['hourType'] == slot['hourType'] &&
+        s['time'] == slot['time'] &&
+        s['date'] == slot['date']);
+    final isSoldOut = (slot['price'] == 0);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? brandBlue
+            : (isSoldOut ? Colors.grey.shade200 : Colors.white),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isSelected
+              ? brandBlue
+              : (isSoldOut ? Colors.grey.shade300 : Colors.grey.shade300),
+          width: 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: isSoldOut ? null : () => toggleSlot(slot),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Text(
+                  slot['time'],
+                  style: TextStyle(
+                    color: isSelected
+                        ? Colors.white
+                        : (isSoldOut ? Colors.grey : Colors.black87),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  isSoldOut ? "Sold Out" : "₹${slot['price']}",
+                  style: TextStyle(
+                    color: isSelected
+                        ? Colors.white
+                        : (isSoldOut ? Colors.grey : Colors.grey.shade600),
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white : brandBlue,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.add,
+                color: isSelected ? brandBlue : Colors.white,
+                size: 20,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Widget _buildSlotsList(String hourType) {
+  //   final slots = _getSlotsForCourtAndHour(selectedCourt, hourType);
+  //
+  //   if (slots.isEmpty) {
+  //     return Center(
+  //       key: ValueKey('empty_$hourType'),
+  //       child: Column(
+  //         mainAxisAlignment: MainAxisAlignment.center,
+  //         children: [
+  //           Icon(Icons.event_busy, size: 64, color: Colors.grey.shade400),
+  //           const SizedBox(height: 16),
+  //           Text(
+  //             "No slots available for $hourType",
+  //             style: TextStyle(
+  //               fontSize: 14,
+  //               color: Colors.grey.shade600,
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //     );
+  //   }
+  //
+  //   return ListView(
+  //     key: ValueKey(hourType),
+  //     padding: const EdgeInsets.symmetric(horizontal: 20),
+  //     children: [
+  //       Wrap(
+  //         spacing: 10,
+  //         runSpacing: 10,
+  //         children: slots.map((slot) => _buildSlotChip(slot)).toList(),
+  //       ),
+  //       const SizedBox(height: 100), // Extra space for bottom bar
+  //     ],
+  //   );
+  // }
+  //
+  // Widget _buildSlotChip(Map<String, dynamic> slot) {
+  //   final isSelected = selectedSlots.any((s) =>
+  //   s['court'] == slot['court'] &&
+  //       s['hourType'] == slot['hourType'] &&
+  //       s['time'] == slot['time']);
+  //   final isSoldOut = (slot['price'] == 0);
+  //
+  //   return GestureDetector(
+  //     onTap: isSoldOut ? null : () => toggleSlot(slot),
+  //     child: Container(
+  //       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+  //       decoration: BoxDecoration(
+  //         color: isSelected
+  //             ? brandBlue
+  //             : (isSoldOut ? Colors.grey.shade200 : Colors.white),
+  //         borderRadius: BorderRadius.circular(8),
+  //         border: Border.all(
+  //           color: isSelected
+  //               ? brandBlue
+  //               : (isSoldOut ? Colors.grey.shade300 : Colors.grey.shade300),
+  //         ),
+  //       ),
+  //       child: Row(
+  //         mainAxisSize: MainAxisSize.min,
+  //         children: [
+  //           Text(
+  //             slot['time'],
+  //             style: TextStyle(
+  //               color: isSelected
+  //                   ? Colors.white
+  //                   : (isSoldOut ? Colors.grey : Colors.black87),
+  //               fontWeight: FontWeight.w600,
+  //               fontSize: 14,
+  //             ),
+  //           ),
+  //           const SizedBox(width: 8),
+  //           Text(
+  //             isSoldOut ? "Sold Out" : "₹${slot['price']}",
+  //             style: TextStyle(
+  //               color: isSelected
+  //                   ? Colors.white
+  //                   : (isSoldOut ? Colors.grey : Colors.grey.shade600),
+  //               fontSize: 13,
+  //             ),
+  //           ),
+  //           if (isSelected) ...[
+  //             const SizedBox(width: 8),
+  //             const Icon(Icons.add_circle, color: Colors.white, size: 18),
+  //           ],
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
+
+  Widget _buildBottomBar() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: brandBlue,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  "Total",
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
+                ),
+                Text(
+                  "${selectedSlots.length} Slot  ₹$totalPrice",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            ElevatedButton(
+              onPressed: _showConfirmationBottomSheet,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: brandBlue,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: Row(
+                children: const [
+                  Text(
+                    "PROCEED",
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Icon(Icons.arrow_forward, size: 18),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool isSameDate(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  void _showNotLoggedInPopup() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.lock_outline, size: 48, color: Colors.orange),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                "Login Required",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                "You need to log in to continue.\nRedirecting you shortly...",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.black87),
+              ),
+              const SizedBox(height: 24),
+              const CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                "Please wait...",
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      Navigator.pop(context);
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (route) => false,
+      );
+    });
+  }
+}

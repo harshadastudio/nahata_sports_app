@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../auth/login.dart';
@@ -22,6 +24,7 @@ class _MoreScreenState extends State<MoreScreen> {
   void initState() {
     super.initState();
     _fetchUserData();
+    _getUserData();
   }
   Future<void> _logout(BuildContext context) async {
     await AuthService.logout();
@@ -36,6 +39,24 @@ class _MoreScreenState extends State<MoreScreen> {
     // // Navigate to login page after logout
     // Navigator.pushReplacement(
     //     context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+  }
+
+  Future<void> _getUserData() async {
+    final userId = await AuthService.getUserId();
+    if (userId == null) return;
+
+    final response = await http.get(
+      Uri.parse('https://nahatasports.com/api/$userId/edit'),
+    );
+print(response);
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data['status'] == true) {
+        setState(() {
+          _userData = data['data'];
+        });
+      }
+    }
   }
 
   Future<void> _fetchUserData() async {
@@ -134,6 +155,37 @@ class _MoreScreenState extends State<MoreScreen> {
                       //   padding: EdgeInsets.zero,
                       //   constraints: const BoxConstraints(),
                       // ),
+                      IconButton(
+                        icon: const Icon(Icons.edit, size: 20),
+                        onPressed: () async {
+                          // 🔹 Get current logged-in user's ID from SharedPreferences
+                          final userId = await AuthService.getUserId();
+
+                          if (userId == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('User not logged in')),
+                            );
+                            return;
+                          }
+
+                          // 🔹 Navigate to Edit Profile screen with that ID
+                          final updated = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => EditProfileScreen(userId: int.parse(userId)),
+                            ),
+                          );
+
+                          // 🔹 Refresh data if user saved updates
+                          if (updated == true) {
+                            setState(() {
+                              _getUserData(); // Replace with your actual reload method
+                            });
+                          }
+                        },
+                      ),
+
+
                       SizedBox(height: 20,),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -332,15 +384,27 @@ class MyBookingsScreen extends StatefulWidget {
 class _MyBookingsScreenState extends State<MyBookingsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  int _selectedTabIndex = 0; // 0 for Venue, 1 for Coaching
-  int _selectedTimeIndex = 0; // 0 for Upcoming, 1 for Previous
-
+  int _selectedTabIndex = 0; // 0 = Venue, 1 = Coaching
+  int _selectedTimeIndex = 0; // 0 = Upcoming, 1 = Previous
   static const Color brandBlue = Color(0xFF1A237E);
+
+  List<Map<String, dynamic>> allBookings = [];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadBookings();
+  }
+
+  Future<void> _loadBookings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String> bookingStrings = prefs.getStringList('bookings') ?? [];
+    final List<Map<String, dynamic>> loadedBookings = bookingStrings
+        .map((b) => jsonDecode(b) as Map<String, dynamic>)
+        .toList();
+
+    setState(() => allBookings = loadedBookings);
   }
 
   @override
@@ -349,8 +413,29 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
     super.dispose();
   }
 
+  List<Map<String, dynamic>> _getFilteredBookings() {
+    final now = DateTime.now();
+    final upcoming = <Map<String, dynamic>>[];
+    final previous = <Map<String, dynamic>>[];
+
+    for (var booking in allBookings) {
+      try {
+        final date = DateFormat('yyyy-MM-dd').parse(booking['date']);
+        if (date.isBefore(now)) {
+          previous.add(booking);
+        } else {
+          upcoming.add(booking);
+        }
+      } catch (_) {}
+    }
+
+    return _selectedTimeIndex == 0 ? upcoming : previous;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final filtered = _getFilteredBookings();
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -370,7 +455,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
         children: [
           const SizedBox(height: 16),
 
-          // Custom Tab Buttons
+          // --- Top Tabs (Venue / Coaching)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -384,7 +469,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
 
           const SizedBox(height: 24),
 
-          // Upcoming / Previous Toggle
+          // --- Upcoming / Previous Toggle
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -399,7 +484,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
 
           const SizedBox(height: 6),
 
-          // Animated Underline Indicator
+          // --- Animated Indicator
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -434,8 +519,19 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
 
           const SizedBox(height: 24),
 
-          // Content Area
-          Expanded(child: _buildContent()),
+          // --- Bookings list
+          Expanded(
+            child: filtered.isEmpty
+                ? _buildEmptyState()
+                : ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: filtered.length,
+              itemBuilder: (context, index) {
+                final booking = filtered[index];
+                return _buildBookingCard(booking);
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -444,11 +540,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
   Widget _buildTabButton(String title, int index) {
     final isSelected = _selectedTabIndex == index;
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedTabIndex = index;
-        });
-      },
+      onTap: () => setState(() => _selectedTabIndex = index),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
@@ -471,9 +563,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
   Widget _buildTimeToggle(String title, int index) {
     final isSelected = _selectedTimeIndex == index;
     return GestureDetector(
-      onTap: () {
-        setState(() => _selectedTimeIndex = index);
-      },
+      onTap: () => setState(() => _selectedTimeIndex = index),
       child: AnimatedDefaultTextStyle(
         duration: const Duration(milliseconds: 200),
         style: TextStyle(
@@ -487,8 +577,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
     );
   }
 
-  Widget _buildContent() {
-    // Empty state - placeholder
+  Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -506,8 +595,65 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
       ),
     );
   }
-}
 
+  Widget _buildBookingCard(Map<String, dynamic> booking) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade100,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius:
+            const BorderRadius.horizontal(left: Radius.circular(12)),
+            child: Image.network(
+              booking['imageUrl'] ?? '',
+              width: 100,
+              height: 100,
+              fit: BoxFit.cover,
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    booking['venueName'] ?? '',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 15),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    booking['sport'] ?? '',
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${booking['date']} • ${booking['time']}',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 
 class MyEventsScreen extends StatefulWidget {
@@ -795,6 +941,214 @@ class _YourPassScreenState extends State<YourPassScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+
+class EditProfileScreen extends StatefulWidget {
+  final int userId;
+  const EditProfileScreen({Key? key, required this.userId}) : super(key: key);
+
+  @override
+  State<EditProfileScreen> createState() => _EditProfileScreenState();
+}
+
+class _EditProfileScreenState extends State<EditProfileScreen> {
+  final _formKey = GlobalKey<FormState>();
+  bool _loading = false;
+
+  String? userId;
+
+  // Controllers
+  final nameController = TextEditingController();
+  final phoneController = TextEditingController();
+  final emailController = TextEditingController();
+  final dobController = TextEditingController();
+  final genderController = TextEditingController();
+  final bloodController = TextEditingController();
+  final parentController = TextEditingController();
+  final passcodeController = TextEditingController();
+  final passwordController = TextEditingController();
+  final confirmPasswordController = TextEditingController();
+
+  // -------------------
+  // ✅ 1. Load user ID from local storage
+  Future<void> loadUser() async {
+    final id = await AuthService.getUserId();
+    setState(() {
+      userId = id;
+    });
+
+    if (userId != null) {
+      await fetchUserData();
+    }
+  }
+
+  // -------------------
+  // ✅ 2. Fetch user details from API
+  Future<void> fetchUserData() async {
+    setState(() => _loading = true);
+
+    try {
+      final response = await http.get(
+        Uri.parse('https://nahatasports.com/api/$userId/edit'),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print(response.body);
+        if (data['status'] == true) {
+          final user = data['data'];
+          nameController.text = user['name'] ?? '';
+          phoneController.text = user['phone'] ?? '';
+          emailController.text = user['email'] ?? '';
+          dobController.text = user['dob'] ?? '';
+          genderController.text = user['gender'] ?? '';
+          bloodController.text = user['blood_group'] ?? '';
+          parentController.text = user['parent_contact'] ?? '';
+          passcodeController.text = user['passcode'] ?? '';
+        }
+      }
+
+      else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to fetch user info')),
+        );
+      }
+    } catch (e) {
+      print('❌ Error fetching user: $e');
+    }
+
+    setState(() => _loading = false);
+  }
+
+  // -------------------
+  // ✅ 3. Update user details (POST)
+  Future<void> updateUserData() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _loading = true);
+
+    final body = {
+      "name": nameController.text.trim(),
+      "phone": phoneController.text.trim(),
+      "email": emailController.text.trim(),
+      "password": passwordController.text.trim(),
+      "confirmPassword": confirmPasswordController.text.trim(),
+      "dob": dobController.text.trim(),
+      "gender": genderController.text.trim(),
+      "blood_group": bloodController.text.trim(),
+      "parent_contact": parentController.text.trim(),
+      "passcode": passcodeController.text.trim(),
+    };
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://nahatasports.com/api/$userId/update'),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(body),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['status'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile updated successfully!')),
+        );
+        print(response.body);
+        // Optionally update saved user info in SharedPreferences
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        Map<String, dynamic>? currentUser = await AuthService.getUser();
+        if (currentUser != null) {
+          currentUser.addAll(body); // merge updated data
+          await prefs.setString('user', jsonEncode(currentUser));
+        }
+
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message'] ?? 'Update failed')),
+        );
+      }
+    } catch (e) {
+      print("❌ Error updating user: $e");
+    }
+
+    setState(() => _loading = false);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    loadUser();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Edit Profile')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Name'),
+                validator: (v) => v!.isEmpty ? 'Enter name' : null,
+              ),
+              TextFormField(
+                controller: phoneController,
+                decoration: const InputDecoration(labelText: 'Phone'),
+              ),
+              TextFormField(
+                controller: emailController,
+                decoration: const InputDecoration(labelText: 'Email'),
+              ),
+              TextFormField(
+                controller: dobController,
+                decoration: const InputDecoration(labelText: 'DOB'),
+              ),
+              TextFormField(
+                controller: genderController,
+                decoration: const InputDecoration(labelText: 'Gender'),
+              ),
+              TextFormField(
+                controller: bloodController,
+                decoration: const InputDecoration(labelText: 'Blood Group'),
+              ),
+              TextFormField(
+                controller: parentController,
+                decoration: const InputDecoration(labelText: 'Parent Contact'),
+              ),
+              TextFormField(
+                controller: passcodeController,
+                decoration: const InputDecoration(labelText: 'Passcode'),
+              ),
+              TextFormField(
+                controller: passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Password'),
+              ),
+              TextFormField(
+                controller: confirmPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Confirm Password'),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _loading ? null : updateUserData,
+                child: const Text('Save Changes'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

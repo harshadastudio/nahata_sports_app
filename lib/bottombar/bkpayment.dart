@@ -17,7 +17,7 @@ import 'Custombottombar.dart';
 
 // Import your existing API service - uncomment when available
 // import '../services/api_service.dart';
-
+// /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 class PaymentScreen extends StatefulWidget {
   final Map<String, dynamic> bookingDetails;
 
@@ -31,6 +31,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   late Razorpay _razorpay;
   String selectedPaymentMethod = 'online';
   bool isLoading = false;
+  bool agreedToTerms = false;  // Add this line
 
   @override
   void initState() {
@@ -96,17 +97,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
-  // Future<String?> _getUserEmail() async {
-  //   try {
-  //     SharedPreferences prefs = await SharedPreferences.getInstance();
-  //     final email =
-  //         prefs.getString('userEmail') ?? prefs.getString('email') ?? '';
-  //     return email.isNotEmpty ? email : null;
-  //   } catch (e) {
-  //     print("❌ SharedPreferences error: $e");
-  //     return null;
-  //   }
-  // }
+
 
   Future<bool> _isLoggedIn() async {
     final email = await _getUserEmail();
@@ -220,6 +211,67 @@ class _PaymentScreenState extends State<PaymentScreen> {
     _showErrorDialog(errorMessage);
   }
 
+  void _showErrorDialog(String message) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Column(
+          children: [
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.error_outline, color: Colors.red, size: 48),
+            ),
+            SizedBox(height: 16),
+            Text(
+              "Payment Failed",
+              style: TextStyle(
+                color: Colors.red.shade700,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        // content: Text(
+        //   message,
+        //   textAlign: TextAlign.center,
+        //   style: TextStyle(
+        //     fontSize: 14,
+        //     color: Colors.black87,
+        //   ),
+        // ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: brandBlue,
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                "OK",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   void _handleExternalWallet(ExternalWalletResponse response) {
     print("🔗 External Wallet: ${response.walletName}");
     _showErrorDialog(
@@ -264,49 +316,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
-  // void _handleOnlinePayment() async {
-  //   if (isLoading) return;
-  //
-  //   if (!await _isLoggedIn()) {
-  //     _showErrorDialog("Please log in to make a payment.");
-  //     return;
-  //   }
-  //
-  //   try {
-  //     final total = (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
-  //     final cash = (widget.bookingDetails['cash'] as num?)?.toInt() ?? 0;
-  //     final onlineAmount = total - cash;
-  //     if (onlineAmount <= 0) {
-  //       _showErrorDialog(
-  //           "Invalid payment amount. Online amount must be > 0.");
-  //       return;
-  //     }
-  //
-  //     final email = await _getUserEmail();
-  //     final phone = widget.bookingDetails['phone']?.toString() ?? '';
-  //
-  //     var options = {
-  //       'key': 'rzp_test_YwYUHvAMatnKBY',
-  //       // 'key': 'rzp_test_your_test_key', // Use test key here
-  //       'amount': onlineAmount * 100,
-  //       'name': 'Nahata Sports',
-  //       'description': '${widget.bookingDetails['game'] ?? 'Sports'} booking',
-  //       'currency': 'INR',
-  //       'prefill': {'contact': phone, 'email': email},
-  //       'method': {'upi': true, 'card': true, 'netbanking': true, 'wallet': true},
-  //       'theme': {'color': '#4A90E2'},
-  //       'modal': {
-  //         'ondismiss': () {
-  //           print("💭 Payment modal dismissed");
-  //         }
-  //       }
-  //     };
-  //
-  //     _razorpay.open(options);
-  //   } catch (e) {
-  //     _showErrorDialog('Payment gateway error: ${e.toString()}');
-  //   }
-  // }
+
 
   void _handleCashPayment() async {
     if (isLoading) return;
@@ -316,7 +326,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
     _showCashBookingDialog();
   }
-
   void _showCashBookingDialog() {
     final TextEditingController _cashController = TextEditingController();
     final total = (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
@@ -331,10 +340,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
             Container(
               padding: EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Color(0xFF1A237E).withOpacity(0.1),
+                color: brandBlue.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(Icons.money, color: Color(0xFF1A237E), size: 24),
+              child: Icon(Icons.money, color: brandBlue, size: 24),
             ),
             SizedBox(width: 12),
             Expanded(
@@ -361,6 +370,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 labelText: "Cash Amount",
                 hintText: "₹0 - ₹$total",
                 prefixIcon: Icon(Icons.currency_rupee),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: brandBlue, width: 2),
+                ),
               ),
             ),
           ],
@@ -368,50 +384,67 @@ class _PaymentScreenState extends State<PaymentScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text("Cancel"),
+            child: Text(
+              "Cancel",
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
           ),
           ElevatedButton(
-    onPressed: () async {
-    final cashText = _cashController.text.trim();
-    final cash = int.tryParse(cashText) ?? 0;
-    if (cash < 0 || cash > total) {
-    _showSnackBar("Enter amount between 0 and $total", isError: true);
-    return;
-    }
+            onPressed: () async {
+              final cashText = _cashController.text.trim();
+              final cash = int.tryParse(cashText) ?? 0;
+              if (cash < 0 || cash > total) {
+                _showSnackBar("Enter amount between 0 and $total", isError: true);
+                return;
+              }
 
-    Navigator.pop(context); // Close dialog
-    widget.bookingDetails['cash'] = cash;
+              Navigator.pop(context); // Close dialog
+              widget.bookingDetails['cash'] = cash;
 
-    final onlineAmount = total - cash;
-    final email = await _getUserEmail();
-    if (email == null) {
-    _showErrorDialog("Session expired. Please login again.");
-    return;
-    }
+              final onlineAmount = total - cash;
+              final email = await _getUserEmail();
+              if (email == null) {
+                _showErrorDialog("Session expired. Please login again.");
+                return;
+              }
 
-    if (onlineAmount <= 0) {
-    await _storeBooking(
-    email: email,
-    slot: jsonEncode(widget.bookingDetails['slots']),
-    date: widget.bookingDetails['date']?.toString() ?? '',
-    transactionId: "",
-    cashAmount: cash,
-    onlinePaid: 0,
-    );
-    } else {
-    _showSnackBar("Proceeding to pay ₹$onlineAmount online", isError: false);
-    await Future.delayed(Duration(milliseconds: 500));
-    selectedPaymentMethod = 'online';  // Ensure correct payment method is set
-    _handleOnlinePayment();
-    }
-    },
-
-    child: Text("Confirm"),
+              if (onlineAmount <= 0) {
+                await _storeBooking(
+                  email: email,
+                  slot: jsonEncode(widget.bookingDetails['slots']),
+                  date: widget.bookingDetails['date']?.toString() ?? '',
+                  transactionId: "",
+                  cashAmount: cash,
+                  onlinePaid: 0,
+                );
+              } else {
+                _showSnackBar("Proceeding to pay ₹$onlineAmount online", isError: false);
+                await Future.delayed(Duration(milliseconds: 500));
+                selectedPaymentMethod = 'online';  // Ensure correct payment method is set
+                _handleOnlinePayment();
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: brandBlue,
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: Text(
+              "Confirm",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
+
 
   void _showSuccessDialog() {
     showDialog(
@@ -477,25 +510,25 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 
-  void _showErrorDialog(String message) {
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.error, color: Colors.red),
-            SizedBox(width: 12),
-            Expanded(child: Text("Error")),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text("OK"))
-        ],
-      ),
-    );
-  }
+  // void _showErrorDialog(String message) {
+  //   if (!mounted) return;
+  //   showDialog(
+  //     context: context,
+  //     builder: (_) => AlertDialog(
+  //       title: Row(
+  //         children: [
+  //           Icon(Icons.error, color: Colors.red),
+  //           SizedBox(width: 12),
+  //           Expanded(child: Text("Error")),
+  //         ],
+  //       ),
+  //       content: Text(message),
+  //       actions: [
+  //         TextButton(onPressed: () => Navigator.pop(context), child: Text("OK"))
+  //       ],
+  //     ),
+  //   );
+  // }
 
   void _showSnackBar(String message, {required bool isError}) {
     if (!mounted) return;
@@ -511,288 +544,319 @@ class _PaymentScreenState extends State<PaymentScreen> {
     super.dispose();
   }
 
+  static const brandBlue = Color(0xFF1A237E);
+
+  @override
   @override
   Widget build(BuildContext context) {
     final booking = widget.bookingDetails;
     final total = booking['price'] as int? ?? 0;
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      body: SafeArea(
-        child: Column(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          onPressed: isLoading ? null : () => Navigator.pop(context),
+          icon: Icon(Icons.arrow_back, color: Colors.black87),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Custom App Bar
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: isLoading ? null : () => Navigator.pop(context),
-                    icon: Icon(Icons.arrow_back_ios, size: 20),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.grey[100],
-                      padding: EdgeInsets.all(8),
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                  Text(
-                    "Complete Your Payment",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  Spacer(),
-                  if (isLoading)
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1A237E)),
-                      ),
-                    ),
-                ],
+            Text(
+              "${booking['game']?.toString() ?? 'Game'}",
+              style: TextStyle(
+                color: Colors.black87,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
               ),
             ),
-
-            // Main Content
-            Expanded(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Booking Summary Card
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF1A237E), Color(0xFF1A237E)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Color(0xFF1A237E).withOpacity(0.3),
-                            blurRadius: 20,
-                            offset: Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Stack(
-                        children: [
-                          // Background pattern/image can be added here
-                          Positioned(
-                            right: -20,
-                            top: -20,
-                            child: Container(
-                              width: 120,
-                              height: 120,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.1),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.all(24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.sports_basketball,
-                                      color: Colors.white,
-                                      size: 24,
-                                    ),
-                                    SizedBox(width: 12),
-                                    Text(
-                                      "Booking Summary",
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                SizedBox(height: 20),
-                                _buildSummaryRow("Location", booking['location']?.toString() ?? 'N/A'),
-                                _buildSummaryRow("Game", booking['game']?.toString() ?? 'N/A'),
-                                _buildSummaryRow("Date", booking['date']?.toString() ?? 'N/A'),
-                                _buildSummaryRow("Slots", _formatSlots(booking['slots'])),
-                                SizedBox(height: 16),
-                                Divider(color: Colors.white.withOpacity(0.3), thickness: 1),
-                                SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      "Total Amount",
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      "₹ ${total.toStringAsFixed(2)}",
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    SizedBox(height: 32),
-
-                    // Payment Method Section
-                    Text(
-                      "Payment Method",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    SizedBox(height: 16),
-
-                    // Payment Options
-                    _buildPaymentOption(
-                      title: "Pay Online",
-                      subtitle: "UPI, Cards, Net Banking, Wallets",
-                      icon: Icons.credit_card,
-                      value: 'online',
-                      isSelected: selectedPaymentMethod == 'online',
-                    ),
-                    SizedBox(height: 12),
-                    _buildPaymentOption(
-                      title: "Pay with Cash at Venue",
-                      subtitle: "Pay when you arrive at the venue",
-                      icon: Icons.money,
-                      value: 'cash',
-                      isSelected: selectedPaymentMethod == 'cash',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Bottom Payment Button
-            Container(
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: SafeArea(
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: (isLoading || total <= 0) ? null : (selectedPaymentMethod == 'online'
-                        ? _handleOnlinePayment
-                        : _handleCashPayment),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Color(0xFF1A237E),
-                      elevation: 8,
-                      shadowColor: Color(0xFF1A237E).withOpacity(0.4),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      disabledBackgroundColor: Colors.grey[400],
-                    ),
-                    child: isLoading
-                        ? Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        ),
-                        SizedBox(width: 12),
-                        Text(
-                          "Processing...",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    )
-                        : Text(
-                      selectedPaymentMethod == 'online'
-                          ? "Pay Online ₹${total.toStringAsFixed(2)}"
-                          : "Set Cash Payment",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
+            Text(
+              "at ${booking['location']?.toString() ?? 'Location'}",
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ],
         ),
+        centerTitle: false,
       ),
-    );
-  }
-
-  Widget _buildSummaryRow(String title, String value) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: Column(
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.9),
-              fontSize: 14,
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Venue Rules Section
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Venue Rule & Cancellation Policy",
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          "• Check cancellation terms",
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                        Text(
+                          "• Know the venues T&Cs",
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  SizedBox(height: 24),
+
+                  // Slot Details Section
+                  Text(
+                    "Slot Details(${_getSlotCount(booking['slots'])})",
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  // SizedBox(height: 4),
+                  // Text(
+                  //   booking['date']?.toString() ?? 'N/A',
+                  //   style: TextStyle(
+                  //     fontSize: 13,
+                  //     color: Colors.grey.shade600,
+                  //   ),
+                  // ),
+
+                  SizedBox(height: 16),
+
+                  // Selected Slots
+                  ..._buildSlotsList(booking['slots']),
+
+                  SizedBox(height: 24),
+
+                  // Booking Summary Section
+                  Text(
+                    "Booking Summary",
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+
+                  SizedBox(height: 16),
+
+                  // Summary Details
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildSummaryRow2(
+                          "Sports",
+                          booking['game']?.toString() ?? 'N/A',
+                        ),
+                        SizedBox(height: 12),
+                        _buildSummaryRow2(
+                          "Total Slot(s) Base Price(Incl.Taxes)",
+                          "₹${total}",
+                        ),
+                        SizedBox(height: 16),
+                        Divider(height: 1, color: Colors.grey.shade300),
+                        SizedBox(height: 16),
+                        _buildSummaryRow2(
+                          "Slot Total",
+                          "₹${total}",
+                          isBold: true,
+                        ),
+                        SizedBox(height: 16),
+                        Divider(height: 1, color: Colors.grey.shade300),
+                        SizedBox(height: 16),
+                        _buildSummaryRow2(
+                          "Payable Amount",
+                          "₹${total}",
+                          isBold: true,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  SizedBox(height: 24),
+
+                  // Checkbox
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Checkbox(
+                        value: agreedToTerms,
+                        onChanged: (value) {
+                          setState(() {
+                            agreedToTerms = value ?? false;
+                          });
+                        },
+                        activeColor: Colors.green,
+                      ),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              agreedToTerms = !agreedToTerms;
+                            });
+                          },
+                          child: Padding(
+                            padding: EdgeInsets.only(top: 12),
+                            child: Text(
+                              "I hereby agree to the terms and conditions",
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  SizedBox(height: 24),
+
+                  // Payment Method Section
+                  Text(
+                    "Payment Method",
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  SizedBox(height: 16),
+
+                  // Payment Options
+                  _buildPaymentOption(
+                    title: "Pay Online",
+                    subtitle: "UPI, Cards, Net Banking, Wallets",
+                    icon: Icons.credit_card,
+                    value: 'online',
+                    isSelected: selectedPaymentMethod == 'online',
+                  ),
+                  SizedBox(height: 12),
+                  _buildPaymentOption(
+                    title: "Pay with Cash at Venue",
+                    subtitle: "Pay when you arrive at the venue",
+                    icon: Icons.money,
+                    value: 'cash',
+                    isSelected: selectedPaymentMethod == 'cash',
+                  ),
+                ],
+              ),
             ),
           ),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+
+          // Bottom Payment Button
+          Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: brandBlue,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: Offset(0, -2),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: (isLoading || total <= 0 || !agreedToTerms)
+                      ? null
+                      : (selectedPaymentMethod == 'online'
+                      ? _handleOnlinePayment
+                      : _handleCashPayment),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: brandBlue,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    disabledBackgroundColor: Colors.grey[400],
+                  ),
+                  child: isLoading
+                      ? Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(brandBlue),
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        "Processing...",
+                        style: TextStyle(
+                          color: brandBlue,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  )
+                      : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "₹${total} Incl.Taxes",
+                        style: TextStyle(
+                          color: brandBlue,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      SizedBox(width: 60),
+                      Text(
+                        "PROCEED TO PAY",
+                        style: TextStyle(
+                          color: brandBlue,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Icon(Icons.arrow_forward, color: brandBlue, size: 18),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -800,6 +864,454 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ),
     );
   }
+
+  Widget _buildSummaryRow2(String title, String value, {bool isBold = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade700,
+              fontWeight: isBold ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+        SizedBox(width: 16),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 13,
+            color: Colors.black87,
+            fontWeight: isBold ? FontWeight.w600 : FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  int _getSlotCount(dynamic slots) {
+    if (slots == null) return 0;
+    if (slots is List) return slots.length;
+    return 0;
+  }
+
+  List<Widget> _buildSlotsList(dynamic slots) {
+    if (slots == null || slots is! List || slots.isEmpty) {
+      return [
+        Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            "No slots selected",
+            style: TextStyle(color: Colors.grey.shade600),
+          ),
+        ),
+      ];
+    }
+
+    // ✅ Group slots by date
+    Map<String, List<Map<String, dynamic>>> groupedSlots = {};
+    for (var slot in slots) {
+      if (slot is Map<String, dynamic>) {
+        String date = slot['date']?.toString() ?? 'Unknown Date';
+        if (!groupedSlots.containsKey(date)) groupedSlots[date] = [];
+        groupedSlots[date]!.add(slot);
+      }
+    }
+
+    // ✅ Build UI grouped by date
+    return groupedSlots.entries.map<Widget>((entry) {
+      final date = entry.key;
+      final slotList = entry.value;
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Date Header
+          Padding(
+            padding: const EdgeInsets.only(top: 16, bottom: 8),
+            child: Text(
+              "📅 $date",
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+
+          // Slot List for this date
+          ...slotList.asMap().entries.map((entry2) {
+            final slot = entry2.value;
+            final index = entry2.key;
+            final time = slot['time']?.toString() ?? 'Time not set';
+            final court = slot['court']?.toString() ?? 'Court not set';
+
+            return Container(
+              margin: EdgeInsets.only(bottom: 8),
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Slot Info
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        time,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        court,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Remove Button
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        (widget.bookingDetails['slots'] as List)
+                            .removeWhere((s) =>
+                        s['time'] == time &&
+                            s['court'] == court &&
+                            s['date'] == date);
+                      });
+
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text("Slot removed successfully"),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 2),
+                      ));
+                    },
+                    child: Container(
+                      padding: EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.close, color: Colors.red, size: 16),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      );
+    }).toList();
+  }
+
+
+  // Widget build(BuildContext context) {
+  //   final booking = widget.bookingDetails;
+  //   final total = booking['price'] as int? ?? 0;
+  //
+  //   return Scaffold(
+  //     backgroundColor: Colors.grey[50],
+  //     body: SafeArea(
+  //       child: Column(
+  //         children: [
+  //           // Custom App Bar
+  //           Container(
+  //             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+  //             decoration: BoxDecoration(
+  //               color: Colors.white,
+  //               boxShadow: [
+  //                 BoxShadow(
+  //                   color: Colors.black.withOpacity(0.05),
+  //                   blurRadius: 8,
+  //                   offset: Offset(0, 2),
+  //                 ),
+  //               ],
+  //             ),
+  //             child: Row(
+  //               children: [
+  //                 IconButton(
+  //                   onPressed: isLoading ? null : () => Navigator.pop(context),
+  //                   icon: Icon(Icons.arrow_back_ios, size: 20),
+  //                   style: IconButton.styleFrom(
+  //                     backgroundColor: Colors.grey[100],
+  //                     padding: EdgeInsets.all(8),
+  //                   ),
+  //                 ),
+  //                 SizedBox(width: 16),
+  //                 Text(
+  //                   "Complete Your Payment",
+  //                   style: TextStyle(
+  //                     fontSize: 18,
+  //                     fontWeight: FontWeight.w600,
+  //                     color: Colors.black87,
+  //                   ),
+  //                 ),
+  //                 Spacer(),
+  //                 if (isLoading)
+  //                   SizedBox(
+  //                     width: 20,
+  //                     height: 20,
+  //                     child: CircularProgressIndicator(
+  //                       strokeWidth: 2,
+  //                       valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1A237E)),
+  //                     ),
+  //                   ),
+  //               ],
+  //             ),
+  //           ),
+  //
+  //           // Main Content
+  //           Expanded(
+  //             child: SingleChildScrollView(
+  //               padding: EdgeInsets.all(20),
+  //               child: Column(
+  //                 crossAxisAlignment: CrossAxisAlignment.start,
+  //                 children: [
+  //                   // Booking Summary Card
+  //                   Container(
+  //                     decoration: BoxDecoration(
+  //                       gradient: LinearGradient(
+  //                         colors: [Color(0xFF1A237E), Color(0xFF1A237E)],
+  //                         begin: Alignment.topLeft,
+  //                         end: Alignment.bottomRight,
+  //                       ),
+  //                       borderRadius: BorderRadius.circular(20),
+  //                       boxShadow: [
+  //                         BoxShadow(
+  //                           color: Color(0xFF1A237E).withOpacity(0.3),
+  //                           blurRadius: 20,
+  //                           offset: Offset(0, 8),
+  //                         ),
+  //                       ],
+  //                     ),
+  //                     child: Stack(
+  //                       children: [
+  //                         // Background pattern/image can be added here
+  //                         Positioned(
+  //                           right: -20,
+  //                           top: -20,
+  //                           child: Container(
+  //                             width: 120,
+  //                             height: 120,
+  //                             decoration: BoxDecoration(
+  //                               color: Colors.white.withOpacity(0.1),
+  //                               shape: BoxShape.circle,
+  //                             ),
+  //                           ),
+  //                         ),
+  //                         Padding(
+  //                           padding: EdgeInsets.all(24),
+  //                           child: Column(
+  //                             crossAxisAlignment: CrossAxisAlignment.start,
+  //                             children: [
+  //                               Row(
+  //                                 children: [
+  //                                   Icon(
+  //                                     Icons.sports_basketball,
+  //                                     color: Colors.white,
+  //                                     size: 24,
+  //                                   ),
+  //                                   SizedBox(width: 12),
+  //                                   Text(
+  //                                     "Booking Summary",
+  //                                     style: TextStyle(
+  //                                       color: Colors.white,
+  //                                       fontSize: 20,
+  //                                       fontWeight: FontWeight.bold,
+  //                                     ),
+  //                                   ),
+  //                                 ],
+  //                               ),
+  //                               SizedBox(height: 20),
+  //                               _buildSummaryRow("Location", booking['location']?.toString() ?? 'N/A'),
+  //                               _buildSummaryRow("Game", booking['game']?.toString() ?? 'N/A'),
+  //                               _buildSummaryRow("Date", booking['date']?.toString() ?? 'N/A'),
+  //                               _buildSummaryRow("Slots", _formatSlots(booking['slots'])),
+  //                               SizedBox(height: 16),
+  //                               Divider(color: Colors.white.withOpacity(0.3), thickness: 1),
+  //                               SizedBox(height: 16),
+  //                               Row(
+  //                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  //                                 children: [
+  //                                   Text(
+  //                                     "Total Amount",
+  //                                     style: TextStyle(
+  //                                       color: Colors.white,
+  //                                       fontSize: 18,
+  //                                       fontWeight: FontWeight.w600,
+  //                                     ),
+  //                                   ),
+  //                                   Text(
+  //                                     "₹ ${total.toStringAsFixed(2)}",
+  //                                     style: TextStyle(
+  //                                       color: Colors.white,
+  //                                       fontSize: 24,
+  //                                       fontWeight: FontWeight.bold,
+  //                                     ),
+  //                                   ),
+  //                                 ],
+  //                               ),
+  //                             ],
+  //                           ),
+  //                         ),
+  //                       ],
+  //                     ),
+  //                   ),
+  //
+  //                   SizedBox(height: 32),
+  //
+  //                   // Payment Method Section
+  //                   Text(
+  //                     "Payment Method",
+  //                     style: TextStyle(
+  //                       fontSize: 20,
+  //                       fontWeight: FontWeight.bold,
+  //                       color: Colors.black87,
+  //                     ),
+  //                   ),
+  //                   SizedBox(height: 16),
+  //
+  //                   // Payment Options
+  //                   _buildPaymentOption(
+  //                     title: "Pay Online",
+  //                     subtitle: "UPI, Cards, Net Banking, Wallets",
+  //                     icon: Icons.credit_card,
+  //                     value: 'online',
+  //                     isSelected: selectedPaymentMethod == 'online',
+  //                   ),
+  //                   SizedBox(height: 12),
+  //                   _buildPaymentOption(
+  //                     title: "Pay with Cash at Venue",
+  //                     subtitle: "Pay when you arrive at the venue",
+  //                     icon: Icons.money,
+  //                     value: 'cash',
+  //                     isSelected: selectedPaymentMethod == 'cash',
+  //                   ),
+  //                 ],
+  //               ),
+  //             ),
+  //           ),
+  //
+  //           // Bottom Payment Button
+  //           Container(
+  //             padding: EdgeInsets.all(20),
+  //             decoration: BoxDecoration(
+  //               color: Colors.white,
+  //               boxShadow: [
+  //                 BoxShadow(
+  //                   color: Colors.black.withOpacity(0.1),
+  //                   blurRadius: 10,
+  //                   offset: Offset(0, -2),
+  //                 ),
+  //               ],
+  //             ),
+  //             child: SafeArea(
+  //               child: SizedBox(
+  //                 width: double.infinity,
+  //                 height: 56,
+  //                 child: ElevatedButton(
+  //                   onPressed: (isLoading || total <= 0) ? null : (selectedPaymentMethod == 'online'
+  //                       ? _handleOnlinePayment
+  //                       : _handleCashPayment),
+  //                   style: ElevatedButton.styleFrom(
+  //                     backgroundColor: Color(0xFF1A237E),
+  //                     elevation: 8,
+  //                     shadowColor: Color(0xFF1A237E).withOpacity(0.4),
+  //                     shape: RoundedRectangleBorder(
+  //                       borderRadius: BorderRadius.circular(16),
+  //                     ),
+  //                     disabledBackgroundColor: Colors.grey[400],
+  //                   ),
+  //                   child: isLoading
+  //                       ? Row(
+  //                     mainAxisAlignment: MainAxisAlignment.center,
+  //                     children: [
+  //                       SizedBox(
+  //                         width: 20,
+  //                         height: 20,
+  //                         child: CircularProgressIndicator(
+  //                           strokeWidth: 2,
+  //                           valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+  //                         ),
+  //                       ),
+  //                       SizedBox(width: 12),
+  //                       Text(
+  //                         "Processing...",
+  //                         style: TextStyle(
+  //                           color: Colors.white,
+  //                           fontSize: 18,
+  //                           fontWeight: FontWeight.bold,
+  //                         ),
+  //                       ),
+  //                     ],
+  //                   )
+  //                       : Text(
+  //                     selectedPaymentMethod == 'online'
+  //                         ? "Pay Online ₹${total.toStringAsFixed(2)}"
+  //                         : "Set Cash Payment",
+  //                     style: TextStyle(
+  //                       color: Colors.white,
+  //                       fontSize: 18,
+  //                       fontWeight: FontWeight.bold,
+  //                     ),
+  //                   ),
+  //                 ),
+  //               ),
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
+  //
+  // Widget _buildSummaryRow(String title, String value) {
+  //   return Padding(
+  //     padding: EdgeInsets.only(bottom: 8),
+  //     child: Row(
+  //       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  //       children: [
+  //         Text(
+  //           title,
+  //           style: TextStyle(
+  //             color: Colors.white.withOpacity(0.9),
+  //             fontSize: 14,
+  //           ),
+  //         ),
+  //         Flexible(
+  //           child: Text(
+  //             value,
+  //             textAlign: TextAlign.right,
+  //             style: TextStyle(
+  //               color: Colors.white,
+  //               fontSize: 14,
+  //               fontWeight: FontWeight.w500,
+  //             ),
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   Widget _buildPaymentOption({
     required String title,
@@ -931,3 +1443,4 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 }
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
