@@ -135,9 +135,19 @@ class EventModel {
 /* -------------------------------------------
    API Service
    ------------------------------------------- */
-Future<List<EventModel>> fetchEvents() async {
-  final res = await http.get(Uri.parse("https://nahatasports.com/api/tournaments"));
-  if (res.statusCode != 200) throw Exception("Failed to load events");
+// Future<List<EventModel>> fetchEvents() async {
+//   final res = await http.get(Uri.parse("https://nahatasports.com/api/tournaments"));
+//   if (res.statusCode != 200) throw Exception("Failed to load events");
+//
+//   final body = jsonDecode(res.body);
+//   final List data = body['data'] ?? [];
+//   return data.map((e) => EventModel.fromJson(e)).toList();
+// }
+Future<List<EventModel>> fetchEvents({required String status}) async {
+  final url = "https://nahatasports.com/api/events_api?status=$status";
+  final res = await http.get(Uri.parse(url));
+
+  if (res.statusCode != 200) throw Exception("Failed to load $status events");
 
   final body = jsonDecode(res.body);
   final List data = body['data'] ?? [];
@@ -175,7 +185,7 @@ class _EventsScreenState extends State<EventsScreen>
     );
     _animationController.forward();
 
-    _futureEvents = fetchEvents();
+    _futureEvents = fetchEvents(status: "active");
   }
 
   @override
@@ -320,7 +330,12 @@ class _EventsScreenState extends State<EventsScreen>
         children: [
           Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => selectedTab = 0),
+              onTap: () {
+                setState(() {
+                  selectedTab = 0;
+                  _futureEvents = fetchEvents(status: "active");
+                });
+              },
               child: AnimatedContainer(
                 duration: Duration(milliseconds: 300),
                 padding: EdgeInsets.symmetric(vertical: 12, horizontal: 24),
@@ -330,7 +345,7 @@ class _EventsScreenState extends State<EventsScreen>
                   borderRadius: BorderRadius.circular(25),
                 ),
                 child: Text(
-                  'Coming soon',
+                  'Active Events',
                   style: TextStyle(
                     color: selectedTab == 0
                         ? Colors.white
@@ -344,7 +359,12 @@ class _EventsScreenState extends State<EventsScreen>
           ),
           SizedBox(width: 12),
           GestureDetector(
-            onTap: () => setState(() => selectedTab = 1),
+            onTap: () {
+              setState(() {
+                selectedTab = 1;
+                _futureEvents = fetchEvents(status: "upcoming");
+              });
+            },
             child: AnimatedContainer(
               duration: Duration(milliseconds: 300),
               padding: EdgeInsets.symmetric(vertical: 12, horizontal: 24),

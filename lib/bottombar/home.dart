@@ -1540,18 +1540,38 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // 👤 Profile Avatar
                   GestureDetector(
-                    onTap: () {
+                    onTap: () async {
                       print("🟢 Avatar tapped | isLoggedIn = $isLoggedIn");
 
                       if (isLoggedIn) {
+                        // ✅ Load the user before navigation
+                        await ApiService.loadUserFromPrefs();
+
+                        final studentId = ApiService.currentUser?['student_id']?.toString() ?? '';
+
+                        if (studentId.isEmpty) {
+                          print("⚠️ No student ID found in user data");
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Student ID not found. Please log in again.")),
+                          );
+                          return;
+                        }
+
+                        // ✅ Navigate AFTER ensuring we have a valid student ID
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => Screen(
-                              studentId: ApiService.currentUser?['student_id']?.toString() ?? '',
-                            ),
+                            builder: (context) => Screen(studentId: studentId),
                           ),
                         );
+
+                        // After returning, reload user data and update initials
+                        setState(() {
+                          final name = ApiService.currentUser?['name'] ?? '';
+                          userInitial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+                        });
+
+                        print("🔁 Updated userInitial to: $userInitial");
                       } else {
                         Navigator.pushAndRemoveUntil(
                           context,
@@ -1572,7 +1592,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
-                  ),
+                  )
                 ],
               ),
             ),

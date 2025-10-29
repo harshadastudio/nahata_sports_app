@@ -228,7 +228,7 @@ class _ViewgameState extends State<Viewgame>
                             ),
                             const SizedBox(height: 16),
                             const Text(
-                              "No data found",
+                              "No Entry Here",
                               style: TextStyle(
                                 fontSize: 18,
                                 color: Colors.black54,

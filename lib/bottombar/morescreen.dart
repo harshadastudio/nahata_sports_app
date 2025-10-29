@@ -1,13 +1,17 @@
 // SCREEN 3: MORE SCREEN
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:nahata_app/bottombar/Custombottombar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../auth/login.dart';
+import 'home.dart';
 
 class MoreScreen extends StatefulWidget {
   const MoreScreen({super.key});
@@ -121,16 +125,30 @@ print(response);
                 // Profile Image + Name
                 Column(
                   children: [
-                    CircleAvatar(
-                      radius: 35,
-                      backgroundColor: Colors.blue,
-                      backgroundImage: _userData?['image'] != null
-                          ? NetworkImage(_userData!['image'])
-                          : null,
-                      child: _userData?['image'] == null
-                          ? const Icon(Icons.person, size: 35, color: Colors.white)
-                          : null,
-                    ),
+                    // CircleAvatar(
+                    //   radius: 35,
+                    //   backgroundColor: Colors.blue,
+                    //   backgroundImage: _userData?['image'] != null
+                    //       ? NetworkImage(_userData!['image'])
+                    //       : null,
+                    //   child: _userData?['image'] == null
+                    //       ? const Icon(Icons.person, size: 35, color: Colors.white)
+                    //       : null,
+                    // ),
+            CircleAvatar(
+            radius: 35,
+              backgroundColor: Colors.blue,
+              child: ClipOval(
+                child: Image.network(
+                  "https://nahatasports.com/uploads/student_photo/${_userData!['student_photo']}",
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(Icons.person, size: 35, color: Colors.white);
+                  },
+                ),
+              ),
+            ),
+
                     const SizedBox(height: 8),
                     Text(
                       _userData?['name'] ?? 'Guest User',
@@ -162,8 +180,11 @@ print(response);
                           final userId = await AuthService.getUserId();
 
                           if (userId == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('User not logged in')),
+                            // 🚪 Redirect to LoginScreen if not logged in
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(builder: (_) => const LoginScreen()),
+                                  (route) => false,
                             );
                             return;
                           }
@@ -171,19 +192,17 @@ print(response);
                           // 🔹 Navigate to Edit Profile screen with that ID
                           final updated = await Navigator.push(
                             context,
-                            MaterialPageRoute(
-                              builder: (_) => EditProfileScreen(userId: int.parse(userId)),
-                            ),
+                            MaterialPageRoute(builder: (_) => const EditProfileScreen()),
                           );
 
                           // 🔹 Refresh data if user saved updates
                           if (updated == true) {
-                            setState(() {
-                              _getUserData(); // Replace with your actual reload method
-                            });
+                            await _getUserData(); // ✅ Make sure _getUserData is async
+                            setState(() {}); // refresh UI
                           }
                         },
                       ),
+
 
 
                       SizedBox(height: 20,),
@@ -241,27 +260,27 @@ print(response);
                     ),
                   );
                 }),
-                _buildMenuItem(
-                  Icons.event,
-                  'My Events',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const MyEventsScreen()),
-                    );
-                  },
-                ),
+                // _buildMenuItem(
+                //   Icons.event,
+                //   'My Events',
+                //   onTap: () {
+                //     Navigator.push(
+                //       context,
+                //       MaterialPageRoute(builder: (_) => const MyEventsScreen()),
+                //     );
+                //   },
+                // ),
                 _buildMenuItem(Icons.qr_code, 'Your Pass', onTap: () {
                   Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const YourPassScreen()),
                   );
                 }),
 
-                _buildMenuItem(Icons.favorite_border, 'Favourite Venues', onTap: () {
-                  Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const FavouriteVenuesScreen()),
-                  );
-                }),
+                // _buildMenuItem(Icons.favorite_border, 'Favourite Venues', onTap: () {
+                //   Navigator.push(context,
+                //     MaterialPageRoute(builder: (_) => const FavouriteVenuesScreen()),
+                //   );
+                // }),
 
                 // _buildMenuItem(Icons.help_outline, 'Help and FAQs'),
                 // _buildMenuItem(Icons.rate_review_outlined, 'Raise a Request'),
@@ -848,6 +867,7 @@ class _YourPassScreenState extends State<YourPassScreen> {
         ),
         centerTitle: true,
         title: const Text(
+
           'Your Pass',
           style: TextStyle(
             color: Colors.black,
@@ -945,12 +965,8 @@ class _YourPassScreenState extends State<YourPassScreen> {
     );
   }
 }
-
-
-
 class EditProfileScreen extends StatefulWidget {
-  final int userId;
-  const EditProfileScreen({Key? key, required this.userId}) : super(key: key);
+  const EditProfileScreen({Key? key}) : super(key: key);
 
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
@@ -958,193 +974,188 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
-  bool _loading = false;
 
-  String? userId;
-
-  // Controllers
   final nameController = TextEditingController();
-  final phoneController = TextEditingController();
   final emailController = TextEditingController();
-  final dobController = TextEditingController();
-  final genderController = TextEditingController();
-  final bloodController = TextEditingController();
+  final phoneController = TextEditingController();
   final parentController = TextEditingController();
-  final passcodeController = TextEditingController();
-  final passwordController = TextEditingController();
-  final confirmPasswordController = TextEditingController();
+  final dobController = TextEditingController();
 
-  // -------------------
-  // ✅ 1. Load user ID from local storage
-  Future<void> loadUser() async {
-    final id = await AuthService.getUserId();
-    setState(() {
-      userId = id;
-    });
-
-    if (userId != null) {
-      await fetchUserData();
-    }
-  }
-
-  // -------------------
-  // ✅ 2. Fetch user details from API
-  Future<void> fetchUserData() async {
-    setState(() => _loading = true);
-
-    try {
-      final response = await http.get(
-        Uri.parse('https://nahatasports.com/api/$userId/edit'),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        print(response.body);
-        if (data['status'] == true) {
-          final user = data['data'];
-          nameController.text = user['name'] ?? '';
-          phoneController.text = user['phone'] ?? '';
-          emailController.text = user['email'] ?? '';
-          dobController.text = user['dob'] ?? '';
-          genderController.text = user['gender'] ?? '';
-          bloodController.text = user['blood_group'] ?? '';
-          parentController.text = user['parent_contact'] ?? '';
-          passcodeController.text = user['passcode'] ?? '';
-        }
-      }
-
-      else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to fetch user info')),
-        );
-      }
-    } catch (e) {
-      print('❌ Error fetching user: $e');
-    }
-
-    setState(() => _loading = false);
-  }
-
-  // -------------------
-  // ✅ 3. Update user details (POST)
-  Future<void> updateUserData() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _loading = true);
-
-    final body = {
-      "name": nameController.text.trim(),
-      "phone": phoneController.text.trim(),
-      "email": emailController.text.trim(),
-      "password": passwordController.text.trim(),
-      "confirmPassword": confirmPasswordController.text.trim(),
-      "dob": dobController.text.trim(),
-      "gender": genderController.text.trim(),
-      "blood_group": bloodController.text.trim(),
-      "parent_contact": parentController.text.trim(),
-      "passcode": passcodeController.text.trim(),
-    };
-
-    try {
-      final response = await http.post(
-        Uri.parse('https://nahatasports.com/api/$userId/update'),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(body),
-      );
-
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200 && data['status'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile updated successfully!')),
-        );
-        print(response.body);
-        // Optionally update saved user info in SharedPreferences
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        Map<String, dynamic>? currentUser = await AuthService.getUser();
-        if (currentUser != null) {
-          currentUser.addAll(body); // merge updated data
-          await prefs.setString('user', jsonEncode(currentUser));
-        }
-
-        Navigator.pop(context);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'Update failed')),
-        );
-      }
-    } catch (e) {
-      print("❌ Error updating user: $e");
-    }
-
-    setState(() => _loading = false);
-  }
+  String? selectedGender;
+  String? selectedBloodGroup;
+  String? userId;
 
   @override
   void initState() {
     super.initState();
-    loadUser();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    userId = await AuthService.getUserId();
+    if (userId == null) return;
+
+    final response = await http.get(
+      Uri.parse("https://nahatasports.com/api/$userId/edit"),
+    );
+
+    final data = jsonDecode(response.body);
+    if (data["status"] == true) {
+      final user = data["data"];
+      setState(() {
+        nameController.text = user["name"] ?? "";
+        emailController.text = user["email"] ?? "";
+        phoneController.text = user["phone"] ?? "";
+        parentController.text = user["parent_contact"] ?? "";
+        dobController.text = user["dob"] ?? "";
+        selectedGender = user["gender"];
+        selectedBloodGroup = user["blood_group"];
+      });
+    }
+  }
+
+  Future<void> updateUserData() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (userId == null) return;
+
+    var request = http.MultipartRequest(
+      'POST',
+      Uri.parse("https://nahatasports.com/api/$userId/update"),
+    );
+
+    // ✅ Always include all required fields (backend expects these)
+    request.fields['name'] = nameController.text.trim(); // 🔹 Added
+    request.fields['email'] = emailController.text.trim();
+    request.fields['phone'] = phoneController.text.trim();
+    request.fields['parent_contact'] = parentController.text.trim();
+    request.fields['blood_group'] = selectedBloodGroup ?? '';
+    request.fields['dob'] = dobController.text.trim();
+    request.fields['gender'] = selectedGender ?? '';
+    request.fields['passcode'] = "123"; // if backend requires this
+
+    print("📤 Sending form-data: ${request.fields}");
+
+    try {
+      var response = await request.send();
+      var responseBody = await response.stream.bytesToString();
+      print("📥 Response: $responseBody");
+
+      final data = jsonDecode(responseBody);
+
+      if (data["status"] == true) {
+        // ✅ Save updated data locally
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user', jsonEncode(data["data"]));
+
+        _showDialog("✅ Profile updated successfully!");
+      } else {
+        _showDialog("⚠️ Update failed: ${data["message"]}");
+      }
+    } catch (e) {
+      print("❌ Error sending form-data: $e");
+      _showDialog("❌ Something went wrong: $e");
+    }
+  }
+
+  void _showDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        content: Text(message, textAlign: TextAlign.center),
+      ),
+    );
+
+    // ⏳ Wait 2 seconds, then go back to HomeScreen
+    Future.delayed(const Duration(seconds: 2), () {
+      Navigator.pop(context); // Close dialog
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const CustomBottomNav()),
+      );
+    });
+  }
+
+  InputDecoration _inputDecoration(String label, {bool enabled = true}) {
+    return InputDecoration(
+      labelText: label,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide.none,
+      ),
+      filled: true,
+      fillColor: enabled ? Colors.white : Colors.grey[200],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Edit Profile')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
+      appBar: AppBar(title: const Text("Edit Profile")),
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: Column(
             children: [
+              // 👇 Read-only fields
               TextFormField(
                 controller: nameController,
-                decoration: const InputDecoration(labelText: 'Name'),
-                validator: (v) => v!.isEmpty ? 'Enter name' : null,
+                enabled: false,
+                readOnly: true,
+                decoration: _inputDecoration("Full Name", enabled: false),
               ),
-              TextFormField(
-                controller: phoneController,
-                decoration: const InputDecoration(labelText: 'Phone'),
-              ),
-              TextFormField(
-                controller: emailController,
-                decoration: const InputDecoration(labelText: 'Email'),
-              ),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: dobController,
-                decoration: const InputDecoration(labelText: 'DOB'),
+                enabled: false,
+                decoration: _inputDecoration("Date of Birth", enabled: false),
               ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: selectedGender,
+                items: ["Male", "Female", "Other"]
+                    .map((g) => DropdownMenuItem(value: g, child: Text(g)))
+                    .toList(),
+                onChanged: null, // disable editing
+                decoration: _inputDecoration("Gender", enabled: false),
+              ),
+              const SizedBox(height: 10),
+
+              // 👇 Editable fields
               TextFormField(
-                controller: genderController,
-                decoration: const InputDecoration(labelText: 'Gender'),
+                controller: emailController,
+                decoration: _inputDecoration("Email"),
               ),
+              const SizedBox(height: 10),
               TextFormField(
-                controller: bloodController,
-                decoration: const InputDecoration(labelText: 'Blood Group'),
+                controller: phoneController,
+                decoration: _inputDecoration("Phone Number"),
               ),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: parentController,
-                decoration: const InputDecoration(labelText: 'Parent Contact'),
+                decoration: _inputDecoration("Parent Contact"),
               ),
-              TextFormField(
-                controller: passcodeController,
-                decoration: const InputDecoration(labelText: 'Passcode'),
-              ),
-              TextFormField(
-                controller: passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'Password'),
-              ),
-              TextFormField(
-                controller: confirmPasswordController,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'Confirm Password'),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: selectedBloodGroup,
+                items: ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"]
+                    .map((bg) => DropdownMenuItem(value: bg, child: Text(bg)))
+                    .toList(),
+                onChanged: (v) => setState(() => selectedBloodGroup = v),
+                decoration: _inputDecoration("Blood Group"),
               ),
               const SizedBox(height: 20),
+
               ElevatedButton(
-                onPressed: _loading ? null : updateUserData,
-                child: const Text('Save Changes'),
+                onPressed: updateUserData,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2E3192),
+                ),
+                child: const Text(
+                  "Save Changes",
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ],
           ),
@@ -1153,3 +1164,247 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 }
+
+
+//
+// class EditProfileScreen extends StatefulWidget {
+//   final int userId;
+//
+//   const EditProfileScreen({Key? key, required this.userId}) : super(key: key);
+//
+//   @override
+//   State<EditProfileScreen> createState() => _EditProfileScreenState();
+// }
+//
+// class _EditProfileScreenState extends State<EditProfileScreen> {
+//   final _formKey = GlobalKey<FormState>();
+//   bool _loading = false;
+//
+//   late int userId;
+//
+//   // Controllers
+//   final nameController = TextEditingController();
+//   final phoneController = TextEditingController();
+//   final emailController = TextEditingController();
+//   final dobController = TextEditingController();
+//   final genderController = TextEditingController();
+//   final bloodController = TextEditingController();
+//   final parentController = TextEditingController();
+//   final passcodeController = TextEditingController();
+//   final passwordController = TextEditingController();
+//   final confirmPasswordController = TextEditingController();
+//
+//   static const String baseUrl = 'https://nahatasports.com/api';
+//
+//   @override
+//   void initState() {
+//     super.initState();
+//     userId = widget.userId;
+//     fetchUserData();
+//   }
+//
+//   // -------------------
+//   // ✅ Fetch user details from API
+//   Future<void> fetchUserData() async {
+//     setState(() => _loading = true);
+//
+//     try {
+//       final response = await http.get(Uri.parse('$baseUrl/$userId/edit'));
+//
+//       if (response.statusCode == 200) {
+//         final data = jsonDecode(response.body);
+//         print('📥 User Data: ${response.body}');
+//
+//         if (data['status'] == true && data['data'] != null) {
+//           final user = data['data'];
+//           nameController.text = user['name'] ?? '';
+//           phoneController.text = user['phone'] ?? '';
+//           emailController.text = user['email'] ?? '';
+//           dobController.text = user['dob'] ?? '';
+//           genderController.text = user['gender'] ?? '';
+//           bloodController.text = user['blood_group'] ?? '';
+//           parentController.text = user['parent_contact'] ?? '';
+//           passcodeController.text = user['passcode'] ?? '';
+//         } else {
+//           ScaffoldMessenger.of(context).showSnackBar(
+//             const SnackBar(content: Text('Failed to load user data')),
+//           );
+//         }
+//       } else {
+//         ScaffoldMessenger.of(context).showSnackBar(
+//           SnackBar(content: Text('Error: ${response.reasonPhrase}')),
+//         );
+//       }
+//     } catch (e) {
+//       print('❌ Error fetching user: $e');
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         const SnackBar(content: Text('Something went wrong')),
+//       );
+//     }
+//
+//     setState(() => _loading = false);
+//   }
+//
+//   // -------------------
+//   // ✅ Update user details (POST)
+//   Future<void> updateUserData() async {
+//     if (!_formKey.currentState!.validate()) return;
+//
+//     setState(() => _loading = true);
+//
+//     final body = {
+//       "name": nameController.text.trim(),
+//       "phone": phoneController.text.trim(),
+//       "email": emailController.text.trim(),
+//       "dob": dobController.text.trim(),
+//       "gender": genderController.text.trim(),
+//       "blood_group": bloodController.text.trim(),
+//       "parent_contact": parentController.text.trim(),
+//       "passcode": passcodeController.text.trim(),
+//     };
+//
+//     // Only include password fields if user filled them
+//     if (passwordController.text.isNotEmpty &&
+//         confirmPasswordController.text.isNotEmpty) {
+//       body["password"] = passwordController.text.trim();
+//       body["confirmPassword"] = confirmPasswordController.text.trim();
+//     }
+//
+//     try {
+//       final response = await http.post(
+//         Uri.parse('$baseUrl/$userId/update'),
+//         headers: {"Content-Type": "application/json"},
+//         body: jsonEncode(body),
+//       );
+//
+//       final data = jsonDecode(response.body);
+//       print('📤 Update Response: ${response.body}');
+//
+//       if (response.statusCode == 200 && data['status'] == true) {
+//         ScaffoldMessenger.of(context).showSnackBar(
+//           const SnackBar(content: Text('Profile updated successfully!')),
+//         );
+//
+//         // Optionally update local user data
+//         SharedPreferences prefs = await SharedPreferences.getInstance();
+//         Map<String, dynamic>? currentUser = await AuthService.getUser();
+//         if (currentUser != null) {
+//           currentUser.addAll(body);
+//           await prefs.setString('user', jsonEncode(currentUser));
+//         }
+//
+//         Navigator.pop(context);
+//       } else {
+//         ScaffoldMessenger.of(context).showSnackBar(
+//           SnackBar(content: Text(data['message'] ?? 'Update failed')),
+//         );
+//       }
+//     } catch (e) {
+//       print("❌ Error updating user: $e");
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         const SnackBar(content: Text('Something went wrong')),
+//       );
+//     }
+//
+//     setState(() => _loading = false);
+//   }
+//
+//   @override
+//   void dispose() {
+//     nameController.dispose();
+//     phoneController.dispose();
+//     emailController.dispose();
+//     dobController.dispose();
+//     genderController.dispose();
+//     bloodController.dispose();
+//     parentController.dispose();
+//     passcodeController.dispose();
+//     passwordController.dispose();
+//     confirmPasswordController.dispose();
+//     super.dispose();
+//   }
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       appBar: AppBar(title: const Text('Edit Profile')),
+//       body: Stack(
+//         children: [
+//           SingleChildScrollView(
+//             padding: const EdgeInsets.all(16),
+//             child: Form(
+//               key: _formKey,
+//               child: Column(
+//                 children: [
+//                   TextFormField(
+//                     controller: nameController,
+//                     decoration: const InputDecoration(labelText: 'Name'),
+//                     validator: (v) => v!.isEmpty ? 'Enter name' : null,
+//                   ),
+//                   TextFormField(
+//                     controller: phoneController,
+//                     decoration: const InputDecoration(labelText: 'Phone'),
+//                   ),
+//                   TextFormField(
+//                     controller: emailController,
+//                     decoration: const InputDecoration(labelText: 'Email'),
+//                   ),
+//                   TextFormField(
+//                     controller: dobController,
+//                     decoration: const InputDecoration(labelText: 'Date of Birth'),
+//                   ),
+//                   TextFormField(
+//                     controller: genderController,
+//                     decoration: const InputDecoration(labelText: 'Gender'),
+//                   ),
+//                   TextFormField(
+//                     controller: bloodController,
+//                     decoration: const InputDecoration(labelText: 'Blood Group'),
+//                   ),
+//                   TextFormField(
+//                     controller: parentController,
+//                     decoration:
+//                     const InputDecoration(labelText: 'Parent Contact'),
+//                   ),
+//                   TextFormField(
+//                     controller: passcodeController,
+//                     decoration: const InputDecoration(labelText: 'Passcode'),
+//                   ),
+//                   const SizedBox(height: 10),
+//                   const Divider(),
+//                   const Text(
+//                     "Change Password (optional)",
+//                     style:
+//                     TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+//                   ),
+//                   TextFormField(
+//                     controller: passwordController,
+//                     obscureText: true,
+//                     decoration: const InputDecoration(labelText: 'Password'),
+//                   ),
+//                   TextFormField(
+//                     controller: confirmPasswordController,
+//                     obscureText: true,
+//                     decoration:
+//                     const InputDecoration(labelText: 'Confirm Password'),
+//                   ),
+//                   const SizedBox(height: 20),
+//                   ElevatedButton(
+//                     onPressed: _loading ? null : updateUserData,
+//                     child: _loading
+//                         ? const SizedBox(
+//                       height: 20,
+//                       width: 20,
+//                       child: CircularProgressIndicator(strokeWidth: 2),
+//                     )
+//                         : const Text('Save Changes'),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+// }
