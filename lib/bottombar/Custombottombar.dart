@@ -16,17 +16,30 @@ class CustomBottomNav extends StatefulWidget {
 }
 
 class _CustomBottomNavState extends State<CustomBottomNav> {
+  bool _isLoggedIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLoginStatus();
+  }
+  Future<void> _loadLoginStatus() async {
+    bool loggedIn = await ApiService.isLoggedIn();
+    setState(() {
+      _isLoggedIn = loggedIn;
+    });
+  }
   static const brandBlue = Color(0xFF1A237E);
   int _selectedIndex = 0;
-  final List<Widget> _screens = [
+  List<Widget> get _screens => [
     // HomeScreen(studentId: ApiService.currentUser?['student_id']?.toString() ?? '',),
     HomeScreen(),
     VenueListScreen(),
-    // Bookplay(),
     SportsScreen(),
     EventsScreen(),
-    // Viewpass(),
-    MoreScreen()
+    // MoreScreen()
+    _isLoggedIn ? MoreScreen() : LoginScreen()
+
   ];
   @override
   Widget build(BuildContext context) {

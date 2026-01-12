@@ -1469,7 +1469,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../admin/GenerateVisitorPass.dart';
+import '../admin/Visitorlist.dart';
+import '../admin/blockslots.dart';
 import '../auth/login.dart';
+import '../coach/scanscreen.dart';
 import '../screens/login_screen.dart';
 
 // class AdminDashboardScreen extends StatefulWidget {
@@ -2563,14 +2567,14 @@ import 'dart:math' as math;
 
 import '../services/api_service.dart';
 
-class AdminDashboardScreen extends StatefulWidget {
-  const AdminDashboardScreen({super.key});
+class AdminDashboardScreen1 extends StatefulWidget {
+  const AdminDashboardScreen1({super.key});
 
   @override
-  State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
+  State<AdminDashboardScreen1> createState() => _AdminDashboardScreen1State();
 }
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen>
+class _AdminDashboardScreen1State extends State<AdminDashboardScreen1>
     with SingleTickerProviderStateMixin {
   List<dynamic> studentsData = [];
   List<dynamic> filteredStudentsData = []; // For search functionality
@@ -2958,12 +2962,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         appBar: AppBar(
           backgroundColor: const Color(0xFF0A198D),
           elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () {
-              SystemNavigator.pop();
-            },
-          ),
+          // leading: IconButton(
+          //   icon: const Icon(Icons.arrow_back, color: Colors.white),
+          //   onPressed: () {
+          //     SystemNavigator.pop();
+          //   },
+          // ),
           title: const Text(
             "Office Admin Dashboard",
             style: TextStyle(
@@ -2974,17 +2978,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           ),
           centerTitle: true,
           actions: [
-            IconButton(
-              icon: const Icon(Icons.logout, color: Colors.white),
-              onPressed: () async {
-                await AuthService.logout();
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      (route) => false,
-                );
-              },
-            ),
+            // IconButton(
+            //   icon: const Icon(Icons.logout, color: Colors.white),
+            //   onPressed: () async {
+            //     await AuthService.logout();
+            //     Navigator.pushAndRemoveUntil(
+            //       context,
+            //       MaterialPageRoute(builder: (_) => const LoginScreen()),
+            //           (route) => false,
+            //     );
+            //   },
+            // ),
           ],
         ),
 
@@ -4012,3 +4016,165 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 //   }
 //
 // }
+
+
+
+class AdminDashboardScreen extends StatelessWidget {
+  const AdminDashboardScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final List<_AdminOption> options = [
+      _AdminOption(
+        title: "Scan",
+        icon: Icons.qr_code_scanner,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ScanScreen()),
+          );
+        },
+      ),
+      _AdminOption(
+        title: "Fees Approve",
+        icon: Icons.check_circle_outline,
+        onTap: () {
+          // Navigate to Fees Approve
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => AdminDashboardScreen1()),
+          );
+        },
+      ),
+      _AdminOption(title: 'Generate Visitor Pass',
+          icon: Icons.event_available,
+          onTap: (){
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => VisitorPassListScreen()),
+            );
+
+          }),
+      _AdminOption(
+        title: "Visitor List",
+        icon: Icons.insert_chart_outlined,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => VisitorPassScreen()),
+          );
+        },
+      ),
+      _AdminOption(
+        title: "Block Slots",
+        icon: Icons.block,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => BlockSlotsScreen()),
+          );
+        },
+      ),
+      _AdminOption(
+        title: "Logout",
+        icon: Icons.logout,
+        onTap: () async {
+          await AuthService.logout(); // clear saved data
+
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+                (route) => false,
+          );
+        },
+      ),
+
+    ];
+
+    return Scaffold(
+      backgroundColor: const Color(0xfff6f6f6),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: const Text(
+          "Admin Dashboard",
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        centerTitle: true,
+        iconTheme: const IconThemeData(color: Colors.black),
+      ),
+
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: GridView.builder(
+          itemCount: options.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
+          ),
+          itemBuilder: (context, index) {
+            final item = options[index];
+            return _AdminCard(item: item);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminCard extends StatelessWidget {
+  final _AdminOption item;
+
+  const _AdminCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: item.onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(item.icon, size: 50, color: Colors.blueAccent),
+            const SizedBox(height: 12),
+            Text(
+              item.title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminOption {
+  final String title;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  _AdminOption({
+    required this.title,
+    required this.icon,
+    required this.onTap,
+  });
+}

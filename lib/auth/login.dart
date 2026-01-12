@@ -1,18 +1,13 @@
 
 
 import 'dart:convert';
-
-// import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nahata_app/auth/registration.dart';
-
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../bottombar/Custombottombar.dart';
-
-
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 // // 88888888888888888888888888888888888888888888888888888888
 // class LoginScreen extends StatefulWidget {
@@ -327,14 +322,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 // }
 // //8888888888888888888888888888888888888888888888888888888888
 
-
-
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
 import '../dashboard/admin_screen.dart';
 import '../dashboard/coach_screen.dart';
 import '../dashboard/security_screen.dart';
+import 'google_auth.dart';
 // import 'package:google_sign_in/google_sign_in.dart';
 //
 // class LoginScreen extends StatefulWidget {
@@ -794,23 +785,8 @@ import '../dashboard/security_screen.dart';
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const  LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -884,20 +860,11 @@ class _LoginScreenState extends State<LoginScreen> {
     if (success && ApiService.currentUser != null) {
       final role = ApiService.currentUser!['role'] ?? 'user';
 
-      Widget screen;
-      switch (role) {
-        case 'admin':
-          screen = AdminDashboardScreen();
-          break;
-        case 'coach':
-          screen = CoachDashboardScreen();
-          break;
-        case 'security':
-          screen = SecurityGateScannerScreen();
-          break;
-        default:
-          screen = CustomBottomNav();
-      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isLoggedIn', true);
+      await prefs.setString('role', role);
+
+      Widget screen = _getScreenForRole(role);
 
       _showInfoDialog("Login Successful");
 
@@ -909,58 +876,337 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
       });
+    } else {
+      _showInfoDialog("Login failed. Please check your credentials.");
     }
 
-    // if (success && ApiService.currentUser != null) {
-    //   final role = ApiService.currentUser!['role'] ?? 'user'; // get role
-    //   await _saveCredentials(role);
-    //
-    //   Widget screen;
-    //   switch (role) {
-    //     case 'admin':
-    //       screen = AdminDashboardScreen();
-    //       break;
-    //     case 'coach':
-    //       screen = CoachDashboardScreen();
-    //       break;
-    //     case 'security':
-    //       screen = SecurityGateScannerScreen();
-    //       break;
-    //     default:
-    //       screen = CustomBottomNav();
-    //   }
-    //
-    //   _showInfoDialog("Login Successful");
-    //
-    //   Future.delayed(const Duration(seconds: 2), () {
-    //     if (mounted) {
-    //       Navigator.pushReplacement(
-    //         context,
-    //         MaterialPageRoute(builder: (_) => screen),
-    //       );
-    //     }
-    //   });
-    // } else {
-    //   _showInfoDialog("Login failed. Please check your credentials.");
-    // }
+
+  }
+  Widget _getScreenForRole(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return AdminDashboardScreen();
+      case 'coach':
+        return CoachHomeScreen();
+      case 'security':
+        return SecurityGateScannerScreen();
+      case 'student':
+      case 'user':
+      default:
+        return CustomBottomNav();
+    }
   }
 
-  void _forgotPassword() {
+// ========================================================
+//  FORGOT PASSWORD FLOW (Complete Working Code)
+// ========================================================
+
+// ========================================================
+//        COMPLETE FORGOT PASSWORD FLOW – NAHATA SPORTS
+// ========================================================
+
+// ----------------- 1️⃣ ENTER EMAIL -----------------------
+  void _openForgotPassword() {
+    final emailController = TextEditingController();
+
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text("Forgot Password"),
-        content: const Text("Please contact support or reset your password."),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Close"),
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Row(
+            children: const [
+              Icon(Icons.lock_reset_rounded, color:  Color(0xFF1A237E), size: 28),
+              SizedBox(width: 10),
+              Text("Forgot Password", style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
           ),
-        ],
-      ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Enter your registered email address. We will send an OTP to verify your identity.",
+                style: TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: emailController,
+                decoration: InputDecoration(
+                  labelText: "Email Address",
+                  prefixIcon: const Icon(Icons.email_outlined),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor:  Color(0xFF1A237E),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () async {
+                final email = emailController.text.trim();
+                if (email.isEmpty || !email.contains("@")) {
+                  _toast("Enter a valid email");
+                  return;
+                }
+                Navigator.pop(context);
+                await _sendOtp(email);
+              },
+              child: const Text("Send OTP",style: TextStyle(color: Colors.white),),
+            ),
+          ],
+        );
+      },
     );
   }
+
+// ----------------- 2️⃣ SEND OTP API -----------------------
+  Future<void> _sendOtp(String email) async {
+    final url = Uri.parse("https://nahatasports.com/forgot-password");
+
+    final res = await http.post(
+      url,
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"email": email}),
+    );
+
+    final data = jsonDecode(res.body);
+
+    if (res.statusCode == 200) {
+      _showInfoDialog("OTP sent to your email");
+      // _toast("OTP sent to your email");
+      _openOtpDialog(email);
+    } else {
+      _toast(data["message"] ?? "Failed to send OTP");
+    }
+  }
+
+// ----------------- 3️⃣ OTP VERIFY UI -----------------------
+  void _openOtpDialog(String email) {
+    final otpController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Row(
+            children: const [
+              Icon(Icons.verified_user_rounded, color:  Color(0xFF1A237E), size: 28),
+              SizedBox(width: 10),
+              Text("Verify OTP", style: TextStyle(fontWeight: FontWeight.bold,color: Colors.black)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Enter the 6-digit OTP sent to your email.",
+                style: TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: otpController,
+                decoration: InputDecoration(
+                  labelText: "Enter OTP",
+                  prefixIcon: const Icon(Icons.pin_rounded),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor:  Color(0xFF1A237E),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () {
+                final otp = otpController.text.trim();
+                if (otp.isEmpty) {
+                  _toast("Enter OTP",);
+                  return;
+                }
+                _verifyOtp(email, otp);
+              },
+              child: const Text("Verify",style: TextStyle(color: Colors.white),),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+// ----------------- 4️⃣ VERIFY OTP API -----------------------
+  Future<void> _verifyOtp(String email, String otp) async {
+    final url = Uri.parse("https://nahatasports.com/verify-otp");
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"email": email, "otp": otp}),
+      );
+
+      final data = jsonDecode(response.body);
+      print("VERIFY OTP RESPONSE: $data");
+
+      if (data["status"] == true) {
+        // 🔥 IMPORTANT: Close OTP dialog before next dialog
+        Navigator.pop(context);
+
+        // 🔥 Now open reset password window
+        Future.delayed(Duration(milliseconds: 300), () {
+          _openResetPasswordDialog(email);
+        });
+        _showInfoDialog("OTP Verified Successfully");
+        // ScaffoldMessenger.of(context).showSnackBar(
+        //   SnackBar(content: Text("OTP Verified Successfully")),
+        // );
+      } else {
+        _showInfoDialog(data["message"]?? "Invalid OTP");
+        // ScaffoldMessenger.of(context).showSnackBar(
+        //   SnackBar(content: Text(data["message"] ?? "Invalid OTP")),
+        // );
+      }
+    } catch (e) {
+      print("Error in _verifyOtp: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Something went wrong")),
+      );
+    }
+  }
+
+// ----------------- 5️⃣ RESET PASSWORD SCREEN -----------------------
+  void _openResetPasswordDialog(String email) {
+    final pass = TextEditingController();
+    final confirm = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Row(
+            children: const [
+              Icon(Icons.password_rounded, color:  Color(0xFF1A237E), size: 28),
+              SizedBox(width: 10),
+              Text("Reset Password", style: TextStyle(fontWeight: FontWeight.bold,color: Colors.black)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Create a new password for your account.",
+                style: TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: pass,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: "New Password",
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirm,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: "Confirm Password",
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor:  Color(0xFF1A237E),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () async {
+                if (pass.text.trim().length < 6) {
+                  _toast("Password must be at least 6 characters");
+                  return;
+                }
+
+                if (pass.text.trim() != confirm.text.trim()) {
+                  _toast("Passwords do not match");
+                  return;
+                }
+
+                Navigator.pop(context);
+                await _resetPassword(email, pass.text.trim());
+              },
+              child: const Text("Reset",style: TextStyle(color: Colors.white),),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+// ----------------- 6️⃣ RESET PASSWORD API -----------------------
+  Future<void> _resetPassword(String email, String newPass) async {
+    final url = Uri.parse("https://nahatasports.com/reset-password");
+
+    final res = await http.post(
+      url,
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "email": email,
+        "new_password": newPass,
+      }),
+    );
+
+    final data = jsonDecode(res.body);
+
+    if (res.statusCode == 200 && data["success"] == true) {
+      _showInfoDialog("Password Reset Successfully");
+
+      // 📌 Backend already sends email with new password
+
+      // 🔄 Move to Login Screen
+      Future.delayed(const Duration(milliseconds: 500), () {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+      });
+    } else {
+      _toast(data["message"] ?? "Failed to reset password");
+    }
+  }
+
+// ----------------- Helper -----------------------
+  void _toast(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
+    );
+  }
+
 
   void _showInfoDialog(String message) {
     showDialog(
@@ -982,6 +1228,45 @@ class _LoginScreenState extends State<LoginScreen> {
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) Navigator.pop(context);
     });
+  }
+  Future<bool> _googleLoginToBackend(String idToken) async {
+    try {
+      final response = await http.post(
+        Uri.parse("https://nahatasports.com/api/google_login"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"idToken": idToken}),
+      );
+
+      print("🔥 Google Login API Response: ${response.body}");
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data["status"] == true && data["data"] != null) {
+          final user = Map<String, dynamic>.from(data["data"]);
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('isLoggedIn', true);
+
+          // role may NOT come from API → avoid crash
+          final role = user["role"]?.toString() ?? "user";
+          await prefs.setString('role', role);
+
+          // save full user object
+          await prefs.setString('user', jsonEncode(user));
+
+          ApiService.currentUser = user;
+
+          print("✅ Google Login Success, role = $role");
+          return true;
+        }
+      }
+
+      return false;
+    } catch (e) {
+      print("❌ Google Login Backend Error: $e");
+      return false;
+    }
   }
 
   @override
@@ -1090,7 +1375,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                         TextButton(
-                          onPressed: _forgotPassword,
+                          onPressed: _openForgotPassword,
                           child: const Text(
                             "Forgot Password?",
                             style: TextStyle(color: brandBlue),
@@ -1119,7 +1404,115 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                                        const SizedBox(height: 20),
+
+
+                    SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: OutlinedButton.icon(
+                        icon: Image.asset('assets/g.png', height: 24),
+                        label: const Text("Sign in with Google"),
+                        onPressed: () async {
+                          final googleUser = await GoogleAuthService.signInWithGoogle();
+
+                          if (googleUser == null) {
+                            _showInfoDialog("Google sign-in failed");
+                            return;
+                          }
+
+                          _showInfoDialog("Verifying your Google account...");
+
+                          final success = await _googleLoginToBackend(googleUser["idToken"]);
+
+                          if (!success) {
+                            _showInfoDialog("Google login failed. Try again.");
+                            return;
+                          }
+
+                          final role = ApiService.currentUser?['role'] ?? 'user';
+                          final screen = _getScreenForRole(role);
+
+                          Future.delayed(const Duration(seconds: 2), () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(builder: (_) => screen),
+                            );
+                          });
+                        },
+                      ),
+                    ),
+// ----------------------------
+//   SIGN IN WITH APPLE BUTTON
+// ----------------------------
+                  if (Platform.isIOS)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 15),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: SignInWithAppleButton(
+                            borderRadius: BorderRadius.circular(15),
+                            style: SignInWithAppleButtonStyle.black,
+                            onPressed: () async {
+                              try {
+                                // 1️⃣ Request Apple Credentials
+                                final credential = await SignInWithApple.getAppleIDCredential(
+                                  scopes: [
+                                    AppleIDAuthorizationScopes.email,
+                                    AppleIDAuthorizationScopes.fullName,
+                                  ],
+                                );
+
+                                _showInfoDialog("Verifying your Apple account...");
+
+                                // 2️⃣ Send ID Token to your backend API
+                                final response = await http.post(
+                                  Uri.parse("https://nahatasports.com/api/apple_login"),
+                                  headers: {"Content-Type": "application/json"},
+                                  body: jsonEncode({
+                                    "idToken": credential.identityToken,
+                                    // "authorizationCode": credential.authorizationCode,
+                                    // "userIdentifier": credential.userIdentifier,
+                                  }),
+                                );
+
+                                final data = jsonDecode(response.body);
+                                print("🍎 Apple Login Backend Response: $data");
+
+                                if (response.statusCode == 200 && data["status"] == true) {
+                                  final user = Map<String, dynamic>.from(data["data"]);
+
+                                  final prefs = await SharedPreferences.getInstance();
+                                  await prefs.setBool('isLoggedIn', true);
+                                  await prefs.setString('user', jsonEncode(user));
+                                  await prefs.setString('role', user["role"] ?? "user");
+
+                                  ApiService.currentUser = user;
+
+                                  // Redirect by role
+                                  final role = user["role"]?.toString() ?? "user";
+                                  final screen = _getScreenForRole(role);
+
+                                  Future.delayed(const Duration(seconds: 2), () {
+                                    Navigator.pushReplacement(
+                                        context, MaterialPageRoute(builder: (_) => screen));
+                                  });
+                                } else {
+                                  _showInfoDialog("Apple login failed. Try again.");
+                                }
+                              } catch (e) {
+                                print("🍎 Apple Sign-In Error: $e");
+                                _showInfoDialog("Apple sign-in cancelled or failed.");
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+
+
+
+                    const SizedBox(height: 20),
                     Row(
                       children: [
                         const Expanded(child: Divider(thickness: 1)),
@@ -1167,47 +1560,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 //
@@ -1507,36 +1859,37 @@ class _LoginScreenState extends State<LoginScreen> {
 // }
 
 
-
-
-
-
-
-
 class ApiService {
   static Map<String, dynamic>? currentUser;
 
+  /// Load user from local storage
   static Future<void> loadUserFromPrefs() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('isLoggedIn') ?? false) {
-      final userJson = prefs.getString('user');
-      if (userJson != null) {
-        try {
-          currentUser = jsonDecode(userJson);
-        } catch (e) {
-          print("❌ Failed to decode stored user: $e");
-          currentUser = null;
-          await prefs.remove('isLoggedIn');
-          await prefs.remove('user');
-        }
+    final prefs = await SharedPreferences.getInstance();
+    final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+
+    if (!isLoggedIn) {
+      currentUser = null;
+      return;
+    }
+
+    final userJson = prefs.getString('user');
+    if (userJson != null) {
+      try {
+        currentUser = jsonDecode(userJson);
+      } catch (e) {
+        print("❌ Failed to decode stored user: $e");
+        await prefs.clear();
+        currentUser = null;
       }
     }
   }
 
-  static String? getRole() {
-    return currentUser?['role'];
+  /// Get role (default = user)
+  static String getRole() {
+    return currentUser?['role']?.toString().toLowerCase() ?? 'user';
   }
 
+  /// Login API
   static Future<bool> login(String email, String password) async {
     final url = Uri.parse('https://nahatasports.com/api/login');
 
@@ -1547,27 +1900,30 @@ class ApiService {
         body: jsonEncode({'email': email, 'password': password}),
       );
 
+      print("🟢 Login API Status: ${response.statusCode}");
+      print("🟢 Raw Response: ${response.body}");
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
-        if (data['status'] == true) {
-          currentUser = data['data'];
+        if (data['status'] == true && data['data'] != null) {
+          currentUser = Map<String, dynamic>.from(data['data']);
 
-          if (currentUser!['role'] == 'user' && currentUser!['student_id'] == null) {
-            currentUser!['student_id'] = currentUser!['id'];
-          }
+          final prefs = await SharedPreferences.getInstance();
+          final userRole = getRole();
 
-          SharedPreferences prefs = await SharedPreferences.getInstance();
+          // Save essential info
           await prefs.setBool('isLoggedIn', true);
           await prefs.setString('user', jsonEncode(currentUser));
+          await prefs.setString('role', userRole);
 
+          // Save token if present
           if (data.containsKey('token')) {
             await prefs.setString('authToken', data['token']);
           }
 
-          print("✅ Login successful");
-          print("📥 User Data: $currentUser");
-
+          print("💾 Saved Role: $userRole");
+          print("✅ Login successful for $userRole");
           return true;
         } else {
           print("❌ Login failed: ${data['message']}");
@@ -1583,22 +1939,17 @@ class ApiService {
     }
   }
 
+  /// Check login state
   static Future<bool> isLoggedIn() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('isLoggedIn') ?? false;
   }
 }
-
 class AuthService {
   static Future<Map<String, dynamic>?> getUser() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? userJson = prefs.getString('user');
+    final prefs = await SharedPreferences.getInstance();
+    final userJson = prefs.getString('user');
     return userJson != null ? jsonDecode(userJson) : null;
-  }
-
-  static Future<String?> getUserEmail() async {
-    final user = await getUser();
-    return user?['email'];
   }
 
   static Future<String?> getUserId() async {
@@ -1606,22 +1957,26 @@ class AuthService {
     return user?['id']?.toString();
   }
 
+  static Future<String?> getUserEmail() async {
+    final user = await getUser();
+    return user?['email'];
+  }
+
+  static Future<String?> getUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('role');
+  }
+
   static Future<String?> getAuthToken() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
     return prefs.getString('authToken');
   }
 
-  /// ✅ Add this method
-  static Future<String?> getUserRole() async {
-    final user = await getUser();
-    return user?['role'];
-  }
-
+  /// ✅ Universal logout — clears *everything*
   static Future<void> logout() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.remove('isLoggedIn');
-    await prefs.remove('user');
-    await prefs.remove('authToken');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear(); // clears all keys like user, role, token, etc.
+    print("🚪 User logged out, prefs cleared.");
   }
 }
 

@@ -146,9 +146,9 @@ android {
     defaultConfig {
         applicationId = "com.nahata_sports_app"
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = 16
-        versionName = "1.0.16"
+        targetSdk = 35
+        versionCode = 22
+        versionName = "1.0.22"
     }
 
     signingConfigs {
@@ -175,6 +175,17 @@ android {
             // Optional: Use debug signing config (default debug key)
             // Remove this block or set signingConfig to debug if needed
             signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
+    // 👉 ADD THIS BLOCK BELOW buildTypes {}
+    // ✅ Correct Kotlin DSL syntax for ABI splits
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a") // supports both 32 & 64-bit
+            isUniversalApk = true
         }
     }
 }

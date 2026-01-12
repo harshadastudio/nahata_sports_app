@@ -3,10 +3,16 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../bottombar/Custombottombar.dart';
+import '../dashboard/admin_screen.dart';
+import '../dashboard/coach_screen.dart';
+import '../dashboard/security_screen.dart';
+import 'google_auth.dart';
 import 'login.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -67,7 +73,59 @@ class _RegisterScreenState extends State<RegisterScreen> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );
   }
+  Future<bool> _googleLoginToBackend(String idToken) async {
+    try {
+      final response = await http.post(
+        Uri.parse("https://nahatasports.com/api/google_login"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"idToken": idToken}),
+      );
 
+      print("🔥 Google Login API Response: ${response.body}");
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data["status"] == true && data["data"] != null) {
+          final user = Map<String, dynamic>.from(data["data"]);
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('isLoggedIn', true);
+
+          // role may NOT come from API → avoid crash
+          final role = user["role"]?.toString() ?? "user";
+          await prefs.setString('role', role);
+
+          // save full user object
+          await prefs.setString('user', jsonEncode(user));
+
+          ApiService.currentUser = user;
+
+          print("✅ Google Register Success, role = $role");
+          return true;
+        }
+      }
+
+      return false;
+    } catch (e) {
+      print("❌ Google Login Backend Error: $e");
+      return false;
+    }
+  }
+  Widget _getScreenForRole(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return AdminDashboardScreen();
+      case 'coach':
+        return CoachHomeScreen();
+      case 'security':
+        return SecurityGateScannerScreen();
+      case 'student':
+      case 'user':
+      default:
+        return CustomBottomNav();
+    }
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -107,6 +165,61 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const Text(
                     "Create an account to continue!",
                     style: TextStyle(color: Colors.black54),
+                  ),
+                  const SizedBox(height: 20),
+// Google Sign Up Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF2E3192), width: 1.5),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        backgroundColor: Colors.white,
+                      ),
+                      onPressed: () async {
+                        final googleUser = await GoogleAuthService.signInWithGoogle();
+
+                        if (googleUser == null) {
+                          _showInfoDialog("Google sign-in failed");
+                          return;
+                        }
+
+                        _showInfoDialog("Verifying your Google account...");
+
+                        final success = await _googleLoginToBackend(googleUser["idToken"]);
+
+                        if (!success) {
+                          _showInfoDialog("Google login failed. Try again.");
+                          return;
+                        }
+
+                        final role = ApiService.currentUser?['role'] ?? 'user';
+                        final screen = _getScreenForRole(role);
+
+                        Future.delayed(const Duration(seconds: 2), () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (_) => screen),
+                          );
+                        });
+                      },
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.asset("assets/g.png", height: 24), // Add google.png in assets
+                          const SizedBox(width: 12),
+                          const Text(
+                            "Sign Up with Google",
+                            style: TextStyle(
+                              color: Color(0xFF2E3192),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 20),
 

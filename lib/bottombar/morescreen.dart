@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:http_parser/http_parser.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -30,6 +31,77 @@ class _MoreScreenState extends State<MoreScreen> {
     _fetchUserData();
     _getUserData();
   }
+
+
+  Future<void> _deleteAccount(BuildContext context) async {
+    final userId = await AuthService.getUserId();
+    if (userId == null) return;
+
+    final url = "https://nahatasports.com/api/students/$userId";
+
+    try {
+      final response = await http.delete(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data["status"] == true) {
+          // Clear user session
+          await AuthService.logout();
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Account deleted successfully"),
+                backgroundColor: Colors.red,
+              ),
+            );
+
+            // Navigate to Login screen
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (route) => false,
+            );
+          }
+        }
+      } else {
+        print("❌ Failed to delete user. Status: ${response.statusCode}");
+      }
+    } catch (e) {
+      print("❌ Delete Error: $e");
+    }
+  }
+  void _confirmDeleteAccount(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Delete Account"),
+          content: const Text(
+            "Are you sure you want to permanently delete your account? "
+                "This action cannot be undone.",
+          ),
+          actions: [
+            TextButton(
+              child: const Text("Cancel"),
+              onPressed: () => Navigator.pop(context),
+            ),
+            TextButton(
+              child: const Text("Delete", style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                Navigator.pop(context);
+                _deleteAccount(context);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
+
   Future<void> _logout(BuildContext context) async {
     await AuthService.logout();
     // await AuthService.logout(); // clears prefs
@@ -140,7 +212,7 @@ print(response);
               backgroundColor: Colors.blue,
               child: ClipOval(
                 child: Image.network(
-                  "https://nahatasports.com/uploads/student_photo/${_userData!['student_photo']}",
+                  "https://nahatasports.com/uploads/student_photo/${_userData?['student_photo']}",
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) {
                     return const Icon(Icons.person, size: 35, color: Colors.white);
@@ -153,7 +225,7 @@ print(response);
                     Text(
                       _userData?['name'] ?? 'Guest User',
                       style: const TextStyle(
-                        fontSize: 18,
+                        fontSize: 15,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -275,7 +347,16 @@ print(response);
                     MaterialPageRoute(builder: (_) => const YourPassScreen()),
                   );
                 }),
-
+                _buildMenuItem(Icons.book, 'My Enrollments', onTap: () {
+                  Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const Enrollments()),
+                  );
+                }),
+                _buildMenuItem(Icons.feedback_outlined, 'Feedback from Coaches', onTap: () {
+                  Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const StudentFeedbackScreen()),
+                  );
+                }),
                 // _buildMenuItem(Icons.favorite_border, 'Favourite Venues', onTap: () {
                 //   Navigator.push(context,
                 //     MaterialPageRoute(builder: (_) => const FavouriteVenuesScreen()),
@@ -318,6 +399,13 @@ print(response);
                     }
                   },
                 ),
+                _buildMenuItem(
+                  Icons.delete_forever,
+                  'Delete Account',
+
+                  onTap: () => _confirmDeleteAccount(context),
+                ),
+
 
                 const SizedBox(height: 24),
 
@@ -348,6 +436,8 @@ print(response);
       ),
     );
   }
+
+
   Widget _buildMenuItem(IconData icon, String title, {VoidCallback? onTap}) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -391,6 +481,123 @@ print(response);
   // }
 }
 
+class Enrollment {
+  static const baseUrl = "https://nahatasports.com/api";
+
+  static Future<List<dynamic>> getMyEnrollments(String userId) async {
+    final url = Uri.parse("$baseUrl/my-enrollments?user_id=$userId");
+
+    final response = await http.get(url);
+
+    print("STATUS: ${response.statusCode}");
+    print("BODY: ${response.body}");
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['status'] == true) {
+        return data['data'];
+      } else {
+        return [];
+      }
+    } else {
+      throw Exception("Failed to load enrollments");
+    }
+  }
+}
+
+class Enrollments extends StatefulWidget {
+  const Enrollments({super.key});
+
+  @override
+  State<Enrollments> createState() => _EnrollmentsState();
+}
+
+class _EnrollmentsState extends State<Enrollments> {
+  late Future<List<dynamic>> _enrollments;
+
+  @override
+  void initState() {
+    super.initState();
+    loadEnrollments();
+  }
+
+  Future<void> loadEnrollments() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userJson = prefs.getString('user');
+
+    if (userJson == null) {
+      print("❌ No user found in SharedPreferences");
+      return;
+    }
+
+    final user = jsonDecode(userJson);
+    final userId = user['id'].toString();
+
+    print("🔵 Loaded user_id = $userId");
+
+    setState(() {
+      _enrollments = Enrollment.getMyEnrollments(userId);
+    });
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case "approved":
+        return Colors.green;
+      case "pending":
+        return Colors.orange;
+      case "rejected":
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("My Enrollments")),
+      body: FutureBuilder<List<dynamic>>(
+        future: _enrollments,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.data!.isEmpty) {
+            return const Center(child: Text("No enrollments found"));
+          }
+
+          final enrollments = snapshot.data!;
+
+          return ListView.builder(
+            itemCount: enrollments.length,
+            itemBuilder: (context, index) {
+              final item = enrollments[index];
+
+              return Card(
+                margin: const EdgeInsets.all(10),
+                child: ListTile(
+                  title: Text(item['sport_name']),
+                  subtitle: Text("Coach: ${item['coach_name']}\nPrice: ₹${item['price']}"),
+                  trailing: Text(
+                    item['status'],
+                    style: TextStyle(
+                      color: _statusColor(item['status']),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+
 
 
 class MyBookingsScreen extends StatefulWidget {
@@ -413,6 +620,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
+    // Default to Upcoming
+    _selectedTimeIndex = 0;
     _loadBookings();
   }
 
@@ -604,7 +814,8 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
           Icon(Icons.receipt_long_outlined, size: 64, color: Colors.grey[300]),
           const SizedBox(height: 16),
           Text(
-            'No ${_selectedTimeIndex == 0 ? 'upcoming' : 'previous'} bookings',
+            'No ${_selectedTimeIndex == 0 ? ''
+                'upcoming' : 'previous'} bookings',
             style: TextStyle(
               color: Colors.grey[600],
               fontSize: 16,
@@ -965,6 +1176,8 @@ class _YourPassScreenState extends State<YourPassScreen> {
     );
   }
 }
+// edit_profile_screen.dart
+
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({Key? key}) : super(key: key);
 
@@ -975,89 +1188,201 @@ class EditProfileScreen extends StatefulWidget {
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
 
+  // controllers
   final nameController = TextEditingController();
+  final idCardController = TextEditingController();
   final emailController = TextEditingController();
   final phoneController = TextEditingController();
   final parentController = TextEditingController();
   final dobController = TextEditingController();
+  final coachIdController = TextEditingController();
+  final statusController = TextEditingController();
+  final createdController = TextEditingController();
+  final updatedController = TextEditingController();
 
   String? selectedGender;
   String? selectedBloodGroup;
+
+  File? studentPhotoFile;
+  final ImagePicker _picker = ImagePicker();
+
   String? userId;
+  bool isLoading = false;
+
+  // Simple validation regexes
+  final _emailReg = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+  final _phoneReg = RegExp(r'^\d{10}$');
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _loadUserAndData();
   }
 
-  Future<void> _loadUserData() async {
-    userId = await AuthService.getUserId();
-    if (userId == null) return;
-
-    final response = await http.get(
-      Uri.parse("https://nahatasports.com/api/$userId/edit"),
-    );
-
-    final data = jsonDecode(response.body);
-    if (data["status"] == true) {
-      final user = data["data"];
-      setState(() {
-        nameController.text = user["name"] ?? "";
-        emailController.text = user["email"] ?? "";
-        phoneController.text = user["phone"] ?? "";
-        parentController.text = user["parent_contact"] ?? "";
-        dobController.text = user["dob"] ?? "";
-        selectedGender = user["gender"];
-        selectedBloodGroup = user["blood_group"];
-      });
+  Future<void> _loadUserAndData() async {
+    setState(() => isLoading = true);
+    final prefs = await SharedPreferences.getInstance();
+    final u = prefs.getString('user');
+    if (u == null) {
+      // No user — navigate back or show error
+      setState(() => isLoading = false);
+      return;
     }
-  }
 
-  Future<void> updateUserData() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (userId == null) return;
+    final user = jsonDecode(u);
+    userId = user['id']?.toString();
 
-    var request = http.MultipartRequest(
-      'POST',
-      Uri.parse("https://nahatasports.com/api/$userId/update"),
-    );
-
-    // ✅ Always include all required fields (backend expects these)
-    request.fields['name'] = nameController.text.trim(); // 🔹 Added
-    request.fields['email'] = emailController.text.trim();
-    request.fields['phone'] = phoneController.text.trim();
-    request.fields['parent_contact'] = parentController.text.trim();
-    request.fields['blood_group'] = selectedBloodGroup ?? '';
-    request.fields['dob'] = dobController.text.trim();
-    request.fields['gender'] = selectedGender ?? '';
-    request.fields['passcode'] = "123"; // if backend requires this
-
-    print("📤 Sending form-data: ${request.fields}");
+    if (userId == null) {
+      setState(() => isLoading = false);
+      return;
+    }
 
     try {
-      var response = await request.send();
-      var responseBody = await response.stream.bytesToString();
-      print("📥 Response: $responseBody");
+      final res =
+      await http.get(Uri.parse("https://nahatasports.com/api/$userId/edit"));
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body['status'] == true && body['data'] != null) {
+          final data = body['data'];
 
-      final data = jsonDecode(responseBody);
-
-      if (data["status"] == true) {
-        // ✅ Save updated data locally
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.setString('user', jsonEncode(data["data"]));
-
-        _showDialog("✅ Profile updated successfully!");
+          nameController.text = data['name']?.toString() ?? '';
+          idCardController.text = data['id_card']?.toString() ?? '';
+          emailController.text = data['email']?.toString() ?? '';
+          phoneController.text = data['phone']?.toString() ?? '';
+          parentController.text = data['parent_contact']?.toString() ?? '';
+          dobController.text = data['dob']?.toString() ?? '';
+          selectedGender = data['gender']?.toString();
+          selectedBloodGroup = data['blood_group']?.toString();
+          coachIdController.text = data['coach_id']?.toString() ?? '';
+          statusController.text = data['status']?.toString() ?? '';
+          createdController.text = data['created_at']?.toString() ?? '';
+          updatedController.text = data['updated_at']?.toString() ?? '';
+        } else {
+          _showSnack("Failed to load profile");
+        }
       } else {
-        _showDialog("⚠️ Update failed: ${data["message"]}");
+        _showSnack("Server error: ${res.statusCode}");
       }
     } catch (e) {
-      print("❌ Error sending form-data: $e");
-      _showDialog("❌ Something went wrong: $e");
+      _showSnack("Error fetching profile: $e");
+    } finally {
+      setState(() => isLoading = false);
     }
   }
 
-  void _showDialog(String message) {
+  Future<void> _pickStudentPhoto() async {
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Wrap(children: [
+          ListTile(
+            leading: const Icon(Icons.photo_library),
+            title: const Text('Choose from gallery'),
+            onTap: () async {
+              Navigator.pop(context);
+              final XFile? f =
+              await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+              if (f != null) setState(() => studentPhotoFile = File(f.path));
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt),
+            title: const Text('Take a photo'),
+            onTap: () async {
+              Navigator.pop(context);
+              final XFile? f =
+              await _picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+              if (f != null) setState(() => studentPhotoFile = File(f.path));
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.close),
+            title: const Text('Cancel'),
+            onTap: () => Navigator.pop(context),
+          )
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _pickDob() async {
+    DateTime initial = DateTime.tryParse(dobController.text) ?? DateTime(2005, 1, 1);
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      dobController.text = DateFormat('yyyy-MM-dd').format(picked);
+      setState(() {});
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (userId == null) {
+      _showSnack("User not found");
+      return;
+    }
+
+    setState(() => isLoading = true);
+
+    try {
+      final uri = Uri.parse("https://nahatasports.com/api/$userId/update");
+      final request = http.MultipartRequest('POST', uri);
+
+      // Basic fields
+      request.fields['name'] = nameController.text.trim();
+      request.fields['email'] = emailController.text.trim();
+      request.fields['phone'] = phoneController.text.trim();
+      request.fields['parent_contact'] = parentController.text.trim();
+      request.fields['dob'] = dobController.text.trim();
+      request.fields['gender'] = selectedGender ?? '';
+      request.fields['blood_group'] = selectedBloodGroup ?? '';
+      request.fields['coach_id'] = coachIdController.text.trim();
+      request.fields['status'] = statusController.text.trim();
+
+      // passcode required by backend earlier — keep or remove if not needed
+      request.fields['passcode'] = '123';
+
+      // Attach image if picked
+      if (studentPhotoFile != null) {
+        final mime = lookupMime(studentPhotoFile!.path) ?? 'image/jpeg';
+        request.files.add(await http.MultipartFile.fromPath(
+          'student_photo',
+          studentPhotoFile!.path,
+          contentType: MediaType.parse(mime),
+        ));
+      }
+
+      final streamed = await request.send();
+      final responseString = await streamed.stream.bytesToString();
+
+      final resJson = jsonDecode(responseString);
+      if (resJson['status'] == true && resJson['data'] != null) {
+        // Save returned user locally
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user', jsonEncode(resJson['data']));
+
+        _showDialogAndBack("Profile updated successfully");
+      } else {
+        _showSnack("Update failed: ${resJson['message'] ?? 'Unknown error'}");
+      }
+    } catch (e) {
+      _showSnack("Error updating profile: $e");
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  // tiny helper to show snack
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _showDialogAndBack(String message) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -1065,103 +1390,295 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ),
     );
 
-    // ⏳ Wait 2 seconds, then go back to HomeScreen
     Future.delayed(const Duration(seconds: 2), () {
-      Navigator.pop(context); // Close dialog
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const CustomBottomNav()),
-      );
+      if (!mounted) return;
+      Navigator.pop(context); // close dialog
+      Navigator.pushReplacement(context,
+          MaterialPageRoute(builder: (context) => const CustomBottomNav()));
     });
   }
 
-  InputDecoration _inputDecoration(String label, {bool enabled = true}) {
-    return InputDecoration(
-      labelText: label,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide.none,
+  @override
+  void dispose() {
+    nameController.dispose();
+    idCardController.dispose();
+    emailController.dispose();
+    phoneController.dispose();
+    parentController.dispose();
+    dobController.dispose();
+    coachIdController.dispose();
+    statusController.dispose();
+    createdController.dispose();
+    updatedController.dispose();
+    super.dispose();
+  }
+
+  // ---------------- UI ----------------
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: const Color(0xFFF3F6FB),
+      appBar: AppBar(
+        elevation: 0,
+        // backgroundColor: const Color(0xFF2E3192),
+        title: const Text('Edit Profile'),
       ),
-      filled: true,
-      fillColor: enabled ? Colors.white : Colors.grey[200],
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(children: [
+          // header card with avatar
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)],
+            ),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: _pickStudentPhoto,
+                  child: CircleAvatar(
+                    radius: 38,
+                    backgroundColor: Colors.grey[200],
+                    backgroundImage: studentPhotoFile != null
+                        ? FileImage(studentPhotoFile!)
+                        : null,
+                    child: studentPhotoFile == null
+                        ? const Icon(Icons.camera_alt, size: 30, color: Colors.black54)
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(nameController.text.isEmpty ? 'Your Name' : nameController.text,
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      Text('ID: ${idCardController.text.isEmpty ? "N/A" : idCardController.text}',
+                          style: theme.textTheme.bodySmall),
+                      const SizedBox(height: 8),
+                      ElevatedButton(
+                        onPressed: _pickStudentPhoto,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2E3192),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: const Text('Change Photo',style: TextStyle(color: Colors.white),),
+                      )
+                    ],
+                  ),
+                )
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Form card
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)],
+            ),
+            child: Form(
+              key: _formKey,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // Name (read-only)
+                _label('Full Name'),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: nameController,
+                  readOnly: true,
+                  decoration: _outlined('Full Name', enabled: false),
+                ),
+                const SizedBox(height: 12),
+
+                // Email
+                _label('Email'),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: emailController,
+                  decoration: _outlined('Email'),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Email required';
+                    if (!_emailReg.hasMatch(v.trim())) return 'Enter a valid email';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                // Phone
+                _label('Phone'),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: phoneController,
+                  decoration: _outlined('Phone (10 digits)'),
+                  keyboardType: TextInputType.phone,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Phone required';
+                    if (!_phoneReg.hasMatch(v.trim())) return 'Enter 10 digit phone';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                // Parent contact
+                _label('Parent / Guardian Contact'),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: parentController,
+                  decoration: _outlined('Parent / Guardian Contact'),
+                  keyboardType: TextInputType.phone,
+                  validator: (v) {
+                    if (v != null && v.isNotEmpty && !_phoneReg.hasMatch(v)) {
+                      return 'Enter 10 digit phone';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                // DOB
+                _label('Date of Birth'),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: dobController,
+                  readOnly: true,
+                  onTap: _pickDob,
+                  decoration: _outlined('YYYY-MM-DD', suffix: Icons.calendar_today),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'DOB required';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                // Gender & Blood group row
+                Row(children: [
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _label('Gender'),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        value: selectedGender,
+                        decoration: _outlined('Gender'),
+                        items: ['Male', 'Female', 'Other']
+                            .map((g) => DropdownMenuItem(value: g, child: Text(g)))
+                            .toList(),
+                        onChanged: (v) => setState(() => selectedGender = v),
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Select gender';
+                          return null;
+                        },
+                      )
+                    ]),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _label('Blood Group'),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        value: selectedBloodGroup,
+                        decoration: _outlined('Blood Group'),
+                        items: ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
+                            .map((g) => DropdownMenuItem(value: g, child: Text(g)))
+                            .toList(),
+                        onChanged: (v) => setState(() => selectedBloodGroup = v),
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Select blood group';
+                          return null;
+                        },
+                      ),
+                    ]),
+                  )
+                ]),
+                // const SizedBox(height: 12),
+                //
+                // // Coach id & status row
+                // Row(children: [
+                //   Expanded(
+                //     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                //       _label('Coach ID'),
+                //       const SizedBox(height: 6),
+                //       TextFormField(
+                //         controller: coachIdController,
+                //         decoration: _outlined('Coach ID (optional)'),
+                //       ),
+                //     ]),
+                //   ),
+                //   const SizedBox(width: 12),
+                //   Expanded(
+                //     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                //       _label('Status'),
+                //       const SizedBox(height: 6),
+                //       TextFormField(
+                //         controller: statusController,
+                //         decoration: _outlined('Status (0/1)'),
+                //       ),
+                //     ]),
+                //   )
+                // ]),
+                // const SizedBox(height: 16),
+                //
+                // // Created & Updated (read only)
+                // _label('Created At'),
+                // const SizedBox(height: 6),
+                // TextFormField(controller: createdController, readOnly: true, decoration: _outlined('Created At', enabled: false)),
+                // const SizedBox(height: 12),
+                // _label('Updated At'),
+                // const SizedBox(height: 6),
+                // TextFormField(controller: updatedController, readOnly: true, decoration: _outlined('Updated At', enabled: false)),
+                 const SizedBox(height: 18),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: isLoading ? null : _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2E3192),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('Save Changes', style: TextStyle(fontSize: 16,color: Colors.white)),
+                  ),
+                )
+              ]),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Edit Profile")),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              // 👇 Read-only fields
-              TextFormField(
-                controller: nameController,
-                enabled: false,
-                readOnly: true,
-                decoration: _inputDecoration("Full Name", enabled: false),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: dobController,
-                enabled: false,
-                decoration: _inputDecoration("Date of Birth", enabled: false),
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                value: selectedGender,
-                items: ["Male", "Female", "Other"]
-                    .map((g) => DropdownMenuItem(value: g, child: Text(g)))
-                    .toList(),
-                onChanged: null, // disable editing
-                decoration: _inputDecoration("Gender", enabled: false),
-              ),
-              const SizedBox(height: 10),
+  // Small UI helpers
+  Widget _label(String t) => Text(t, style: const TextStyle(fontWeight: FontWeight.w600));
+  InputDecoration _outlined(String hint, {bool enabled = true, IconData? suffix}) => InputDecoration(
+    hintText: hint,
+    enabled: enabled,
+    filled: true,
+    fillColor: enabled ? Colors.white : Colors.grey.shade100,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+    suffixIcon: suffix != null ? Icon(suffix) : null,
+  );
 
-              // 👇 Editable fields
-              TextFormField(
-                controller: emailController,
-                decoration: _inputDecoration("Email"),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: phoneController,
-                decoration: _inputDecoration("Phone Number"),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: parentController,
-                decoration: _inputDecoration("Parent Contact"),
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                value: selectedBloodGroup,
-                items: ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"]
-                    .map((bg) => DropdownMenuItem(value: bg, child: Text(bg)))
-                    .toList(),
-                onChanged: (v) => setState(() => selectedBloodGroup = v),
-                decoration: _inputDecoration("Blood Group"),
-              ),
-              const SizedBox(height: 20),
-
-              ElevatedButton(
-                onPressed: updateUserData,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2E3192),
-                ),
-                child: const Text(
-                  "Save Changes",
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  // MIME detection helper (very small fallback)
+  String? lookupMime(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    return null;
   }
 }
 
@@ -1408,3 +1925,171 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 //     );
 //   }
 // }
+
+
+
+class StudentFeedbackScreen extends StatefulWidget {
+  const StudentFeedbackScreen({super.key});
+
+  @override
+  State<StudentFeedbackScreen> createState() => _StudentFeedbackScreenState();
+}
+
+class _StudentFeedbackScreenState extends State<StudentFeedbackScreen> {
+  bool isLoading = true;
+  List<dynamic> feedbackList = [];
+  int? studentId;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    await _loadStudentId();
+    if (studentId != null) {
+      await fetchFeedback();
+    } else {
+      print("⚠️ No student ID found, cannot fetch feedback");
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _loadStudentId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userJson = prefs.getString('user');
+
+    if (userJson != null) {
+      final userData = jsonDecode(userJson);
+      final rawId = userData['student_id'] ?? userData['id'];
+      setState(() {
+        studentId = (rawId is String) ? int.tryParse(rawId) : rawId as int?;
+      });
+      print("🎓 Loaded student ID: $studentId");
+    } else {
+      print("⚠️ No user data found in SharedPreferences");
+    }
+  }
+
+  Future<void> fetchFeedback() async {
+    final url = Uri.parse('https://nahatasports.com/api/student/details/$studentId');
+    print("📡 Fetching feedback from: $url");
+
+    try {
+      final response = await http.get(url);
+      print("📩 Response: ${response.statusCode}");
+      print("📦 Body: ${response.body}");
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data['status'] == true && data['feedbacks'] != null) {
+          setState(() {
+            feedbackList = data['feedbacks']; // <-- List directly
+            isLoading = false;
+          });
+
+          print("✅ Feedback entries loaded: ${feedbackList.length}");
+        } else {
+          print("⚠️ No feedback data available");
+          setState(() => isLoading = false);
+        }
+      } else {
+        print("❌ Server error: ${response.statusCode}");
+        setState(() => isLoading = false);
+      }
+    } catch (e) {
+      print("❌ Exception fetching feedback: $e");
+      setState(() => isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+        centerTitle: true,
+        title: const Text(
+
+          'Feedback from Coaches',
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+          ),
+        ),
+      ),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : feedbackList.isEmpty
+          ? const Center(
+        child: Text(
+          "No feedback available yet",
+          style: TextStyle(color: Colors.grey, fontSize: 16),
+        ),
+      )
+          : ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: feedbackList.length,
+        itemBuilder: (context, index) {
+          final feedback = feedbackList[index];
+          final coachName = feedback['coach_name'] ?? 'Coach';
+          final message = feedback['feedback'] ?? 'No message';
+          final date = feedback['created_at'] ?? '';
+
+          return Card(
+            elevation: 2,
+            margin: const EdgeInsets.only(bottom: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const CircleAvatar(
+                        backgroundColor: Color(0xFF0A198D),
+                        child: Icon(Icons.person, color: Colors.white),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          coachName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    message,
+                    style: const TextStyle(fontSize: 15, color: Colors.black87),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    date,
+                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}

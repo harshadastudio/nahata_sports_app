@@ -1,26 +1,43 @@
 {
   "project_info": {
-    "project_number": "947269142203",
-    "project_id": "nahatasportsapp",
-    "storage_bucket": "nahatasportsapp.firebasestorage.app"
+    "project_number": "966021820270",
+    "project_id": "nahatasports-288a6",
+    "storage_bucket": "nahatasports-288a6.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:947269142203:android:b8534c241bd4f2e3080b9e",
+        "mobilesdk_app_id": "1:966021820270:android:5cc6589d0e396eb3921b7f",
         "android_client_info": {
           "package_name": "com.nahata_sports_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "966021820270-pctjbu22hjg033ivbt4bau8rsin1b1c6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyAXGfZbqdzupp-vXFDczKSBJ7SmXWlHo7o"
+          "current_key": "AIzaSyDxitelFtyhbLd1DC8uGJ0yYnRK7GmVhrA"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "966021820270-pctjbu22hjg033ivbt4bau8rsin1b1c6.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "966021820270-2e50l52pgi44enpektqsk3ij4kdafql4.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.nahata.nahataApp"
+              }
+            }
+          ]
         }
       }
     }

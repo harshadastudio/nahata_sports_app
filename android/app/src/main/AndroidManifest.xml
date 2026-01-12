@@ -133,6 +133,12 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 📷 Optional Camera Feature -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- 📞 Optional Telephony Feature -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+
     <!-- 📍 Location Permissions -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -229,6 +235,12 @@
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
         </intent>
+            <!-- For printing support -->
+            <intent>
+                <action android:name="android.print.PRINT_SERVICE" />
+            </intent>
+
+
     </queries>
 </manifest>
 

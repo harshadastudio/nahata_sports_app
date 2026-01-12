@@ -3,8 +3,15 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:nahata_app/coach/coach_dash.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/login.dart';
+import '../bottombar/Custombottombar.dart';
+import '../coach/CoachStudentScreen.dart';
+import '../coach/CoachingEnquiryScreen.dart';
+import '../coach/markattendence.dart';
+import '../coach/scanscreen.dart';
 import '../screens/login_screen.dart';
 import '../services/api_service.dart';
 
@@ -341,8 +348,6 @@ class Fee {
     );
   }
 
-
-
   Fee copyWith({
     String? status,
     String? dueDate,
@@ -411,24 +416,7 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
     }
   }
 
-  // Future<void> fetchFees() async {
-  //   try {
-  //     final response = await http.get(Uri.parse('https://nahatasports.com/api/fees'));
-  //     if (response.statusCode == 200) {
-  //       final data = json.decode(response.body)['data'] as List;
-  //       setState(() {
-  //         // fees = List<Map<String, dynamic>>.from(data);
-  //
-  //          fees = data.map((e) => Fee.fromJson(e)).toList();
-  //         isLoading = false;
-  //       });
-  //     } else {
-  //       setState(() => isLoading = false);
-  //     }
-  //   } catch (e) {
-  //     setState(() => isLoading = false);
-  //   }
-  // }
+
   Future<void> markAsPaid(int feeId) async {
     try {
       final response = await http.post(
@@ -473,42 +461,7 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
     }
   }
 
-  // Future<void> markAsPaid(int feeId) async {
-  //   try {
-  //     final response = await http.post(
-  //       Uri.parse("https://nahatasports.com/api/fees/markPaid/$feeId"),
-  //     );
-  //
-  //     final data = json.decode(response.body);
-  //     print("Mark Paid Response: $data");
-  //
-  //     if (response.statusCode == 200 && data['status'] == true) {
-  //       setState(() {
-  //         final index = fees.indexWhere((f) => f.id == feeId);
-  //         if (index != -1) {
-  //           fees[index] = fees[index].copyWith(
-  //             status: "paid",
-  //             dueDate: data['data']['next_due_date'],
-  //             paidDate: data['data']['paid_date'],
-  //           );
-  //         }
-  //       });
-  //
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(content: Text(data['message'] ?? "Fee marked as paid ✅")),
-  //       );
-  //     } else {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(content: Text(data['message'] ?? "Failed to update")),
-  //       );
-  //     }
-  //   } catch (e) {
-  //     print("Error in markAsPaid: $e");
-  //     ScaffoldMessenger.of(context).showSnackBar(
-  //       SnackBar(content: Text("Error: $e")),
-  //     );
-  //   }
-  // }
+
 
   Color getStatusColor(String status) {
     switch (status.toLowerCase()) {
@@ -533,19 +486,43 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
       }
     });
   }
-  @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Scaffold(
-        backgroundColor: Colors.grey[100],
+        // drawer: Drawer(
+        //   backgroundColor: const Color(0xFF0A198D),
+        //   child: ListView(
+        //     padding: EdgeInsets.zero,
+        //     children: const [
+        //       DrawerHeader(
+        //         decoration: BoxDecoration(color: Colors.white12),
+        //         child: Text(
+        //           'Coach Menu',
+        //           style: TextStyle(
+        //             color: Colors.white,
+        //             fontSize: 24,
+        //             fontWeight: FontWeight.bold,
+        //           ),
+        //         ),
+        //       ),
+        //       ListTile(
+        //         leading: Icon(Icons.dashboard, color: Colors.white),
+        //         title: Text('Dashboard', style: TextStyle(color: Colors.white)),
+        //       ),
+        //       ListTile(
+        //         leading: Icon(Icons.settings, color: Colors.white),
+        //         title: Text('Settings', style: TextStyle(color: Colors.white)),
+        //       ),
+        //     ],
+        //   ),
+        // ),
+
+        // backgroundColor: Colors.grey[100],
         appBar: AppBar(
           backgroundColor: const Color(0xFF0A198D),
           elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () {
-              SystemNavigator.pop(); // 👈 exit app cleanly
-            },
+          iconTheme: const IconThemeData(
+            color: Colors.white, // 👈 drawer (hamburger) icon color
           ),
           title: const Text(
             "Coach Dashboard",
@@ -556,92 +533,108 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
             ),
           ),
           centerTitle: true,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.logout, color: Colors.white),
-              onPressed: () async {
-                await AuthService.logout();
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      (route) => false,
-                );
-              },
-            ),
-          ],
+          // actions: [
+          //   IconButton(
+          //     icon: const Icon(Icons.logout, color: Colors.white),
+          //     onPressed: () async {
+          //       await AuthService.logout();
+          //       Navigator.pushAndRemoveUntil(
+          //         context,
+          //         MaterialPageRoute(builder: (_) => const LoginScreen()),
+          //             (route) => false,
+          //       );
+          //     },
+          //   ),
+          // ],
         ),
-
+        // BODY
         body: isLoading
             ? const Center(child: CircularProgressIndicator())
             : FadeTransition(
           opacity: _fadeAnimation,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                // HEADER SUMMARY
-                Row(
-                  children: [
-                    _statCard(Icons.people, fees.length.toString(), "Students", Colors.blue),
-                    const SizedBox(width: 12),
-                    _statCard(
-                      Icons.check_circle,
-                      fees.where((f) => f.status.toLowerCase() == 'paid').length.toString(),
-                      "Paid",
-                      Colors.green,
+          child: RefreshIndicator(
+            onRefresh: fetchFees,
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        // HEADER STATS
+                        Row(
+                          children: [
+                            _statCard(Icons.people, fees.length.toString(),
+                                "Students", Colors.blue),
+                            const SizedBox(width: 12),
+                            _statCard(
+                                Icons.check_circle,
+                                fees
+                                    .where((f) =>
+                                f.status.toLowerCase() == 'paid')
+                                    .length
+                                    .toString(),
+                                "Paid",
+                                Colors.green),
+                            const SizedBox(width: 12),
+                            _statCard(
+                                Icons.warning,
+                                fees
+                                    .where((f) =>
+                                f.status.toLowerCase() != 'paid')
+                                    .length
+                                    .toString(),
+                                "Pending",
+                                Colors.orange),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+
+                        // SEARCH BAR
+                        Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.blueAccent.withOpacity(0.3),
+                                Colors.lightBlueAccent.withOpacity(0.2)
+                              ],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black12,
+                                blurRadius: 8,
+                                offset: Offset(0, 3),
+                              )
+                            ],
+                          ),
+                          child: TextField(
+                            controller: searchController,
+                            onChanged: _filterFees,
+                            decoration: InputDecoration(
+                              prefixIcon: const Icon(Icons.search,
+                                  color: Colors.blueAccent),
+                              hintText: "Search students...",
+                              filled: true,
+                              fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.all(14),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(20),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    _statCard(
-                      Icons.warning,
-                      fees.where((f) => f.status.toLowerCase() != 'paid').length.toString(),
-                      "Pending",
-                      Colors.orange,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                // SEARCH BAR
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: LinearGradient(
-                      colors: [Colors.blueAccent.withOpacity(0.3), Colors.lightBlueAccent.withOpacity(0.2)],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 8,
-                        offset: Offset(0, 3),
-                      )
-                    ],
                   ),
-                  child: TextField(
-                    controller: searchController,
-                    onChanged: _filterFees,
-                    decoration: InputDecoration(
-                      prefixIcon: Icon(Icons.search, color: Colors.blueAccent),
-                      hintText: "Search students...",
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: EdgeInsets.all(14),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  )
-
                 ),
 
-                const SizedBox(height: 20),
-                // STUDENT CARDS
-                RefreshIndicator(
-                  onRefresh: fetchFees,
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: displayedFees.length,
-                    itemBuilder: (context, index) {
+                // STUDENT FEE LIST
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                        (context, index) {
                       final fee = displayedFees[index];
                       return AnimatedContainer(
                         duration: const Duration(milliseconds: 300),
@@ -662,40 +655,15 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
                         ),
                       );
                     },
+                    childCount: displayedFees.length,
                   ),
                 ),
-
-
-                // AnimatedList(
-                //   key: _listKey,
-                //   shrinkWrap: true,
-                //   physics: const NeverScrollableScrollPhysics(),
-                //   initialItemCount: fees.length,
-                //   itemBuilder: (context, index, animation) {
-                //     final fee = fees[index];
-                //     return SizeTransition(
-                //       sizeFactor: animation,
-                //       child: _studentCard(
-                //         fee.studentName,
-                //         fee.sport ?? 'N/A',
-                //         fee.timing ?? 'N/A',
-                //         fee.status,
-                //         fee.dueDate,
-                //         getStatusColor(fee.status),
-                //         "Mark Paid",
-                //         paidDate: fee.paidDate,
-                //         amount: fee.amount,
-                //         onMarkPaid: fee.status.toLowerCase() == "paid"
-                //             ? null
-                //             : () => markAsPaid(fee.id),
-                //       ),
-                //     );
-                //   },
-                // ),
+                const SliverToBoxAdapter(child: SizedBox(height: 100)),
               ],
             ),
           ),
         ),
+
         floatingActionButton: FloatingActionButton(
           backgroundColor: Colors.blueAccent,
           child: const Icon(Icons.add),
@@ -704,6 +672,7 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
       ),
     );
   }
+
   void _showAddFeeBottomSheet(BuildContext context) {
     final _formKey = GlobalKey<FormState>();
     String? selectedStudentId;
@@ -884,6 +853,7 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
                                 headers: {'Content-Type': 'application/json'},
                                 body: body,
                               );
+
 
                               final data = json.decode(response.body);
 
@@ -1126,6 +1096,135 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
 
 
 
+class CoachHomeScreen extends StatefulWidget {
+  const CoachHomeScreen({super.key});
+
+  @override
+  State<CoachHomeScreen> createState() => _CoachHomeScreenState();
+}
+
+class _CoachHomeScreenState extends State<CoachHomeScreen> {
+  int? studentId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStudentId();
+  }
+  Future<void> _loadStudentId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userJson = prefs.getString('user');
+
+    if (userJson != null) {
+      final userData = jsonDecode(userJson);
+
+      setState(() {
+        final rawId = userData['student_id'] ?? userData['id'];
+
+        if (rawId is String) {
+          studentId = int.tryParse(rawId);
+        } else if (rawId is int) {
+          studentId = rawId;
+        } else {
+          studentId = null;
+        }
+      });
+
+      print('🎓 Student ID: $studentId');
+    } else {
+      print('⚠️ No user data found in SharedPreferences');
+    }
+  }
+
+  // Future<void> _loadStudentId() async {
+  //   final prefs = await SharedPreferences.getInstance();
+  //   final userJson = prefs.getString('user');
+  //
+  //   if (userJson != null) {
+  //     final userData = jsonDecode(userJson);
+  //
+  //     setState(() {
+  //       // Pick student_id if it exists, otherwise fallback to id
+  //       studentId = userData['student_id'] ?? userData['id'];
+  //     });
+  //
+  //     print('🎓 Student ID: $studentId');
+  //   } else {
+  //     print('⚠️ No user data found in SharedPreferences');
+  //   }
+  // }
+
+  Future<void> handleMenuTap(_MenuItem item) async {
+    final prefs = await SharedPreferences.getInstance();
+    final firstLogin = prefs.getBool('firstLogin') ?? false;
+    final role = prefs.getString('role') ?? 'user';
+
+    // Restrict if first login (except dashboard)
+    if (firstLogin && item.title != 'Dashboard') {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Action Restricted"),
+          content: const Text("Please complete your profile before continuing."),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // Normal navigation
+    switch (item.route) {
+      case '/dashboard':
+        if (role == 'coach') {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CoachDashboardScreen1()),
+          );
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CustomBottomNav()),
+          );
+        }
+        break;
+        case '/fees':
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CoachDashboardScreen()),
+        );
+        break;
+      case '/students':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const StudentsScreen()));
+        break;
+
+      case '/scan':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ScanScreen()));
+        break;
+
+      case '/attendance':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendanceScreen()));
+        break;
+      case '/enquiry':
+        Navigator.push(context, MaterialPageRoute(builder: (_) =>  CoachingEnquiryScreen(userId: studentId!,)));
+        break;
+
+      case '/logout':
+        await AuthService.logout();
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+        break;
+
+      default:
+        break;
+    }
+  }
 
 
 
@@ -1138,6 +1237,198 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
 
 
 
+
+  final List<_MenuItem> menuItems = const [
+    _MenuItem(Icons.dashboard, 'Dashboard', '/dashboard'),
+    _MenuItem(Icons.question_answer, 'Coaching Enquiry', '/enquiry'),
+    _MenuItem(Icons.people, 'Students', '/students'),
+    _MenuItem(Icons.event_available, 'Mark Attendance', '/attendance'),
+    _MenuItem(Icons.qr_code_scanner, 'Scan', '/scan'),
+    _MenuItem(Icons.payment, 'Mark Fees', '/fees'),
+    _MenuItem(Icons.logout, 'Logout', '/logout'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F9FC),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0A198D),
+        title: const Text(
+          'Coach Home',
+          style: TextStyle(fontWeight: FontWeight.w600,color: Colors.white),
+        ),
+        elevation: 0,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: GridView.builder(
+          itemCount: menuItems.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
+            childAspectRatio: 1.0,
+          ),
+          itemBuilder: (context, index) {
+            final item = menuItems[index];
+
+            return GestureDetector(
+              onTap: () {
+                if (item.title == 'Mark Fees') {
+                  // ✅ Navigate to CoachDashboardScreen
+                  // Navigator.push(
+                  //   context,
+                  //   MaterialPageRoute(
+                  //     builder: (_) => const CoachDashboardScreen(),
+                  //   ),
+                  // );
+                  handleMenuTap(item);
+                }
+                else if (item.route == '/dashboard'){
+                  handleMenuTap(item);
+
+                }
+                else if (item.route == '/students') {
+                  // Navigator.push(
+                  //   context,
+                  //   MaterialPageRoute(builder: (_) => const StudentsScreen()),
+                  // );
+                  handleMenuTap(item);
+
+                }
+                else if (item.route == '/scan') {
+                  // Navigator.push(
+                  //   context,
+                  //   MaterialPageRoute(builder: (_) => const ScanScreen()),
+                  // );
+                  handleMenuTap(item);
+
+                }
+                else if(item.route == '/attendance'){
+                  handleMenuTap(item);
+
+                }
+                else if(item.route == '/enquiry'){
+                  handleMenuTap(item);
+
+                }
+
+
+
+                else if (item.route == '/logout') {
+
+                  handleMenuTap(item);
+
+                  // // ✅ Logout confirmation dialog
+                  // showDialog(
+                  //   context: context,
+                  //   builder: (_) => AlertDialog(
+                  //     title: const Text('Logout'),
+                  //     content:
+                  //     const Text('Are you sure you want to log out?'),
+                  //     actions: [
+                  //       TextButton(
+                  //         onPressed: () => Navigator.pop(context),
+                  //         child: const Text('Cancel'),
+                  //       ),
+                  //       TextButton(
+                  //         onPressed: () {
+                  //           Navigator.pop(context);
+                  //           // TODO: Add your logout logic here
+                  //         },
+                  //         child: const Text('Logout'),
+                  //       ),
+                  //     ],
+                  //   ),
+                  // );
+                } else {
+                  // ✅ Other routes navigation (manual switch)
+                  // Navigator.push(
+                  //   context,
+                  //   MaterialPageRoute(builder: (_) {
+                  //     switch (item.route) {
+                  //       case '/dashboard':
+                  //         return const DashboardScreen();
+                  //       case '/enquiry':
+                  //         return const CoachingEnquiryScreen();
+                  //       case '/students':
+                  //         return const StudentsScreen();
+                  //       case '/attendance':
+                  //         return const MarkAttendanceScreen();
+                  //       case '/scan':
+                  //         return const ScanScreen();
+                  //       default:
+                  //         return const SizedBox();
+                  //     }
+                  //   }),
+                  // );
+                }
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.15),
+                      blurRadius: 8,
+                      offset: const Offset(2, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(item.icon, color: const Color(0xFF0A198D), size: 40),
+                    const SizedBox(height: 12),
+                    Text(
+                      item.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black87,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+
+
+
+
+
+/// Helper class for menu item model
+class _MenuItem {
+  final IconData icon;
+  final String title;
+  final String route;
+  const _MenuItem(this.icon, this.title, this.route);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 4f1780c4
 
 
 

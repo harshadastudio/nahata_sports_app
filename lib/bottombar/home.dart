@@ -901,9 +901,6 @@
 //
 //
 
-
-
-
 import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -914,9 +911,11 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:nahata_app/bottombar/profile.dart';
+import 'package:nahata_app/bottombar/screen.dart';
 import 'package:nahata_app/bottombar/slotbook.dart';
 import 'package:nahata_app/bottombar/event.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../auth/login.dart';
 import '../main.dart';
@@ -937,6 +936,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:timeago/timeago.dart' as timeago;
+
 class UserOptionsPage extends StatefulWidget {
   const UserOptionsPage({super.key});
 
@@ -963,13 +963,14 @@ class _UserOptionsPageState extends State<UserOptionsPage> {
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const LoginScreen()),
-            (route) => false,
+        (route) => false,
       );
     }
     // // Navigate to login page after logout
     // Navigator.pushReplacement(
     //     context, MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1001,8 +1002,6 @@ class _UserOptionsPageState extends State<UserOptionsPage> {
               context,
               MaterialPageRoute(builder: (context) => CustomBottomNav()),
             );
-
-
           },
         ),
         title: const Text(
@@ -1040,19 +1039,24 @@ class _UserOptionsPageState extends State<UserOptionsPage> {
         //   const SizedBox(width: 16),
         // ],
       ),
-      body:Padding(
+      body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
             ListTile(
-              leading:  Icon(Icons.person),
+              leading: Icon(Icons.person),
               title: const Text('Profile'),
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => Screen(studentId: ApiService.currentUser?['student_id']?.toString() ?? '',)),
+                  MaterialPageRoute(
+                    builder: (context) => Screen(
+                      studentId:
+                          ApiService.currentUser?['student_id']?.toString() ??
+                          '',
+                    ),
+                  ),
                 );
-
               },
             ),
 
@@ -1070,7 +1074,9 @@ class _UserOptionsPageState extends State<UserOptionsPage> {
               leading: const Icon(Icons.share),
               title: const Text('Share App'),
               onTap: () {
-                Share.share('Check out this amazing app: https://play.google.com/store/apps/details?id=com.nahata_sports_app&pcampaignid=web_share');
+                Share.share(
+                  'Check out this amazing app: https://play.google.com/store/apps/details?id=com.nahata_sports_app&pcampaignid=web_share',
+                );
               },
             ),
           ],
@@ -1132,9 +1138,6 @@ class _UserOptionsPageState extends State<UserOptionsPage> {
 //   }
 // }
 
-
-
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
@@ -1151,14 +1154,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool isLoggedIn = false;
 
   final List<Map<String, String>> _venues = [
-    {
-      'name': 'Gangadham Chowk',
-      'image': 'assets/23.webp',
-    },
-    {
-      'name': 'Sinhgad Rd',
-      'image': 'assets/56.jpg',
-    },
+    {'name': 'Gangadham Chowk', 'image': 'assets/23.webp'},
+    {'name': 'Sinhgad Rd', 'image': 'assets/56.jpg'},
   ];
 
   @override
@@ -1171,11 +1168,16 @@ class _HomeScreenState extends State<HomeScreen> {
     // Auto-slide every 3 seconds
     Future.delayed(const Duration(seconds: 2), _autoSlide);
   }
+
   void _fetchUserInitial() async {
     final user = await AuthService.getUser();
-    print("👤 AuthService.getUser() result: $user"); // 👈 add this for debugging
+    print(
+      "👤 AuthService.getUser() result: $user",
+    ); // 👈 add this for debugging
 
-    if (user != null && user['name'] != null && user['name'].toString().isNotEmpty) {
+    if (user != null &&
+        user['name'] != null &&
+        user['name'].toString().isNotEmpty) {
       userInitial = user['name'].toString().substring(0, 1).toUpperCase();
       isLoggedIn = true;
       print("✅ Logged in as: ${user['name']} | Initial: $userInitial");
@@ -1187,6 +1189,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {});
   }
+
   Future<void> _getCurrentLocation() async {
     try {
       // Check if location services are enabled
@@ -1234,6 +1237,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     }
   }
+
   Future<void> _reverseGeocode(double lat, double lon) async {
     try {
       final url = Uri.parse(
@@ -1251,20 +1255,24 @@ class _HomeScreenState extends State<HomeScreen> {
         print("📍 Raw Address: $address");
 
         // Collect parts safely (skip nulls and duplicates)
-        List parts = [
-          address['road'],
-          address['neighbourhood'],
-          address['suburb'],
-          address['village'],
-          address['town'],
-          address['city_district'],
-          address['city'],
-          address['county'],
-          address['state_district'],
-          address['state'],
-          address['postcode'],
-          address['country'],
-        ].where((e) => e != null && e.toString().trim().isNotEmpty).toSet().toList();
+        List parts =
+            [
+                  address['road'],
+                  address['neighbourhood'],
+                  address['suburb'],
+                  address['village'],
+                  address['town'],
+                  address['city_district'],
+                  address['city'],
+                  address['county'],
+                  address['state_district'],
+                  address['state'],
+                  address['postcode'],
+                  address['country'],
+                ]
+                .where((e) => e != null && e.toString().trim().isNotEmpty)
+                .toSet()
+                .toList();
 
         // Join nicely
         String formatted = parts.join(', ');
@@ -1429,23 +1437,23 @@ class _HomeScreenState extends State<HomeScreen> {
                         Expanded(
                           child: _isLoadingLocation
                               ? const Text(
-                            'Fetching location...',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.black54,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          )
+                                  'Fetching location...',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.black54,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                )
                               : Text(
-                            _locationText,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.black87,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                                  _locationText,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
                         ),
                         // Dropdown icon
                         GestureDetector(
@@ -1454,7 +1462,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               context: context,
                               backgroundColor: Colors.white,
                               shape: const RoundedRectangleBorder(
-                                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                                borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(20),
+                                ),
                               ),
                               builder: (context) => Padding(
                                 padding: const EdgeInsets.all(20),
@@ -1512,7 +1522,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       // Navigate to Notifications screen
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const NotificationsPage()),
+                        MaterialPageRoute(
+                          builder: (context) => const NotificationsPage(),
+                        ),
                       );
                     },
                     child: Container(
@@ -1520,7 +1532,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          const Icon(Icons.notifications_none, size: 26, color: Colors.black87),
+                          const Icon(
+                            Icons.notifications_none,
+                            size: 26,
+                            color: Colors.black87,
+                          ),
                           // Positioned(
                           //   right: 0,
                           //   top: -2,
@@ -1544,40 +1560,62 @@ class _HomeScreenState extends State<HomeScreen> {
                       print("🟢 Avatar tapped | isLoggedIn = $isLoggedIn");
 
                       if (isLoggedIn) {
-                        // ✅ Load the user before navigation
+                        // ✅ Load user from local storage
                         await ApiService.loadUserFromPrefs();
 
-                        final studentId = ApiService.currentUser?['student_id']?.toString() ?? '';
+                        final role = ApiService.getRole();
+                        final userData = ApiService.currentUser;
+                        print("👤 Current user: $userData");
 
-                        if (studentId.isEmpty) {
-                          print("⚠️ No student ID found in user data");
+                        // ✅ Extract ID based on backend structure
+                        final userId = userData?['id']?.toString() ?? '';
+
+                        if (userId.isEmpty) {
+                          print("⚠️ No user ID found in stored user data");
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Student ID not found. Please log in again.")),
+                            const SnackBar(
+                              content: Text(
+                                "User ID not found. Please log in again.",
+                              ),
+                            ),
                           );
                           return;
                         }
 
-                        // ✅ Navigate AFTER ensuring we have a valid student ID
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => Screen(studentId: studentId),
-                          ),
-                        );
+                        print("✅ Loaded User ID: $userId | Role: $role");
 
-                        // After returning, reload user data and update initials
+                        {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => Screen(studentId: userId),
+                            ),
+                          );
+                        }
+
+                        // 🔁 After returning, refresh name initial
                         setState(() {
-                          final name = ApiService.currentUser?['name'] ?? '';
-                          userInitial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+                          final name = userData?['name'] ?? '';
+                          userInitial = name.isNotEmpty
+                              ? name[0].toUpperCase()
+                              : '?';
                         });
 
                         print("🔁 Updated userInitial to: $userInitial");
                       } else {
-                        Navigator.pushAndRemoveUntil(
+                        // 🚪 Not logged in — redirect to LoginScreen
+                        // Navigator.pushAndRemoveUntil(
+                        //   context,
+                        //   MaterialPageRoute(
+                        //     builder: (_) => const LoginScreen(),
+                        //   ),
+                        //   (route) => false,
+                        // );
+                        Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (context) => const LoginScreen()),
-                              (route) => false,
+                          MaterialPageRoute(builder: (_) => LoginScreen()),
                         );
+
                       }
                     },
                     child: CircleAvatar(
@@ -1592,12 +1630,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
-                  )
+                  ),
                 ],
               ),
             ),
-
-
 
             // Content
             Expanded(
@@ -1607,10 +1643,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 8),
                   // Main Booking Card
                   GestureDetector(
-                    onTap: (){
+                    onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => VenueListScreen()),
+                        MaterialPageRoute(
+                          builder: (context) => VenueListScreen(),
+                        ),
                       );
                     },
                     child: Container(
@@ -1667,7 +1705,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 16),
                   // Train With Us Card
                   GestureDetector(
-                    onTap: (){
+                    onTap: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (context) => SportsScreen()),
@@ -1767,12 +1805,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => Viewgame(locationName: _venues[index]['name']!),
+                                      builder: (_) => Viewgame(
+                                        locationName: _venues[index]['name']!,
+                                      ),
                                     ),
                                   );
 
                                   // 👇 Print for debugging
-                                  print("🟢 Navigating to Viewgame for location: ${_venues[index]['name']}");
+                                  print(
+                                    "🟢 Navigating to Viewgame for location: ${_venues[index]['name']}",
+                                  );
                                 },
                                 child: Stack(
                                   fit: StackFit.expand,
@@ -1796,7 +1838,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                     Padding(
                                       padding: const EdgeInsets.all(16),
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Container(
                                             padding: const EdgeInsets.symmetric(
@@ -1804,8 +1847,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                               vertical: 4,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: Colors.white.withOpacity(0.9),
-                                              borderRadius: BorderRadius.circular(6),
+                                              color: Colors.white.withOpacity(
+                                                0.9,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
                                             ),
                                             child: Text(
                                               _venues[index]['name']!,
@@ -1896,8 +1942,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: List.generate(
                               _venues.length,
-                                  (index) => Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 3),
+                              (index) => Container(
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                ),
                                 width: 6,
                                 height: 6,
                                 decoration: BoxDecoration(
@@ -1918,150 +1966,156 @@ class _HomeScreenState extends State<HomeScreen> {
                   Row(
                     children: [
                       // Bookings Card
-
-                         Expanded(
-                          child: GestureDetector(
-                            onTap: (){
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => VenueListScreen()),
-                              );
-                            },
-                            child: Container(
-                              height: 80,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.grey.withOpacity(0.1),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 2),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => VenueListScreen(),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.grey.withOpacity(0.1),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[100],
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      Icons.calendar_today_outlined,
+                                      color: Colors.blue[600],
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        const Text(
+                                          'Bookings',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Game History',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ],
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey[100],
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Icon(
-                                        Icons.calendar_today_outlined,
-                                        color: Colors.blue[600],
-                                        size: 20,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          const Text(
-                                            'Bookings',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.black87,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            'Game History',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
                               ),
                             ),
                           ),
                         ),
+                      ),
 
                       const SizedBox(width: 12),
-                      // Events Card
 
-                     Expanded(
-                          child: GestureDetector(
-                            onTap: (){
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => EventsScreen()),
-                              );
-                            },
-                            child: Container(
-                              height: 80,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.grey.withOpacity(0.1),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 2),
+                      // Events Card
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => EventsScreen(),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.grey.withOpacity(0.1),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[100],
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      Icons.event_outlined,
+                                      color: Colors.blue[600],
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        const Text(
+                                          'Events',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Upcoming Events',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ],
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey[100],
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Icon(
-                                        Icons.event_outlined,
-                                        color: Colors.blue[600],
-                                        size: 20,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          const Text(
-                                            'Events',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.black87,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            'Upcoming Events',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
                               ),
                             ),
                           ),
                         ),
-
+                      ),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -2700,11 +2754,6 @@ class _HomeScreenState extends State<HomeScreen> {
 //
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-
-
-
-
 // class EventModel {
 //   final String id;
 //   final String title;
@@ -2751,7 +2800,11 @@ class _LocationInfoPageState extends State<LocationInfoPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTab,
+    );
   }
 
   Widget _buildDescription(String location) {
@@ -2760,12 +2813,14 @@ class _LocationInfoPageState extends State<LocationInfoPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(location,
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          Text(
+            location,
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          ),
           SizedBox(height: 10),
           Text(
             "Transforming Future Champions, One Game at a Time\n\n"
-                "At Nahata Sports, we're on a mission to inspire, train, and empower the next generation of athletes across Maharashtra. With facilities at Sinhagad Road and Gangadham Chowk, our multi-center complexes offer world-class training and seamless booking experiences that make sports easily accessible for all.",
+            "At Nahata Sports, we're on a mission to inspire, train, and empower the next generation of athletes across Maharashtra. With facilities at Sinhagad Road and Gangadham Chowk, our multi-center complexes offer world-class training and seamless booking experiences that make sports easily accessible for all.",
           ),
           SizedBox(height: 15),
           Text(
@@ -2775,13 +2830,13 @@ class _LocationInfoPageState extends State<LocationInfoPage>
           SizedBox(height: 5),
           Text(
             "Our comprehensive programs cater to every skill level—from beginner to advanced. Athletes can choose from:\n\n"
-                "- Cricket (in partnership with Rajasthan Royals Academy, Pune)\n"
-                "- Badminton\n"
-                "- Basketball\n"
-                "- Skating\n"
-                "- Karate\n"
-                "- Dance & Zumba\n"
-                "- Fun Fitness programs for motor skill development in children aged 3+",
+            "- Cricket (in partnership with Rajasthan Royals Academy, Pune)\n"
+            "- Badminton\n"
+            "- Basketball\n"
+            "- Skating\n"
+            "- Karate\n"
+            "- Dance & Zumba\n"
+            "- Fun Fitness programs for motor skill development in children aged 3+",
           ),
           SizedBox(height: 15),
           Text(
@@ -2824,578 +2879,1174 @@ class _LocationInfoPageState extends State<LocationInfoPage>
     );
   }
 }
+//
+// class Screen extends StatefulWidget {
+//   final String studentId;
+//   const Screen({Key? key, required this.studentId}) : super(key: key);
+//
+//   @override
+//   State<Screen> createState() => _ScreenState();
+// }
+//
+// class _ScreenState extends State<Screen> {
+//   static const brandBlue = Color(0xFF1A237E);
+//   int _selectedIndex = 0;
+//   bool isLoading = true;
+//   StudentData? studentData;
+//   late final String studentId;
+//   late Future<List<StudentData>> studentsFuture;
+//   String userInitial = '';
+//   @override
+//   void initState() {
+//     super.initState();
+//     studentsFuture = _initAndFetch();
+//     fetchUserInitial();
+//   }
+//
+//   void fetchUserInitial() async {
+//     final user = await AuthService.getUser();
+//
+//     if (user != null &&
+//         user['name'] != null &&
+//         user['name'].toString().isNotEmpty) {
+//       userInitial = user['name'].toString().substring(0, 1).toUpperCase();
+//     } else {
+//       userInitial = 'U'; // fallback
+//     }
+//
+//     setState(() {});
+//   }
+//
+//   /// First load user, then fetch API
+//   Future<List<StudentData>> _initAndFetch() async {
+//     await ApiService.loadUserFromPrefs();
+//
+//     final id = widget.studentId.isNotEmpty
+//         ? widget.studentId
+//         : (ApiService.currentUser?['student_id']?.toString() ?? '');
+//
+//     if (id.isEmpty) {
+//       throw Exception("Student ID is not available");
+//     }
+//
+//     return fetchStudents(int.parse(id));
+//   }
+//
+//   Future<List<StudentData>> fetchStudents(int studentId) async {
+//     final url = Uri.parse(
+//       "https://nahatasports.com/api/student_dashboard?student_id=$studentId",
+//     );
+//
+//     final response = await http.get(
+//       url,
+//       headers: {
+//         'Content-Type': 'application/json',
+//         if (ApiService.currentUser != null &&
+//             ApiService.currentUser!.containsKey('token'))
+//           'Authorization': 'Bearer ${ApiService.currentUser!['token']}',
+//       },
+//     );
+//
+//     print("studentId: $studentId");
+//     print("Status: ${response.statusCode}");
+//     print("Body: ${response.body}");
+//
+//     if (response.statusCode == 200) {
+//       final body = jsonDecode(response.body);
+//
+//       if (body['status'] == true) {
+//         final data = body['data'];
+//
+//         return [
+//           StudentData.fromJson(data),
+//
+//           // StudentData.fromJson({
+//           //   "student": data['student'],
+//           //   "fee": data['fee'],
+//           //   "gatePass": data['pass'],
+//           //   "coachName": data['coach_name'],
+//           // })
+//         ];
+//       } else {
+//         throw Exception("API returned false status");
+//       }
+//     } else {
+//       throw Exception("Failed to fetch data");
+//     }
+//   }
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       backgroundColor: Colors.grey[50],
+//       appBar: AppBar(
+//         backgroundColor: Colors.white,
+//         elevation: 0,
+//         title: const Text(
+//           'Profile',
+//           style: TextStyle(
+//             color: brandBlue,
+//             fontSize: 20,
+//             fontWeight: FontWeight.w600,
+//           ),
+//         ),
+//         centerTitle: false,
+//         actions: [
+//           // IconButton(
+//           //   onPressed: () {},
+//           //   icon: Stack(
+//           //     children: [
+//           //       const Icon(
+//           //         Icons.notifications_outlined,
+//           //         color: brandBlue,
+//           //         size: 26,
+//           //       ),
+//           //       Positioned(
+//           //         right: 0,
+//           //         top: 0,
+//           //         child: Container(
+//           //           padding: const EdgeInsets.all(2),
+//           //           decoration: BoxDecoration(
+//           //             color: Colors.red,
+//           //             borderRadius: BorderRadius.circular(6),
+//           //           ),
+//           //           constraints: const BoxConstraints(
+//           //             minWidth: 12,
+//           //             minHeight: 12,
+//           //           ),
+//           //           child: const Text(
+//           //             '3',
+//           //             style: TextStyle(
+//           //               color: Colors.white,
+//           //               fontSize: 8,
+//           //               fontWeight: FontWeight.bold,
+//           //             ),
+//           //             textAlign: TextAlign.center,
+//           //           ),
+//           //         ),
+//           //       ),
+//           //     ],
+//           //   ),
+//           // ),
+//           // const SizedBox(width: 8),
+//           // GestureDetector(
+//           //   onTap: () {
+//           //     Navigator.push(
+//           //       context,
+//           //       MaterialPageRoute(builder: (context) => UserOptionsPage()),
+//           //     );
+//           //   },
+//           //   child: Container(
+//           //     margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+//           //     child: CircleAvatar(
+//           //       radius: 18,
+//           //       backgroundColor: brandBlue,
+//           //       child: Text(
+//           //         userInitial.isNotEmpty ? userInitial : '?',
+//           //         style: const TextStyle(
+//           //           color: Colors.white,
+//           //           fontWeight: FontWeight.bold,
+//           //           fontSize: 16,
+//           //         ),
+//           //       ),
+//           //     ),
+//           //   ),
+//           // ),
+//         ],
+//       ),
+//       body: FutureBuilder<List<StudentData>>(
+//         future: studentsFuture,
+//         builder: (context, snapshot) {
+//           if (snapshot.connectionState == ConnectionState.waiting) {
+//             return const Center(
+//               child: CircularProgressIndicator(color: brandBlue),
+//             );
+//           } else if (snapshot.hasError) {
+//             return Center(child: Text("❌ Error: ${snapshot.error}"));
+//           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+//             return const Center(child: Text("No data available"));
+//           }
+//
+//           final studentData = snapshot.data!.first;
+//           return SingleChildScrollView(
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//
+//                 Container(
+//                   margin: const EdgeInsets.symmetric(horizontal: 16),
+//                   padding: const EdgeInsets.all(20),
+//                   decoration: BoxDecoration(
+//                     color: Colors.white,
+//                     borderRadius: BorderRadius.circular(16),
+//                     boxShadow: [
+//                       BoxShadow(
+//                         color: Colors.grey.withOpacity(0.1),
+//                         blurRadius: 10,
+//                         offset: const Offset(0, 4),
+//                       ),
+//                     ],
+//                   ),
+//                   child: Column(
+//                     children: [
+//                       Row(
+//                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//                         children: [
+//                           Text(
+//                             'Name: ${studentData.student['name'] ?? "-"}',
+//                             style: TextStyle(
+//                               fontSize: 16,
+//                               fontWeight: FontWeight.w500,
+//                             ),
+//                           ),
+//                           Container(
+//                             padding: const EdgeInsets.symmetric(
+//                               horizontal: 8,
+//                               vertical: 4,
+//                             ),
+//                             decoration: BoxDecoration(
+//                               color: Colors.grey[100],
+//                               borderRadius: BorderRadius.circular(8),
+//                             ),
+//                             child: Text(
+//                               'ID: ${studentData.student['id'] ?? "-"}',
+//                               style: const TextStyle(
+//                                 fontSize: 12,
+//                                 color: Colors.grey,
+//                               ),
+//                             ),
+//                           ),
+//                         ],
+//                       ),
+//                       const SizedBox(height: 16),
+//                       const Align(
+//                         alignment: Alignment.centerLeft,
+//                         child: Text(
+//                           'Fee Details:',
+//                           style: TextStyle(
+//                             fontSize: 16,
+//                             fontWeight: FontWeight.w500,
+//                           ),
+//                         ),
+//                       ),
+//                       const SizedBox(height: 12),
+//                       _buildFeeDetailRow(
+//                         'Monthly fee',
+//                         '₹${studentData.fee?['monthly_fee'] ?? "0.00"}',
+//                       ),
+//                       _buildFeeDetailRow(
+//                         'Last Payment',
+//                         studentData.fee?['last_payment_date'] ?? "-",
+//                       ),
+//                       _buildFeeDetailRow(
+//                         'Next Due',
+//                         studentData.fee?['next_due_date'] ?? "-",
+//                       ),
+//                       const SizedBox(height: 20),
+//                     ],
+//                   ),
+//                 ),
+//
+//                 const SizedBox(height: 24),
+//
+//                 // Gate Pass Section
+//                 // Gate Pass Section
+//                 Center(
+//                   child: Container(
+//                     margin: const EdgeInsets.symmetric(horizontal: 16),
+//                     padding: const EdgeInsets.all(20),
+//                     width: double.infinity,
+//                     // or a fixed width if you like
+//                     decoration: BoxDecoration(
+//                       color: Colors.white,
+//                       borderRadius: BorderRadius.circular(16),
+//                       boxShadow: [
+//                         BoxShadow(
+//                           color: Colors.grey.withOpacity(0.1),
+//                           blurRadius: 10,
+//                           offset: const Offset(0, 4),
+//                         ),
+//                       ],
+//                     ),
+//                     child: Column(
+//                       crossAxisAlignment: CrossAxisAlignment.center,
+//                       mainAxisAlignment: MainAxisAlignment.center,
+//                       children: [
+//                         const Text(
+//                           'GATE PASS',
+//                           style: TextStyle(
+//                             fontSize: 16,
+//                             fontWeight: FontWeight.w600,
+//                             letterSpacing: 1.2,
+//                           ),
+//                         ),
+//                         const SizedBox(height: 16),
+//
+//                         // const SizedBox(height: 16),
+//                         if (studentData.gatePass != null &&
+//                             studentData.gatePass!['qr_code'] != null)
+//                           Image.memory(
+//                             base64Decode(
+//                               studentData.gatePass!['qr_code'].split(',')[1],
+//                             ),
+//                             width: 150,
+//                             height: 150,
+//                           )
+//                         else
+//                           const Text(
+//                             "Gate pass not issued yet",
+//                             style: TextStyle(color: Colors.grey, fontSize: 14),
+//                           ),
+//                       ],
+//                     ),
+//                   ),
+//                 ),
+//                 SizedBox(height: 20),
+// // Attendance Calendar Section
+//                 Container(
+//                   margin: const EdgeInsets.symmetric(horizontal: 16),
+//                   padding: const EdgeInsets.all(16),
+//                   decoration: BoxDecoration(
+//                     color: Colors.white,
+//                     borderRadius: BorderRadius.circular(16),
+//                     boxShadow: [
+//                       BoxShadow(
+//                         color: Colors.grey.withOpacity(0.1),
+//                         blurRadius: 10,
+//                         offset: const Offset(0, 4),
+//                       ),
+//                     ],
+//                   ),
+//                   child: Column(
+//                     crossAxisAlignment: CrossAxisAlignment.center,
+//                     children: [
+//                       const Text(
+//                         "Attendance Calendar",
+//                         style: TextStyle(
+//                           fontSize: 18,
+//                           fontWeight: FontWeight.bold,
+//                         ),
+//                       ),
+//                       const SizedBox(height: 8),
+//                       Row(
+//                         mainAxisAlignment: MainAxisAlignment.center,
+//                         children: [
+//                           _buildLegend(Colors.green, "Present"),
+//                           const SizedBox(width: 12),
+//                           _buildLegend(Colors.redAccent, "Absent"),
+//                           const SizedBox(width: 12),
+//                           _buildLegend(Colors.amber, "Holiday"),
+//                         ],
+//                       ),
+//                       const SizedBox(height: 16),
+//
+//                       TableCalendar(
+//                         firstDay: DateTime.utc(2024, 1, 1),
+//                         lastDay: DateTime.utc(2030, 12, 31),
+//                         focusedDay: DateTime.now(),
+//                         calendarStyle: CalendarStyle(
+//                           todayDecoration: BoxDecoration(
+//                             color: Colors.blueAccent.withOpacity(0.5),
+//                             shape: BoxShape.circle,
+//                           ),
+//                           selectedDecoration: const BoxDecoration(
+//                             color: Colors.green,
+//                             shape: BoxShape.circle,
+//                           ),
+//                           outsideDaysVisible: false,
+//                         ),
+//                         headerStyle: const HeaderStyle(
+//                           formatButtonVisible: false,
+//                           titleCentered: true,
+//                           titleTextStyle: TextStyle(
+//                             fontSize: 16,
+//                             fontWeight: FontWeight.w600,
+//                           ),
+//                         ),
+//                         calendarBuilders: CalendarBuilders(
+//                           defaultBuilder: (context, day, focusedDay) {
+//                             // Mock attendance data for demonstration
+//                             final attendanceData = {
+//                               DateTime(2025, 11, 3): "Present",
+//                               DateTime(2025, 11, 7): "Present",
+//                               DateTime(2025, 11, 8): "Present",
+//                               DateTime(2025, 11, 11): "Present",
+//                               DateTime(2025, 11, 15): "Holiday",
+//                               DateTime(2025, 11, 17): "Absent",
+//                               DateTime(2025, 11, 26): "Present",
+//                             };
+//
+//                             final status = attendanceData[DateTime(day.year, day.month, day.day)];
+//
+//                             Color bgColor;
+//                             String text = "";
+//                             switch (status) {
+//                               case "Present":
+//                                 bgColor = Colors.green.shade600;
+//                                 text = "Present";
+//                                 break;
+//                               case "Absent":
+//                                 bgColor = Colors.redAccent.shade200;
+//                                 text = "Absent";
+//                                 break;
+//                               case "Holiday":
+//                                 bgColor = Colors.amber.shade700;
+//                                 text = "Holiday";
+//                                 break;
+//                               default:
+//                                 bgColor = Colors.transparent;
+//                             }
+//
+//                             return Container(
+//                               margin: const EdgeInsets.all(4),
+//                               decoration: BoxDecoration(
+//                                 color: bgColor,
+//                                 borderRadius: BorderRadius.circular(8),
+//                               ),
+//                               alignment: Alignment.center,
+//                               child: Column(
+//                                 mainAxisAlignment: MainAxisAlignment.center,
+//                                 children: [
+//                                   Text(
+//                                     '${day.day}',
+//                                     style: TextStyle(
+//                                       color: status == null ? Colors.black : Colors.white,
+//                                       fontWeight: FontWeight.bold,
+//                                     ),
+//                                   ),
+//                                   if (status != null)
+//                                     Text(
+//                                       text,
+//                                       style: const TextStyle(
+//                                         color: Colors.white,
+//                                         fontSize: 10,
+//                                         fontWeight: FontWeight.w500,
+//                                       ),
+//                                     ),
+//                                 ],
+//                               ),
+//                             );
+//                           },
+//                         ),
+//                       ),
+//                     ],
+//                   ),
+//                 ),
+//               ],
+//             ),
+//           );
+//         },
+//       ),
+//     );
+//   }
+//
+//   Widget _buildRecommendedCard(String text, String imagePath, Color bgColor) {
+//     return Container(
+//       height: 120,
+//       padding: const EdgeInsets.all(12),
+//       decoration: BoxDecoration(
+//         color: bgColor,
+//         borderRadius: BorderRadius.circular(12),
+//         boxShadow: [
+//           BoxShadow(
+//             color: Colors.grey.withOpacity(0.1),
+//             blurRadius: 8,
+//             offset: const Offset(0, 2),
+//           ),
+//         ],
+//       ),
+//       child: Column(
+//         crossAxisAlignment: CrossAxisAlignment.start,
+//         children: [
+//           Container(
+//             width: 40,
+//             height: 40,
+//             decoration: BoxDecoration(
+//               color: Colors.white,
+//               borderRadius: BorderRadius.circular(8),
+//             ),
+//             child: const Icon(
+//               Icons.sports_basketball,
+//               color: brandBlue,
+//               size: 24,
+//             ),
+//           ),
+//           const SizedBox(height: 8),
+//           Expanded(
+//             child: Text(
+//               text,
+//               style: const TextStyle(
+//                 fontSize: 12,
+//                 fontWeight: FontWeight.w500,
+//                 color: Color(0xFF2D3748),
+//               ),
+//               maxLines: 3,
+//               overflow: TextOverflow.ellipsis,
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _buildFeeDetailRow(String label, String value) {
+//     return Padding(
+//       padding: const EdgeInsets.symmetric(vertical: 4),
+//       child: Row(
+//         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//         children: [
+//           Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 14)),
+//           Text(
+//             value,
+//             style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+// }
+//
+// Widget _buildLegend(Color color, String label) {
+//   return Row(
+//     children: [
+//       Container(
+//         width: 14,
+//         height: 14,
+//         decoration: BoxDecoration(
+//           color: color,
+//           borderRadius: BorderRadius.circular(4),
+//         ),
+//       ),
+//       const SizedBox(width: 6),
+//       Text(
+//         label,
+//         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+//       ),
+//     ],
+//   );
+// }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class Screen extends StatefulWidget {
-  final String studentId;
-  const Screen({Key? key, required this.studentId}) : super(key: key);
-
-  @override
-  State<Screen> createState() => _ScreenState();
-}
-
-class _ScreenState extends State<Screen> {
-  static const brandBlue = Color(0xFF1A237E);
-  int _selectedIndex = 0;
-  bool isLoading = true;
-  StudentData? studentData;
-  late final String studentId;
-  late Future<List<StudentData>> studentsFuture;
-  String userInitial = '';
-  @override
-  void initState() {
-    super.initState();
-    studentsFuture = _initAndFetch();
-    fetchUserInitial();
-  }
-  void fetchUserInitial() async {
-    final user = await AuthService.getUser();
-
-    if (user != null && user['name'] != null && user['name'].toString().isNotEmpty) {
-      userInitial = user['name'].toString().substring(0, 1).toUpperCase();
-    } else {
-      userInitial = 'U'; // fallback
-    }
-
-    setState(() {});
-  }
-
-  /// First load user, then fetch API
-  Future<List<StudentData>> _initAndFetch() async {
-    await ApiService.loadUserFromPrefs();
-
-    final id = widget.studentId.isNotEmpty
-        ? widget.studentId
-        : (ApiService.currentUser?['student_id']?.toString() ?? '');
-
-    if (id.isEmpty) {
-      throw Exception("Student ID is not available");
-    }
-
-    return fetchStudents(int.parse(id));
-  }
-
-  Future<List<StudentData>> fetchStudents(int studentId) async {
-    final url = Uri.parse(
-        "https://nahatasports.com/api/student_dashboard?student_id=$studentId");
-
-    final response = await http.get(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        if (ApiService.currentUser != null &&
-            ApiService.currentUser!.containsKey('token'))
-          'Authorization': 'Bearer ${ApiService.currentUser!['token']}',
-      },
-    );
-
-    print("studentId: $studentId");
-    print("Status: ${response.statusCode}");
-    print("Body: ${response.body}");
-
-    if (response.statusCode == 200) {
-      final body = jsonDecode(response.body);
-
-      if (body['status'] == true) {
-        final data = body['data'];
-
-        return [
-          StudentData.fromJson(data)
-
-          // StudentData.fromJson({
-          //   "student": data['student'],
-          //   "fee": data['fee'],
-          //   "gatePass": data['pass'],
-          //   "coachName": data['coach_name'],
-          // })
-        ];
-      } else {
-        throw Exception("API returned false status");
-      }
-    } else {
-      throw Exception("Failed to fetch data");
-    }
-  }
-
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        title: const Text(
-          'Profile',
-          style: TextStyle(
-            color: brandBlue,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        centerTitle: false,
-        actions: [
-          // IconButton(
-          //   onPressed: () {},
-          //   icon: Stack(
-          //     children: [
-          //       const Icon(
-          //         Icons.notifications_outlined,
-          //         color: brandBlue,
-          //         size: 26,
-          //       ),
-          //       Positioned(
-          //         right: 0,
-          //         top: 0,
-          //         child: Container(
-          //           padding: const EdgeInsets.all(2),
-          //           decoration: BoxDecoration(
-          //             color: Colors.red,
-          //             borderRadius: BorderRadius.circular(6),
-          //           ),
-          //           constraints: const BoxConstraints(
-          //             minWidth: 12,
-          //             minHeight: 12,
-          //           ),
-          //           child: const Text(
-          //             '3',
-          //             style: TextStyle(
-          //               color: Colors.white,
-          //               fontSize: 8,
-          //               fontWeight: FontWeight.bold,
-          //             ),
-          //             textAlign: TextAlign.center,
-          //           ),
-          //         ),
-          //       ),
-          //     ],
-          //   ),
-          // ),
-          // const SizedBox(width: 8),
-          // GestureDetector(
-          //   onTap: () {
-          //     Navigator.push(
-          //       context,
-          //       MaterialPageRoute(builder: (context) => UserOptionsPage()),
-          //     );
-          //   },
-          //   child: Container(
-          //     margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-          //     child: CircleAvatar(
-          //       radius: 18,
-          //       backgroundColor: brandBlue,
-          //       child: Text(
-          //         userInitial.isNotEmpty ? userInitial : '?',
-          //         style: const TextStyle(
-          //           color: Colors.white,
-          //           fontWeight: FontWeight.bold,
-          //           fontSize: 16,
-          //         ),
-          //       ),
-          //     ),
-          //   ),
-          // ),
-        ],
-      ),
-      body: FutureBuilder<List<StudentData>>(
-          future: studentsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                  child: CircularProgressIndicator(color: brandBlue));
-            } else if (snapshot.hasError) {
-              return Center(child: Text("❌ Error: ${snapshot.error}"));
-            } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return const Center(child: Text("No data available"));
-            }
-
-            final studentData = snapshot.data!.first;
-            return SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Hero Section
-                  // Container(
-                  //   margin: const EdgeInsets.all(16),
-                  //   height: 120,
-                  //   decoration: BoxDecoration(
-                  //     borderRadius: BorderRadius.circular(16),
-                  //     gradient: LinearGradient(
-                  //       colors: [brandBlue, brandBlue.withOpacity(0.8)],
-                  //       begin: Alignment.topLeft,
-                  //       end: Alignment.bottomRight,
-                  //     ),
-                  //     boxShadow: [
-                  //       BoxShadow(
-                  //         color: brandBlue.withOpacity(0.3),
-                  //         blurRadius: 12,
-                  //         offset: const Offset(0, 4),
-                  //       ),
-                  //     ],
-                  //   ),
-                  //   child: Stack(
-                  //     children: [
-                  //       Positioned(
-                  //         right: -20,
-                  //         top: -20,
-                  //         child: Container(
-                  //           width: 100,
-                  //           height: 100,
-                  //           decoration: BoxDecoration(
-                  //             color: Colors.white.withOpacity(0.1),
-                  //             shape: BoxShape.circle,
-                  //           ),
-                  //         ),
-                  //       ),
-                  //       // Padding(
-                  //       //   padding: const EdgeInsets.all(20),
-                  //       //   child: Row(
-                  //       //     children: [
-                  //       //       Expanded(
-                  //       //         child: Column(
-                  //       //           crossAxisAlignment: CrossAxisAlignment.start,
-                  //       //           mainAxisAlignment: MainAxisAlignment.center,
-                  //       //           children: [
-                  //       //             const Text(
-                  //       //               'Welcome Back!',
-                  //       //               style: TextStyle(
-                  //       //                 color: Colors.white,
-                  //       //                 fontSize: 18,
-                  //       //                 fontWeight: FontWeight.w600,
-                  //       //               ),
-                  //       //             ),
-                  //       //             const SizedBox(height: 4),
-                  //       //             Text(
-                  //       //               'Ready for your next game?',
-                  //       //               style: TextStyle(
-                  //       //                 color: Colors.white.withOpacity(0.9),
-                  //       //                 fontSize: 14,
-                  //       //               ),
-                  //       //             ),
-                  //       //           ],
-                  //       //         ),
-                  //       //       ),
-                  //       //       Container(
-                  //       //         width: 60,
-                  //       //         height: 60,
-                  //       //         decoration: BoxDecoration(
-                  //       //           color: Colors.white.withOpacity(0.2),
-                  //       //           borderRadius: BorderRadius.circular(12),
-                  //       //         ),
-                  //       //         child: const Icon(
-                  //       //           Icons.sports_soccer,
-                  //       //           color: Colors.white,
-                  //       //           size: 32,
-                  //       //         ),
-                  //       //       ),
-                  //       //     ],
-                  //       //   ),
-                  //       // ),
-                  //     ],
-                  //   ),
-                  // ),
-
-                  // Recommended Section
-                  // Padding(
-                  //   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  //   child: Column(
-                  //     crossAxisAlignment: CrossAxisAlignment.start,
-                  //     children: [
-                  //       const Text(
-                  //         'Recommended',
-                  //         style: TextStyle(
-                  //           fontSize: 20,
-                  //           fontWeight: FontWeight.w600,
-                  //           color: Color(0xFF2D3748),
-                  //         ),
-                  //       ),
-                  //       const SizedBox(height: 16),
-                  //       Row(
-                  //         children: [
-                  //           Expanded(
-                  //             child: _buildRecommendedCard(
-                  //               'Let\'s figure out what live events look like now',
-                  //               'assets/sports1.jpg',
-                  //               Colors.orange[100]!,
-                  //             ),
-                  //           ),
-                  //           const SizedBox(width: 12),
-                  //           Expanded(
-                  //             child: _buildRecommendedCard(
-                  //               'Explore game happening now!',
-                  //               'assets/sports2.jpg',
-                  //               Colors.blue[100]!,
-                  //             ),
-                  //           ),
-                  //         ],
-                  //       ),
-                  //     ],
-                  //   ),
-                  // ),
-                  //
-                  // const SizedBox(height: 24),
-
-                  // User Profile Card
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.1),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Name: ${studentData.student['name'] ?? "-"}',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'ID: ${studentData.student['id'] ?? "-"}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Fee Details:',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _buildFeeDetailRow('Monthly fee',
-                            '₹${studentData.fee?['monthly_fee'] ?? "0.00"}'),
-                        _buildFeeDetailRow('Last Payment',
-                            studentData.fee?['last_payment_date'] ?? "-"),
-                        _buildFeeDetailRow('Next Due',
-                            studentData.fee?['next_due_date'] ?? "-"),
-                        const SizedBox(height: 20),
-
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Gate Pass Section
-                  // Gate Pass Section
-                  Center(
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16),
-                      padding: const EdgeInsets.all(20),
-                      width: double.infinity,
-                      // or a fixed width if you like
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.1),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text(
-                            'GATE PASS',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 1.2,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          // Container(
-                          //   width: 80,
-                          //   height: 80,
-                          //   decoration: BoxDecoration(
-                          //     color: Colors.grey[100],
-                          //     borderRadius: BorderRadius.circular(12),
-                          //   ),
-                          //   child: Icon(
-                          //     Icons.qr_code,
-                          //     size: 40,
-                          //     color: Colors.grey[400],
-                          //   ),
-                          // ),
-                          // const SizedBox(height: 16),
-                          // Text(
-                          //   'Gate pass not issued yet',
-                          //   style: TextStyle(
-                          //     color: Colors.grey[600],
-                          //     fontSize: 14,
-                          //   ),
-                          // ),
-                          const SizedBox(height: 16),
-                          if (studentData.gatePass != null &&
-                              studentData.gatePass!['qr_code'] != null)
-                            Image.memory(
-                              base64Decode(
-                                  studentData.gatePass!['qr_code'].split(',')[1]),
-                              width: 150,
-                              height: 150,
-                            )
-                          else
-                            const Text(
-                              "Gate pass not issued yet",
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 14,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 20,)
-
-                  // Space for bottom navigation
-                ],
-              ),
-            );
-          }
-      ),
-    );
-
-
-  }
-
-  Widget _buildRecommendedCard(String text, String imagePath, Color bgColor) {
-    return Container(
-      height: 120,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(
-              Icons.sports_basketball,
-              color: brandBlue,
-              size: 24,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF2D3748),
-              ),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFeeDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 14,
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 14,
-            ),
-          ),
-        ],
-      ),
-    );
-  }}
-
-
-
-
+// class Screen extends StatefulWidget {
+//   final String studentId;
+//   const Screen({Key? key, required this.studentId}) : super(key: key);
+//
+//   @override
+//   State<Screen> createState() => _ScreenState();
+// }
+//
+// class _ScreenState extends State<Screen> {
+//   Map<DateTime, String> attendanceData = {};
+//
+//   static const brandBlue = Color(0xFF1A237E);
+//   int _selectedIndex = 0;
+//   bool isLoading = true;
+//   StudentData? studentData;
+//   late final String studentId;
+//   late Future<List<StudentData>> studentsFuture;
+//   String userInitial = '';
+//   @override
+//   void initState() {
+//     super.initState();
+//     studentsFuture = _initAndFetch();
+//     fetchUserInitial();
+//     // fetchAttendance();
+//   }
+//
+//   void fetchUserInitial() async {
+//     final user = await AuthService.getUser();
+//
+//     if (user != null &&
+//         user['name'] != null &&
+//         user['name'].toString().isNotEmpty) {
+//       userInitial = user['name'].toString().substring(0, 1).toUpperCase();
+//     } else {
+//       userInitial = 'U'; // fallback
+//     }
+//
+//     setState(() {});
+//   }
+//
+//   /// First load user, then fetch API
+//   Future<List<StudentData>> _initAndFetch() async {
+//     await ApiService.loadUserFromPrefs();
+//
+//     final id = widget.studentId.isNotEmpty
+//         ? widget.studentId
+//         : (ApiService.currentUser?[''
+//         'id']?.toString() ?? '');
+//
+//     if (id.isEmpty) {
+//       throw Exception("Student ID is not available");
+//     }
+//
+//     return fetchStudents(int.parse(id));
+//   }
+//
+//   Future<List<StudentData>> fetchStudents(int studentId) async {
+//     final url = Uri.parse(
+//       "https://nahatasports.com/api/student_dashboard?student_id=$studentId",
+//     );
+//
+//     final response = await http.get(
+//       url,
+//       headers: {
+//         'Content-Type': 'application/json',
+//         if (ApiService.currentUser != null &&
+//             ApiService.currentUser!.containsKey('token'))
+//           'Authorization': 'Bearer ${ApiService.currentUser!['token']}',
+//       },
+//     );
+//
+//     print("studentId: $studentId");
+//     print("Status: ${response.statusCode}");
+//     print("Body: ${response.body}");
+//
+//     if (response.statusCode == 200) {
+//       final body = jsonDecode(response.body);
+//
+//       if (body['status'] == true) {
+//         final data = body['data'];
+//
+//         return [
+//           StudentData.fromJson(data),
+//
+//           // StudentData.fromJson({
+//           //   "student": data['student'],
+//           //   "fee": data['fee'],
+//           //   "gatePass": data['pass'],
+//           //   "coachName": data['coach_name'],
+//           // })
+//         ];
+//       } else {
+//         throw Exception("API returned false status");
+//       }
+//     } else {
+//       throw Exception("Failed to fetch data");
+//     }
+//   }
+//
+//   // Future<void> fetchAttendance() async {
+//   //   final user = await AuthService.getUser();
+//   //
+//   //   // ✅ Choose correct student ID (from widget or from logged-in user)
+//   //   final studentId = widget.studentId.isNotEmpty
+//   //       ? widget.studentId
+//   //       : (ApiService.currentUser?['id']?.toString() ?? '');
+//   //
+//   //   print("🧠 Student ID used for API call: $studentId");
+//   //
+//   //   // ✅ Prevent API call if no valid ID
+//   //   if (studentId.isEmpty) {
+//   //     print("⚠️ No student ID found for attendance");
+//   //     return;
+//   //   }
+//   //
+//   //   final url = Uri.parse(
+//   //     'https://nahatasports.com/student/attendance?student_id=$studentId',
+//   //   );
+//   //
+//   //   try {
+//   //     final response = await http.get(url);
+//   //     print("📡 API Status: ${response.statusCode}");
+//   //
+//   //     if (response.statusCode == 200) {
+//   //       final data = jsonDecode(response.body);
+//   //
+//   //       if (data['status'] == true && data['data'] != null) {
+//   //         final Map<DateTime, String> temp = {};
+//   //         for (var record in data['data']) {
+//   //           final dateParts = record['date'].split('-');
+//   //           if (dateParts.length == 3) {
+//   //             final date = DateTime(
+//   //               int.parse(dateParts[0]),
+//   //               int.parse(dateParts[1]),
+//   //               int.parse(dateParts[2]),
+//   //             );
+//   //             temp[date] = record['status'];
+//   //           }
+//   //         }
+//   //
+//   //         setState(() {
+//   //           attendanceData = temp;
+//   //           isLoading = false;
+//   //         });
+//   //
+//   //         print("✅ Attendance loaded: ${attendanceData.length} days");
+//   //       } else {
+//   //         print("⚠️ No data found: ${data['message']}");
+//   //         setState(() => isLoading = false);
+//   //       }
+//   //     } else {
+//   //       print("❌ Error fetching attendance: ${response.statusCode}");
+//   //       setState(() => isLoading = false);
+//   //     }
+//   //   } catch (e) {
+//   //     print("❌ Exception: $e");
+//   //     setState(() => isLoading = false);
+//   //   }
+//   // }
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       backgroundColor: Colors.grey[50],
+//       appBar: AppBar(
+//         backgroundColor: Colors.white,
+//         elevation: 0,
+//         title: const Text(
+//           'Profile',
+//           style: TextStyle(
+//             color: brandBlue,
+//             fontSize: 20,
+//             fontWeight: FontWeight.w600,
+//           ),
+//         ),
+//         centerTitle: false,
+//         actions: [
+//           // IconButton(
+//           //   onPressed: () {},
+//           //   icon: Stack(
+//           //     children: [
+//           //       const Icon(
+//           //         Icons.notifications_outlined,
+//           //         color: brandBlue,
+//           //         size: 26,
+//           //       ),
+//           //       Positioned(
+//           //         right: 0,
+//           //         top: 0,
+//           //         child: Container(
+//           //           padding: const EdgeInsets.all(2),
+//           //           decoration: BoxDecoration(
+//           //             color: Colors.red,
+//           //             borderRadius: BorderRadius.circular(6),
+//           //           ),
+//           //           constraints: const BoxConstraints(
+//           //             minWidth: 12,
+//           //             minHeight: 12,
+//           //           ),
+//           //           child: const Text(
+//           //             '3',
+//           //             style: TextStyle(
+//           //               color: Colors.white,
+//           //               fontSize: 8,
+//           //               fontWeight: FontWeight.bold,
+//           //             ),
+//           //             textAlign: TextAlign.center,
+//           //           ),
+//           //         ),
+//           //       ),
+//           //     ],
+//           //   ),
+//           // ),
+//           // const SizedBox(width: 8),
+//           // GestureDetector(
+//           //   onTap: () {
+//           //     Navigator.push(
+//           //       context,
+//           //       MaterialPageRoute(builder: (context) => UserOptionsPage()),
+//           //     );
+//           //   },
+//           //   child: Container(
+//           //     margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+//           //     child: CircleAvatar(
+//           //       radius: 18,
+//           //       backgroundColor: brandBlue,
+//           //       child: Text(
+//           //         userInitial.isNotEmpty ? userInitial : '?',
+//           //         style: const TextStyle(
+//           //           color: Colors.white,
+//           //           fontWeight: FontWeight.bold,
+//           //           fontSize: 16,
+//           //         ),
+//           //       ),
+//           //     ),
+//           //   ),
+//           // ),
+//         ],
+//       ),
+//       body: FutureBuilder<List<StudentData>>(
+//         future: studentsFuture,
+//         builder: (context, snapshot) {
+//           if (snapshot.connectionState == ConnectionState.waiting) {
+//             return const Center(
+//               child: CircularProgressIndicator(color: brandBlue),
+//             );
+//           } else if (snapshot.hasError) {
+//             return Center(child: Text("❌ Error: ${snapshot.error}"));
+//           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+//             return const Center(child: Text("No data available"));
+//           }
+//
+//           final studentData = snapshot.data!.first;
+//           return SingleChildScrollView(
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 Container(
+//                   margin: const EdgeInsets.symmetric(horizontal: 16),
+//                   padding: const EdgeInsets.all(20),
+//                   decoration: BoxDecoration(
+//                     color: Colors.white,
+//                     borderRadius: BorderRadius.circular(16),
+//                     boxShadow: [
+//                       BoxShadow(
+//                         color: Colors.grey.withOpacity(0.1),
+//                         blurRadius: 10,
+//                         offset: const Offset(0, 4),
+//                       ),
+//                     ],
+//                   ),
+//                   child: Column(
+//                     children: [
+//                       Row(
+//                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//                         children: [
+//                           Text(
+//                             'Name: ${studentData.student['name'] ?? "-"}',
+//                             style: TextStyle(
+//                               fontSize: 16,
+//                               fontWeight: FontWeight.w500,
+//                             ),
+//                           ),
+//                           Container(
+//                             padding: const EdgeInsets.symmetric(
+//                               horizontal: 8,
+//                               vertical: 4,
+//                             ),
+//                             decoration: BoxDecoration(
+//                               color: Colors.grey[100],
+//                               borderRadius: BorderRadius.circular(8),
+//                             ),
+//                             child: Text(
+//                               'ID: ${studentData.student['id'] ?? "-"}',
+//                               style: const TextStyle(
+//                                 fontSize: 12,
+//                                 color: Colors.grey,
+//                               ),
+//                             ),
+//                           ),
+//                         ],
+//                       ),
+//                       const SizedBox(height: 16),
+//                       const Align(
+//                         alignment: Alignment.centerLeft,
+//                         child: Text(
+//                           'Fee Details:',
+//                           style: TextStyle(
+//                             fontSize: 16,
+//                             fontWeight: FontWeight.w500,
+//                           ),
+//                         ),
+//                       ),
+//                       const SizedBox(height: 12),
+//                       _buildFeeDetailRow(
+//                         'Monthly fee',
+//                         '₹${studentData.fee?['monthly_fee'] ?? "0.00"}',
+//                       ),
+//                       _buildFeeDetailRow(
+//                         'Last Payment',
+//                         studentData.fee?['last_payment_date'] ?? "-",
+//                       ),
+//                       _buildFeeDetailRow(
+//                         'Next Due',
+//                         studentData.fee?['next_due_date'] ?? "-",
+//                       ),
+//                       const SizedBox(height: 20),
+//                     ],
+//                   ),
+//                 ),
+//
+//                 const SizedBox(height: 24),
+//
+//                 // Gate Pass Section
+//                 // Gate Pass Section
+//                 Center(
+//                   child: Container(
+//                     margin: const EdgeInsets.symmetric(horizontal: 16),
+//                     padding: const EdgeInsets.all(20),
+//                     width: double.infinity,
+//                     // or a fixed width if you like
+//                     decoration: BoxDecoration(
+//                       color: Colors.white,
+//                       borderRadius: BorderRadius.circular(16),
+//                       boxShadow: [
+//                         BoxShadow(
+//                           color: Colors.grey.withOpacity(0.1),
+//                           blurRadius: 10,
+//                           offset: const Offset(0, 4),
+//                         ),
+//                       ],
+//                     ),
+//                     child: Column(
+//                       crossAxisAlignment: CrossAxisAlignment.center,
+//                       mainAxisAlignment: MainAxisAlignment.center,
+//                       children: [
+//                         const Text(
+//                           'GATE PASS',
+//                           style: TextStyle(
+//                             fontSize: 16,
+//                             fontWeight: FontWeight.w600,
+//                             letterSpacing: 1.2,
+//                           ),
+//                         ),
+//                         const SizedBox(height: 16),
+//                         // Container(
+//                         //   width: 80,
+//                         //   height: 80,
+//                         //   decoration: BoxDecoration(
+//                         //     color: Colors.grey[100],
+//                         //     borderRadius: BorderRadius.circular(12),
+//                         //   ),
+//                         //   child: Icon(
+//                         //     Icons.qr_code,
+//                         //     size: 40,
+//                         //     color: Colors.grey[400],
+//                         //   ),
+//                         // ),
+//                         // const SizedBox(height: 16),
+//                         // Text(
+//                         //   'Gate pass not issued yet',
+//                         //   style: TextStyle(
+//                         //     color: Colors.grey[600],
+//                         //     fontSize: 14,
+//                         //   ),
+//                         // ),
+//                         const SizedBox(height: 16),
+//                         if (studentData.gatePass != null &&
+//                             studentData.gatePass!['qr_code'] != null)
+//                           Image.memory(
+//                             base64Decode(
+//                               studentData.gatePass!['qr_code'].split(',')[1],
+//                             ),
+//                             width: 150,
+//                             height: 150,
+//                           )
+//                         else
+//                           const Text(
+//                             "Gate pass not issued yet",
+//                             style: TextStyle(color: Colors.grey, fontSize: 14),
+//                           ),
+//                       ],
+//                     ),
+//                   ),
+//                 ),
+//                 SizedBox(height: 20),
+//                 // Attendance Calendar Section
+//                 Container(
+//                   margin: const EdgeInsets.symmetric(
+//                     horizontal: 16,
+//                     vertical: 16,
+//                   ),
+//                   padding: const EdgeInsets.all(16),
+//                   decoration: BoxDecoration(
+//                     color: Colors.white,
+//                     borderRadius: BorderRadius.circular(16),
+//                     boxShadow: [
+//                       BoxShadow(
+//                         color: Colors.grey.withOpacity(0.1),
+//                         blurRadius: 10,
+//                         offset: const Offset(0, 4),
+//                       ),
+//                     ],
+//                   ),
+//                   child: Column(
+//                     crossAxisAlignment: CrossAxisAlignment.center,
+//                     children: [
+//                       const Text(
+//                         "Attendance Calendar",
+//                         style: TextStyle(
+//                           fontSize: 18,
+//                           fontWeight: FontWeight.bold,
+//                         ),
+//                       ),
+//                       const SizedBox(height: 8),
+//                       Row(
+//                         mainAxisAlignment: MainAxisAlignment.center,
+//                         children: [
+//                           _buildLegend(Colors.green, "Present"),
+//                           const SizedBox(width: 12),
+//                           _buildLegend(Colors.redAccent, "Absent"),
+//                           const SizedBox(width: 12),
+//                           _buildLegend(Colors.amber, "Holiday"),
+//                         ],
+//                       ),
+//                       const SizedBox(height: 16),
+//                       TableCalendar(
+//                         firstDay: DateTime.utc(2024, 1, 1),
+//                         lastDay: DateTime.utc(2030, 12, 31),
+//                         focusedDay: DateTime.now(),
+//                         calendarStyle: CalendarStyle(
+//                           todayDecoration: BoxDecoration(
+//                             color: Colors.blueAccent.withOpacity(0.5),
+//                             shape: BoxShape.circle,
+//                           ),
+//                           outsideDaysVisible: false,
+//                         ),
+//                         headerStyle: const HeaderStyle(
+//                           formatButtonVisible: false,
+//                           titleCentered: true,
+//                           titleTextStyle: TextStyle(
+//                             fontSize: 16,
+//                             fontWeight: FontWeight.w600,
+//                           ),
+//                         ),
+//                         calendarBuilders: CalendarBuilders(
+//                           defaultBuilder: (context, day, focusedDay) {
+//                             final normalizedDate = DateTime(
+//                               day.year,
+//                               day.month,
+//                               day.day,
+//                             );
+//                             final status = attendanceData[normalizedDate];
+//
+//                             Color? bgColor;
+//                             switch (status) {
+//                               case "Present":
+//                                 bgColor = Colors.green.shade600;
+//                                 break;
+//                               case "Absent":
+//                                 bgColor = Colors.redAccent.shade200;
+//                                 break;
+//                               case "Holiday":
+//                                 bgColor = Colors.amber.shade700;
+//                                 break;
+//                               default:
+//                                 bgColor = null;
+//                             }
+//
+//                             return Container(
+//                               margin: const EdgeInsets.all(4),
+//                               decoration: BoxDecoration(
+//                                 color: bgColor,
+//                                 borderRadius: BorderRadius.circular(8),
+//                               ),
+//                               alignment: Alignment.center,
+//                               child: Column(
+//                                 mainAxisAlignment: MainAxisAlignment.center,
+//                                 children: [
+//                                   Text(
+//                                     '${day.day}',
+//                                     style: TextStyle(
+//                                       color: bgColor == null
+//                                           ? Colors.black
+//                                           : Colors.white,
+//                                       fontWeight: FontWeight.bold,
+//                                     ),
+//                                   ),
+//                                   if (status != null)
+//                                     Text(
+//                                       status,
+//                                       style: const TextStyle(
+//                                         color: Colors.white,
+//                                         fontSize: 10,
+//                                         fontWeight: FontWeight.w500,
+//                                       ),
+//                                     ),
+//                                 ],
+//                               ),
+//                             );
+//                           },
+//                         ),
+//                       ),
+//                     ],
+//                   ),
+//                 ),
+//                 // Space for bottom navigation
+//               ],
+//             ),
+//           );
+//         },
+//       ),
+//     );
+//   }
+//
+//   Widget _buildRecommendedCard(String text, String imagePath, Color bgColor) {
+//     return Container(
+//       height: 120,
+//       padding: const EdgeInsets.all(12),
+//       decoration: BoxDecoration(
+//         color: bgColor,
+//         borderRadius: BorderRadius.circular(12),
+//         boxShadow: [
+//           BoxShadow(
+//             color: Colors.grey.withOpacity(0.1),
+//             blurRadius: 8,
+//             offset: const Offset(0, 2),
+//           ),
+//         ],
+//       ),
+//       child: Column(
+//         crossAxisAlignment: CrossAxisAlignment.start,
+//         children: [
+//           Container(
+//             width: 40,
+//             height: 40,
+//             decoration: BoxDecoration(
+//               color: Colors.white,
+//               borderRadius: BorderRadius.circular(8),
+//             ),
+//             child: const Icon(
+//               Icons.sports_basketball,
+//               color: brandBlue,
+//               size: 24,
+//             ),
+//           ),
+//           const SizedBox(height: 8),
+//           Expanded(
+//             child: Text(
+//               text,
+//               style: const TextStyle(
+//                 fontSize: 12,
+//                 fontWeight: FontWeight.w500,
+//                 color: Color(0xFF2D3748),
+//               ),
+//               maxLines: 3,
+//               overflow: TextOverflow.ellipsis,
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _buildFeeDetailRow(String label, String value) {
+//     return Padding(
+//       padding: const EdgeInsets.symmetric(vertical: 4),
+//       child: Row(
+//         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//         children: [
+//           Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 14)),
+//           Text(
+//             value,
+//             style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _buildLegend(Color color, String label) {
+//     return Row(
+//       children: [
+//         Container(
+//           width: 14,
+//           height: 14,
+//           decoration: BoxDecoration(
+//             color: color,
+//             borderRadius: BorderRadius.circular(4),
+//           ),
+//         ),
+//         const SizedBox(width: 6),
+//         Text(
+//           label,
+//           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+//         ),
+//       ],
+//     );
+//   }
+// }
 
 //
 // class StudentData {
@@ -3427,12 +4078,7 @@ class StudentData {
   final Map<String, dynamic>? gatePass;
   final String? coachName;
 
-  StudentData({
-    required this.student,
-    this.fee,
-    this.gatePass,
-    this.coachName,
-  });
+  StudentData({required this.student, this.fee, this.gatePass, this.coachName});
 
   factory StudentData.fromJson(Map<String, dynamic> json) {
     return StudentData(
@@ -3443,3 +4089,126 @@ class StudentData {
     );
   }
 }
+
+// Hero Section
+// Container(
+//   margin: const EdgeInsets.all(16),
+//   height: 120,
+//   decoration: BoxDecoration(
+//     borderRadius: BorderRadius.circular(16),
+//     gradient: LinearGradient(
+//       colors: [brandBlue, brandBlue.withOpacity(0.8)],
+//       begin: Alignment.topLeft,
+//       end: Alignment.bottomRight,
+//     ),
+//     boxShadow: [
+//       BoxShadow(
+//         color: brandBlue.withOpacity(0.3),
+//         blurRadius: 12,
+//         offset: const Offset(0, 4),
+//       ),
+//     ],
+//   ),
+//   child: Stack(
+//     children: [
+//       Positioned(
+//         right: -20,
+//         top: -20,
+//         child: Container(
+//           width: 100,
+//           height: 100,
+//           decoration: BoxDecoration(
+//             color: Colors.white.withOpacity(0.1),
+//             shape: BoxShape.circle,
+//           ),
+//         ),
+//       ),
+//       // Padding(
+//       //   padding: const EdgeInsets.all(20),
+//       //   child: Row(
+//       //     children: [
+//       //       Expanded(
+//       //         child: Column(
+//       //           crossAxisAlignment: CrossAxisAlignment.start,
+//       //           mainAxisAlignment: MainAxisAlignment.center,
+//       //           children: [
+//       //             const Text(
+//       //               'Welcome Back!',
+//       //               style: TextStyle(
+//       //                 color: Colors.white,
+//       //                 fontSize: 18,
+//       //                 fontWeight: FontWeight.w600,
+//       //               ),
+//       //             ),
+//       //             const SizedBox(height: 4),
+//       //             Text(
+//       //               'Ready for your next game?',
+//       //               style: TextStyle(
+//       //                 color: Colors.white.withOpacity(0.9),
+//       //                 fontSize: 14,
+//       //               ),
+//       //             ),
+//       //           ],
+//       //         ),
+//       //       ),
+//       //       Container(
+//       //         width: 60,
+//       //         height: 60,
+//       //         decoration: BoxDecoration(
+//       //           color: Colors.white.withOpacity(0.2),
+//       //           borderRadius: BorderRadius.circular(12),
+//       //         ),
+//       //         child: const Icon(
+//       //           Icons.sports_soccer,
+//       //           color: Colors.white,
+//       //           size: 32,
+//       //         ),
+//       //       ),
+//       //     ],
+//       //   ),
+//       // ),
+//     ],
+//   ),
+// ),
+
+// Recommended Section
+// Padding(
+//   padding: const EdgeInsets.symmetric(horizontal: 16),
+//   child: Column(
+//     crossAxisAlignment: CrossAxisAlignment.start,
+//     children: [
+//       const Text(
+//         'Recommended',
+//         style: TextStyle(
+//           fontSize: 20,
+//           fontWeight: FontWeight.w600,
+//           color: Color(0xFF2D3748),
+//         ),
+//       ),
+//       const SizedBox(height: 16),
+//       Row(
+//         children: [
+//           Expanded(
+//             child: _buildRecommendedCard(
+//               'Let\'s figure out what live events look like now',
+//               'assets/sports1.jpg',
+//               Colors.orange[100]!,
+//             ),
+//           ),
+//           const SizedBox(width: 12),
+//           Expanded(
+//             child: _buildRecommendedCard(
+//               'Explore game happening now!',
+//               'assets/sports2.jpg',
+//               Colors.blue[100]!,
+//             ),
+//           ),
+//         ],
+//       ),
+//     ],
+//   ),
+// ),
+//
+// const SizedBox(height: 24),
+
+// User Profile Card

@@ -637,84 +637,133 @@ import 'dashboard/security_screen.dart';
 import 'network.dart';
 import 'notification.dart';
 
-// 🔹 Global notification plugin
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-FlutterLocalNotificationsPlugin();
+  // 🔹 Global notification plugin
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+  FlutterLocalNotificationsPlugin();
 
-// 🔹 Global navigator key for navigation from notification taps
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  // 🔹 Global navigator key for navigation from notification taps
+  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// 🔹 Background message handler (must be top-level)
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-  print('📩 Handling background message: ${message.messageId}');
-  _showLocalNotification(message);
-}
+  // 🔹 Background message handler (must be top-level)
+  Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+    await Firebase.initializeApp();
+    print('📩 Handling background message: ${message.messageId}');
+    _showLocalNotification(message);
+  }
 
-// 🔹 Show local notification
-Future<void> _showLocalNotification(RemoteMessage message) async {
-  RemoteNotification? notification = message.notification;
-  AndroidNotification? android = message.notification?.android;
+  // 🔹 Show local notification
+  Future<void> _showLocalNotification(RemoteMessage message) async {
+    RemoteNotification? notification = message.notification;
+    AndroidNotification? android = message.notification?.android;
 
-  if (notification != null) {
-    await flutterLocalNotificationsPlugin.show(
-      notification.hashCode,
-      notification.title ?? 'Notification',
-      notification.body ?? '',
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          'high_importance_channel',
-          'High Importance Notifications',
-          channelDescription: 'Used for important notifications',
-          importance: Importance.high,
-          priority: Priority.high,
-          icon: android?.smallIcon ?? '@mipmap/ic_launcher',
+    if (notification != null) {
+      await flutterLocalNotificationsPlugin.show(
+        notification.hashCode,
+        notification.title ?? 'Notification',
+        notification.body ?? '',
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            'high_importance_channel',
+            'High Importance Notifications',
+            channelDescription: 'Used for important notifications',
+            importance: Importance.high,
+            priority: Priority.high,
+            icon: android?.smallIcon ?? '@mipmap/ic_launcher',
+          ),
         ),
-      ),
-      payload: message.data['screen'] ?? '',
-    );
+        payload: message.data['screen'] ?? '',
+      );
+    }
   }
-}
 
-// 🔹 Handle navigation from notification tap
-void _handleNotificationNavigation(RemoteMessage message) {
-  final data = message.data;
-  print('📌 Navigating from notification: $data');
+  // 🔹 Handle navigation from notification tap
+  void _handleNotificationNavigation(RemoteMessage message) {
+    final data = message.data;
+    print('📌 Navigating from notification: $data');
 
-  // Example: route by 'screen' key from backend
-  if (data['screen'] == 'notifications') {
-    navigatorKey.currentState?.push(
-      MaterialPageRoute(builder: (_) => const NotificationsPage()),
-    );
-  } else {
-    // Default route
-    navigatorKey.currentState?.push(
-      MaterialPageRoute(builder: (_) => const CustomBottomNav()),
-    );
+    // Example: route by 'screen' key from backend
+    if (data['screen'] == 'notifications') {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const NotificationsPage()),
+      );
+    } else {
+      // Default route
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const CustomBottomNav()),
+      );
+    }
   }
-}
 
+// Future<void> main() async {
+//   WidgetsFlutterBinding.ensureInitialized();
+//   await Firebase.initializeApp();
+//
+//   // 🔹 Request notification permission (important for Android 13+ & iOS)
+//   NotificationSettings settings =
+//   await FirebaseMessaging.instance.requestPermission(
+//     alert: true,
+//     badge: true,
+//     sound: true,
+//   );
+//   print('🔔 Permission status: ${settings.authorizationStatus}');
+//
+//   // 🔹 Get FCM token (for backend use)
+//   String? token = await FirebaseMessaging.instance.getToken();
+//   print('📱 FCM Token: $token');
+//
+//   // 🔹 Setup background message handler
+//   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+//
+//   // 🔹 Android notification channel setup
+//   const AndroidNotificationChannel channel = AndroidNotificationChannel(
+//     'high_importance_channel',
+//     'High Importance Notifications',
+//     description: 'Used for important notifications',
+//     importance: Importance.high,
+//   );
+//
+//   await flutterLocalNotificationsPlugin
+//       .resolvePlatformSpecificImplementation<
+//       AndroidFlutterLocalNotificationsPlugin>()
+//       ?.createNotificationChannel(channel);
+//
+//   // 🔹 Foreground listener
+//   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+//     print('📩 Foreground message: ${message.messageId}');
+//     _showLocalNotification(message);
+//   });
+//
+//   // 🔹 Notification click while app in background
+//   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+//     print('📌 Notification clicked (background): ${message.data}');
+//     _handleNotificationNavigation(message);
+//   });
+//
+//   // 🔹 Handle terminated state (app killed)
+//   RemoteMessage? initialMessage =
+//   await FirebaseMessaging.instance.getInitialMessage();
+//   print('🚀 Initial message (terminated): $initialMessage');
+//
+//   runApp(MyApp(initialMessage: initialMessage));
+// }
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Ensure Firebase initialized first
   await Firebase.initializeApp();
 
-  // 🔹 Request notification permission (important for Android 13+ & iOS)
-  NotificationSettings settings =
-  await FirebaseMessaging.instance.requestPermission(
+  // Register background handler
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // Request permissions (Android 13+ & iOS)
+  final settings = await FirebaseMessaging.instance.requestPermission(
     alert: true,
     badge: true,
     sound: true,
   );
-  print('🔔 Permission status: ${settings.authorizationStatus}');
+  print("🔔 Permission: ${settings.authorizationStatus}");
 
-  // 🔹 Get FCM token (for backend use)
-  String? token = await FirebaseMessaging.instance.getToken();
-  print('📱 FCM Token: $token');
-
-  // 🔹 Setup background message handler
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-  // 🔹 Android notification channel setup
+  // Create notification channel BEFORE asking token
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'high_importance_channel',
     'High Importance Notifications',
@@ -727,22 +776,30 @@ Future<void> main() async {
       AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
-  // 🔹 Foreground listener
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    print('📩 Foreground message: ${message.messageId}');
+  // Handle foreground messages
+  FirebaseMessaging.onMessage.listen((message) {
+    print("📩 Foreground message received");
     _showLocalNotification(message);
   });
 
-  // 🔹 Notification click while app in background
-  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-    print('📌 Notification clicked (background): ${message.data}');
+  // Handle when clicking notification
+  FirebaseMessaging.onMessageOpenedApp.listen((message) {
+    print("📌 Notification clicked");
     _handleNotificationNavigation(message);
   });
 
-  // 🔹 Handle terminated state (app killed)
+  // Get message when app was terminated
   RemoteMessage? initialMessage =
   await FirebaseMessaging.instance.getInitialMessage();
-  print('🚀 Initial message (terminated): $initialMessage');
+
+  // ---- 🔥 Get FCM Token (wrapped in try/catch) ---- //
+  String? token;
+  try {
+    token = await FirebaseMessaging.instance.getToken();
+    print("📱 FCM Token: $token");
+  } catch (e) {
+    print("❌ Failed to get FCM token: $e");
+  }
 
   runApp(MyApp(initialMessage: initialMessage));
 }
@@ -770,7 +827,8 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A237E)),
       ),
-      home: const SplashStep3(), // your splash or main screen
+       home: const SplashStep3(), // your splash or main screen
+      // home: CoachHomeScreen(),
     );
   }
 }
@@ -940,6 +998,8 @@ class MyApp extends StatelessWidget {
 // }
 
 /// Step 3 → Logo + tagline + images
+
+// //////////////////////////////////////////////////////////////
 // class SplashStep3 extends StatefulWidget {
 //   const SplashStep3({super.key});
 //
@@ -948,6 +1008,8 @@ class MyApp extends StatelessWidget {
 // }
 //
 // class _SplashStep3State extends State<SplashStep3> {
+//   final List<Timer> _timers = [];
+//
 //   double logoOpacity = 0.0;
 //   double imagesOpacity = 0.0;
 //   double text1Opacity = 0.0;
@@ -957,50 +1019,12 @@ class MyApp extends StatelessWidget {
 //   @override
 //   void initState() {
 //     super.initState();
-//     // Future.delayed(const Duration(seconds: 5), () {
-//     //   Navigator.pushAndRemoveUntil(
-//     //     context,
-//     //     MaterialPageRoute(builder: (context) => CustomBottomNav()),
-//     //         (route) => false, // clears history
-//     //   );
-//     //
-//     // });
+//     _animateSplash();
+//     _redirectAfterSplash();
+//   }
+//
+//   void _animateSplash() {
 //     // Animation sequence
-//     Future<void> checkLaunchAndRedirect() async {
-//       SharedPreferences prefs = await SharedPreferences.getInstance();
-//       final isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
-//
-//       if (isFirstLaunch) {
-//         // ✅ First launch, show CustomBottomNav
-//         prefs.setBool('isFirstLaunch', false);
-//         Navigator.pushReplacement(
-//           context,
-//           MaterialPageRoute(builder: (_) => CustomBottomNav()),
-//         );
-//       } else {
-//         // ✅ Not first launch, check role
-//         final savedRole = prefs.getString('role') ?? 'user';
-//         Widget screen;
-//         switch (savedRole) {
-//           case 'admin':
-//             screen = AdminDashboardScreen();
-//             break;
-//           case 'coach':
-//             screen = CoachDashboardScreen();
-//             break;
-//           case 'security':
-//             screen = SecurityGateScannerScreen();
-//             break;
-//           default:
-//             screen = CustomBottomNav();
-//         }
-//         Navigator.pushReplacement(
-//           context,
-//           MaterialPageRoute(builder: (_) => screen),
-//         );
-//       }
-//     }
-//
 //     Timer(const Duration(milliseconds: 500), () {
 //       setState(() => logoOpacity = 1.0);
 //     });
@@ -1017,6 +1041,162 @@ class MyApp extends StatelessWidget {
 //       setState(() => text3Opacity = 1.0);
 //     });
 //   }
+//   Future<void> _redirectAfterSplash() async {
+//     await Future.delayed(const Duration(seconds: 3));
+//     final prefs = await SharedPreferences.getInstance();
+//
+//     final bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+//     final bool isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
+//     String? savedRole = prefs.getString('role');
+//
+//     // 🧩 Load user data in case it's available but role missing
+//     await ApiService.loadUserFromPrefs();
+//     final roleFromUser = ApiService.currentUser?['role']?.toString().toLowerCase();
+//
+//     // 🧠 Auto-fix missing role in prefs
+//     if (savedRole == null && roleFromUser != null) {
+//       print("🧩 Fixing missing role in SharedPreferences → $roleFromUser");
+//       await prefs.setString('role', roleFromUser);
+//       savedRole = roleFromUser;
+//     }
+//
+//     if (isFirstLaunch) {
+//       await prefs.setBool('isFirstLaunch', false);
+//     }
+//
+//     print("🔹 Splash redirect check:");
+//     print("   isLoggedIn: $isLoggedIn");
+//     print("   savedRole: $savedRole");
+//
+//     Widget screen;
+//
+//     // ✅ CASE 1: Logged in and role known
+//     if (isLoggedIn && savedRole != null) {
+//       screen = _getScreenForRole(savedRole);
+//     }
+//     // ✅ CASE 2: Not logged in but role remembered (guest revisit)
+//     else if (savedRole != null) {
+//       screen = _getScreenForRole(savedRole);
+//     }
+//     // ✅ CASE 3: First-time or unknown role
+//     else {
+//       screen = const CustomBottomNav(); // default user home
+//     }
+//
+//     if (mounted) {
+//       Navigator.pushAndRemoveUntil(
+//         context,
+//         MaterialPageRoute(builder: (_) => screen),
+//             (route) => false,
+//       );
+//     }
+//   }
+//
+//
+//   @override
+//   void dispose() {
+//     // Cancel all pending timers to avoid calling setState after dispose
+//     for (final timer in _timers) {
+//       timer.cancel();
+//     }
+//     _timers.clear();
+//     super.dispose();
+//   }
+//   // Future<void> _redirectAfterSplash() async {
+//   //   await Future.delayed(const Duration(seconds: 3));
+//   //   final prefs = await SharedPreferences.getInstance();
+//   //
+//   //   final bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+//   //   final bool isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
+//   //   final String? savedRole = prefs.getString('role'); // read saved role
+//   //   final role = prefs.getString('role') ?? 'user';
+//   //
+//   //   Widget screen;
+//   //
+//   //
+//   //   if (isFirstLaunch) {
+//   //     // First time opening the app → mark as launched
+//   //     await prefs.setBool('isFirstLaunch', false);
+//   //   }
+//   //   print("🔹 Splash redirect check:");
+//   //   print("   isLoggedIn: $isLoggedIn");
+//   //   print("   savedRole: $savedRole");
+//   //   // ✅ CASE 1: User already logged in
+//   //   if (isLoggedIn && savedRole != null) {
+//   //     screen = _getScreenForRole(savedRole);
+//   //   }
+//   //   // ✅ CASE 2: Not logged in but role known (manually stored or remembered)
+//   //   else if (savedRole != null) {
+//   //     screen = _getScreenForRole(savedRole);
+//   //   }
+//   //   // ✅ CASE 3: Default (no role, not logged in)
+//   //   else {
+//   //     screen = const CustomBottomNav(); // or CustomBottomNav() if you want user home
+//   //   }
+//   //
+//   //   if (mounted) {
+//   //     Navigator.pushAndRemoveUntil(
+//   //       context,
+//   //       MaterialPageRoute(builder: (_) => screen),
+//   //           (route) => false,
+//   //     );
+//   //   }
+//   // }
+//
+//   /// Helper function to map role → correct screen
+//   Widget _getScreenForRole(String role) {
+//     switch (role.toLowerCase()) {
+//       case 'admin':
+//         return AdminDashboardScreen();
+//       case 'coach':
+//         return CoachHomeScreen();
+//       case 'security':
+//         return SecurityGateScannerScreen();
+//       case 'student':
+//       case 'user':
+//       default:
+//         return CustomBottomNav();
+//     }
+//   }
+//
+//   // Future<void> _redirectAfterSplash() async {
+//   //   await Future.delayed(const Duration(seconds: 5));
+//   //
+//   //   SharedPreferences prefs = await SharedPreferences.getInstance();
+//   //   final isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
+//   //
+//   //   Widget screen;
+//   //
+//   //   if (isFirstLaunch) {
+//   //     // First launch → show CustomBottomNav
+//   //     prefs.setBool('isFirstLaunch', false);
+//   //     screen = CustomBottomNav();
+//   //   } else {
+//   //     // Not first launch → redirect based on saved role
+//   //     final savedRole = prefs.getString('role') ?? 'user';
+//   //     switch (savedRole) {
+//   //       case 'admin':
+//   //         screen = AdminDashboardScreen();
+//   //         break;
+//   //       case 'coach':
+//   //         screen = CoachDashboardScreen();
+//   //         break;
+//   //       case 'security':
+//   //         screen = SecurityGateScannerScreen();
+//   //         break;
+//   //       default:
+//   //         screen = CustomBottomNav();
+//   //     }
+//   //   }
+//   //
+//   //   if (mounted) {
+//   //     Navigator.pushAndRemoveUntil(
+//   //       context,
+//   //       MaterialPageRoute(builder: (_) => screen),
+//   //           (route) => false,
+//   //     );
+//   //   }
+//   // }
 //
 //   @override
 //   Widget build(BuildContext context) {
@@ -1025,154 +1205,67 @@ class MyApp extends StatelessWidget {
 //       body: Stack(
 //         alignment: Alignment.center,
 //         children: [
-//           // Overlapping Sports images
 //           AnimatedOpacity(
 //             opacity: imagesOpacity,
 //             duration: const Duration(seconds: 1),
-//             child: Stack(
-//               children: [
-//                 // Top overlapping images
-//                 Positioned(
-//                   top: 60,
-//                   left: 20,
-//                   child: Transform.rotate(
-//                     angle: -0.1,
-//                     child: _splashImage("assets/r1.png"),
-//                   ),
-//                 ),
-//                 Positioned(
-//                   top: 60,
-//                   left: 80,
-//                   child: Transform.rotate(
-//                     angle:-0.1,
-//                     child: _splashImage("assets/r2.png"),
-//                   ),
-//                 ),
-//                 Positioned(
-//                   top: 60,
-//                   right: 90,
-//                   child: Transform.rotate(
-//                     angle: -0.1,
-//                     child: _splashImage("assets/r3.png"),
-//                   ),
-//                 ),
-//                 Positioned(
-//                   top: 60,
-//                   right: 20,
-//                   child: Transform.rotate(
-//                     angle: -0.1,
-//                     child: _splashImage("assets/r4.png"),
-//                   ),
-//                 ),
-//
-//                 // Bottom overlapping images
-//                 Positioned(
-//                   bottom: 80,
-//                   left: 20,
-//                   child: Transform.rotate(
-//                     angle: -0.1,
-//                     child: _splashImage("assets/r1.png"),
-//                   ),
-//                 ),
-//                 Positioned(
-//                   bottom: 80,
-//                   left: 80,
-//                   child: Transform.rotate(
-//                     angle: -0.1,
-//                     child: _splashImage("assets/r2.png"),
-//                   ),
-//                 ),
-//                 Positioned(
-//                   bottom: 80,
-//                   right: 20,
-//                   child: Transform.rotate(
-//                     angle: -0.1,
-//                     child: _splashImage("assets/r3.png"),
-//                   ),
-//                 ),
-//                 Positioned(
-//                   bottom: 80,
-//                   right: 80,
-//                   child: Transform.rotate(
-//                     angle: -0.1,
-//                     child: _splashImage("assets/r4.png"),
-//                   ),
-//                 ),
-//               ],
-//             ),
+//             child: _buildOverlappingImages(),
 //           ),
-//
-//           // Main content
 //           Column(
 //             mainAxisAlignment: MainAxisAlignment.center,
 //             children: [
-//               // Logo
 //               AnimatedOpacity(
 //                 opacity: logoOpacity,
 //                 duration: const Duration(seconds: 1),
 //                 child: Image.asset("assets/ns.png", height: 100),
 //               ),
 //               const SizedBox(height: 10),
-//
-//               // Texts fade-in sequentially with background
-//               AnimatedOpacity(
-//                 opacity: text1Opacity,
-//                 duration: const Duration(seconds: 1),
-//                 child: Container(
-//                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-//                   decoration: BoxDecoration(
-//                     color: Colors.white.withOpacity(0.9),
-//                     borderRadius: BorderRadius.circular(25),
-//                   ),
-//                   child: const Text(
-//                     "Unleash Potential",
-//                     style: TextStyle(
-//                         fontSize: 22,
-//                         fontWeight: FontWeight.bold,
-//                         color: Colors.black),
-//                   ),
-//                 ),
-//               ),
-//               // const SizedBox(height: 12),
-//               AnimatedOpacity(
-//                 opacity: text2Opacity,
-//                 duration: const Duration(seconds: 1),
-//                 child: Container(
-//                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-//                   decoration: BoxDecoration(
-//                     color: Colors.white.withOpacity(0.9),
-//                     borderRadius: BorderRadius.circular(25),
-//                   ),
-//                   child: const Text(
-//                     "Elevate Every Game.",
-//                     style: TextStyle(
-//                       fontSize: 20,
-//                       fontWeight: FontWeight.bold,
-//                       color: Color(0xFF2E3192),
-//                     ),
-//                   ),
-//                 ),
-//               ),
-//               // const SizedBox(height: 12),
-//               AnimatedOpacity(
-//                 opacity: text3Opacity,
-//                 duration: const Duration(seconds: 1),
-//                 child: Container(
-//                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-//                   decoration: BoxDecoration(
-//                     color: Colors.white.withOpacity(0.9),
-//                     borderRadius: BorderRadius.circular(25),
-//                   ),
-//                   child: const Text(
-//                     "Sport. Spirit. Strength. Success. Nahata.",
-//                     style: TextStyle(fontSize: 14, color: Colors.black54),
-//                     textAlign: TextAlign.center,
-//                   ),
-//                 ),
-//               ),
+//               _fadeText(text1Opacity, "Unleash Potential", 22, Colors.black),
+//               _fadeText(text2Opacity, "Elevate Every Game.", 20, const Color(0xFF2E3192)),
+//               _fadeText(text3Opacity, "Sport. Spirit. Strength. Success. Nahata.", 14, Colors.black54),
 //             ],
 //           ),
 //         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _buildOverlappingImages() {
+//     return Stack(
+//       children: [
+//         // Top images
+//         Positioned(top: 60, left: 20, child: _rotatedImage("assets/r1.png")),
+//         Positioned(top: 60, left: 80, child: _rotatedImage("assets/r2.png")),
+//         Positioned(top: 60, right: 90, child: _rotatedImage("assets/r3.png")),
+//         Positioned(top: 60, right: 20, child: _rotatedImage("assets/r4.png")),
+//         // Bottom images
+//         Positioned(bottom: 80, left: 20, child: _rotatedImage("assets/r1.png")),
+//         Positioned(bottom: 80, left: 80, child: _rotatedImage("assets/r2.png")),
+//         Positioned(bottom: 80, right: 20, child: _rotatedImage("assets/r3.png")),
+//         Positioned(bottom: 80, right: 80, child: _rotatedImage("assets/r4.png")),
+//       ],
+//     );
+//   }
+//
+//   Widget _rotatedImage(String path) => Transform.rotate(
+//     angle: -0.1,
+//     child: _splashImage(path),
+//   );
+//
+//   Widget _fadeText(double opacity, String text, double fontSize, Color color) {
+//     return AnimatedOpacity(
+//       opacity: opacity,
+//       duration: const Duration(seconds: 1),
+//       child: Container(
+//         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+//         decoration: BoxDecoration(
+//           color: Colors.white.withOpacity(0.9),
+//           borderRadius: BorderRadius.circular(25),
+//         ),
+//         child: Text(
+//           text,
+//           style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.bold, color: color),
+//           textAlign: TextAlign.center,
+//         ),
 //       ),
 //     );
 //   }
@@ -1201,6 +1294,9 @@ class MyApp extends StatelessWidget {
 //   );
 // }
 
+////////////////////////////////////////////////////////////////
+
+
 class SplashStep3 extends StatefulWidget {
   const SplashStep3({super.key});
 
@@ -1209,6 +1305,8 @@ class SplashStep3 extends StatefulWidget {
 }
 
 class _SplashStep3State extends State<SplashStep3> {
+  final List<Timer> _timers = [];
+
   double logoOpacity = 0.0;
   double imagesOpacity = 0.0;
   double text1Opacity = 0.0;
@@ -1222,105 +1320,87 @@ class _SplashStep3State extends State<SplashStep3> {
     _redirectAfterSplash();
   }
 
-  void _animateSplash() {
-    // Animation sequence
-    Timer(const Duration(milliseconds: 500), () {
-      setState(() => logoOpacity = 1.0);
-    });
-    Timer(const Duration(milliseconds: 1500), () {
-      setState(() => imagesOpacity = 1.0);
-    });
-    Timer(const Duration(milliseconds: 2500), () {
-      setState(() => text1Opacity = 1.0);
-    });
-    Timer(const Duration(milliseconds: 3500), () {
-      setState(() => text2Opacity = 1.0);
-    });
-    Timer(const Duration(milliseconds: 4500), () {
-      setState(() => text3Opacity = 1.0);
-    });
+  /// Utility: Safe setState (avoids calling after dispose)
+  void safeSetState(VoidCallback fn) {
+    if (mounted) setState(fn);
   }
-  Future<void> _redirectAfterSplash() async {
-    await Future.delayed(const Duration(seconds: 5));
-     SharedPreferences prefs = await SharedPreferences.getInstance();
 
+  void _animateSplash() {
+    // Store timers so they can be cancelled
+    _timers.addAll([
+      Timer(const Duration(milliseconds: 500), () => safeSetState(() => logoOpacity = 1.0)),
+      Timer(const Duration(milliseconds: 1500), () => safeSetState(() => imagesOpacity = 1.0)),
+      Timer(const Duration(milliseconds: 2500), () => safeSetState(() => text1Opacity = 1.0)),
+      Timer(const Duration(milliseconds: 3500), () => safeSetState(() => text2Opacity = 1.0)),
+      Timer(const Duration(milliseconds: 4500), () => safeSetState(() => text3Opacity = 1.0)),
+    ]);
+  }
+
+  Future<void> _redirectAfterSplash() async {
+    await Future.delayed(const Duration(seconds: 3));
+    if (!mounted) return; // prevent work after widget removed
+
+    final prefs = await SharedPreferences.getInstance();
     final bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
     final bool isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
+    String? savedRole = prefs.getString('role');
+
+    await ApiService.loadUserFromPrefs();
+    final roleFromUser = ApiService.currentUser?['role']?.toString().toLowerCase();
+
+    if (savedRole == null && roleFromUser != null) {
+      print("🧩 Fixing missing role → $roleFromUser");
+      await prefs.setString('role', roleFromUser);
+      savedRole = roleFromUser;
+    }
+
+    if (isFirstLaunch) await prefs.setBool('isFirstLaunch', false);
+
+    print("🔹 Splash redirect check:");
+    print("   isLoggedIn: $isLoggedIn");
+    print("   savedRole: $savedRole");
 
     Widget screen;
-
-    if (isLoggedIn) {
-      // Already logged in → go straight to role dashboard
-      final savedRole = ApiService.getRole() ?? 'user';
-      switch (savedRole) {
-        case 'admin':
-          screen = AdminDashboardScreen();
-          break;
-        case 'coach':
-          screen = CoachDashboardScreen();
-          break;
-        case 'security':
-          screen = SecurityGateScannerScreen();
-          break;
-        default:
-          screen = CustomBottomNav(); // user dashboard
-      }
-    } else if (isFirstLaunch) {
-      // First launch → show role chooser
-      prefs.setBool('isFirstLaunch', false);
-      screen = CustomBottomNav();
+    if (isLoggedIn && savedRole != null) {
+      screen = _getScreenForRole(savedRole);
+    } else if (savedRole != null) {
+      screen = _getScreenForRole(savedRole);
     } else {
-      // Not logged in → go to LoginScreen
       screen = const CustomBottomNav();
     }
 
-    if (mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => screen),
-            (route) => false,
-      );
-    }
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => screen),
+          (route) => false,
+    );
   }
 
-  // Future<void> _redirectAfterSplash() async {
-  //   await Future.delayed(const Duration(seconds: 5));
-  //
-  //   SharedPreferences prefs = await SharedPreferences.getInstance();
-  //   final isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
-  //
-  //   Widget screen;
-  //
-  //   if (isFirstLaunch) {
-  //     // First launch → show CustomBottomNav
-  //     prefs.setBool('isFirstLaunch', false);
-  //     screen = CustomBottomNav();
-  //   } else {
-  //     // Not first launch → redirect based on saved role
-  //     final savedRole = prefs.getString('role') ?? 'user';
-  //     switch (savedRole) {
-  //       case 'admin':
-  //         screen = AdminDashboardScreen();
-  //         break;
-  //       case 'coach':
-  //         screen = CoachDashboardScreen();
-  //         break;
-  //       case 'security':
-  //         screen = SecurityGateScannerScreen();
-  //         break;
-  //       default:
-  //         screen = CustomBottomNav();
-  //     }
-  //   }
-  //
-  //   if (mounted) {
-  //     Navigator.pushAndRemoveUntil(
-  //       context,
-  //       MaterialPageRoute(builder: (_) => screen),
-  //           (route) => false,
-  //     );
-  //   }
-  // }
+  /// Cancel all pending timers on dispose
+  @override
+  void dispose() {
+    for (final timer in _timers) {
+      timer.cancel();
+    }
+    _timers.clear();
+    super.dispose();
+  }
+
+  Widget _getScreenForRole(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return AdminDashboardScreen();
+      case 'coach':
+        return CoachHomeScreen();
+      case 'security':
+        return SecurityGateScannerScreen();
+      case 'student':
+      case 'user':
+      default:
+        return CustomBottomNav();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1356,12 +1436,10 @@ class _SplashStep3State extends State<SplashStep3> {
   Widget _buildOverlappingImages() {
     return Stack(
       children: [
-        // Top images
         Positioned(top: 60, left: 20, child: _rotatedImage("assets/r1.png")),
         Positioned(top: 60, left: 80, child: _rotatedImage("assets/r2.png")),
         Positioned(top: 60, right: 90, child: _rotatedImage("assets/r3.png")),
         Positioned(top: 60, right: 20, child: _rotatedImage("assets/r4.png")),
-        // Bottom images
         Positioned(bottom: 80, left: 20, child: _rotatedImage("assets/r1.png")),
         Positioned(bottom: 80, left: 80, child: _rotatedImage("assets/r2.png")),
         Positioned(bottom: 80, right: 20, child: _rotatedImage("assets/r3.png")),
@@ -1417,4 +1495,12 @@ class _SplashStep3State extends State<SplashStep3> {
     ),
   );
 }
+
+
+
+
+
+
+
+
 

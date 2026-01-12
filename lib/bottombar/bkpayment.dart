@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
@@ -13,7 +14,9 @@ import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../main.dart';
 import 'Custombottombar.dart';
+import 'morescreen.dart';
 
 // Import your existing API service - uncomment when available
 // import '../services/api_service.dart';
@@ -97,7 +100,40 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
+  Future<void> showBookingConfirmedNotification({
+    required String date,
+    required String slot,
+    required int totalAmount,
+  }) async {
+     AndroidNotificationDetails androidDetails =
+    AndroidNotificationDetails(
+      'booking_channel',
+      'Booking Notifications',
+      channelDescription: 'Booking confirmation notifications',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
 
+     NotificationDetails notificationDetails =
+    NotificationDetails(android: androidDetails);
+
+    await flutterLocalNotificationsPlugin.show(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      '✅ Booking Confirmed',
+      '📅 Date: $date\n⏰ Slot: $slot\n💰 Amount: ₹$totalAmount',
+      notificationDetails,
+      payload: 'booking',
+    );
+  }
+
+  void onDidReceiveNotificationResponse(NotificationResponse response) {
+    if (response.payload == 'booking') {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const MyBookingsScreen()),
+      );
+    }
+  }
 
   Future<bool> _isLoggedIn() async {
     final email = await _getUserEmail();
@@ -164,6 +200,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         if (data["success"] == true || data["status"] == true) {
+
+          // 🔔 Show booking notification
+          await showBookingConfirmedNotification(
+            date: formattedDate,
+            slot: slot,
+            totalAmount: price,
+          );
+
+
           _showSuccessDialog();
         } else {
           _showErrorDialog(
@@ -298,8 +343,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final phone = widget.bookingDetails['phone']?.toString() ?? '';
 
       var options = {
-        'key': 'rzp_live_R7b5MMCgg9AlWn',
-        //  'key': 'rzp_test_YwYUHvAMatnKBY',
+        // 'key': 'rzp_live_R7b5MMCgg9AlWn',
+          'key': 'rzp_test_YwYUHvAMatnKBY',
         'amount': onlineAmount * 100,
         'name': 'Nahata Sports',
         'description': '${widget.bookingDetails['game'] ?? 'Sports'} booking',
@@ -510,25 +555,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 
-  // void _showErrorDialog(String message) {
-  //   if (!mounted) return;
-  //   showDialog(
-  //     context: context,
-  //     builder: (_) => AlertDialog(
-  //       title: Row(
-  //         children: [
-  //           Icon(Icons.error, color: Colors.red),
-  //           SizedBox(width: 12),
-  //           Expanded(child: Text("Error")),
-  //         ],
-  //       ),
-  //       content: Text(message),
-  //       actions: [
-  //         TextButton(onPressed: () => Navigator.pop(context), child: Text("OK"))
-  //       ],
-  //     ),
-  //   );
-  // }
+
 
   void _showSnackBar(String message, {required bool isError}) {
     if (!mounted) return;
@@ -839,7 +866,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         "₹${total} Incl.Taxes",
                         style: TextStyle(
                           color: brandBlue,
-                          fontSize: 14,
+                          fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -848,12 +875,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         "PROCEED TO PAY",
                         style: TextStyle(
                           color: brandBlue,
-                          fontSize: 14,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      SizedBox(width: 8),
-                      Icon(Icons.arrow_forward, color: brandBlue, size: 18),
+                      SizedBox(width: 5),
+                      Icon(Icons.arrow_forward, color: brandBlue, size: 13),
                     ],
                   ),
                 ),
