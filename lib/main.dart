@@ -631,6 +631,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth/login.dart';
 import 'bottombar/Custombottombar.dart';
+import 'bottombar/morescreen.dart';
 import 'dashboard/admin_screen.dart';
 import 'dashboard/coach_screen.dart';
 import 'dashboard/security_screen.dart';
@@ -754,6 +755,30 @@ Future<void> main() async {
 
   // Register background handler
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+// 🔔 Initialize local notifications (MISSING BEFORE)
+  const AndroidInitializationSettings androidInit =
+  AndroidInitializationSettings('@mipmap/ic_launcher');
+
+  final InitializationSettings initSettings =
+  InitializationSettings(android: androidInit);
+
+  await flutterLocalNotificationsPlugin.initialize(
+    initSettings,
+    onDidReceiveNotificationResponse: (response) {
+      if (response.payload == 'booking') {
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const MyBookingsScreen()),
+        );
+      }
+    },
+  );
+
+
+
+
+
+
 
   // Request permissions (Android 13+ & iOS)
   final settings = await FirebaseMessaging.instance.requestPermission(

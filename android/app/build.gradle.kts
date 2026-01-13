@@ -147,8 +147,8 @@ android {
         applicationId = "com.nahata_sports_app"
         minSdk = flutter.minSdkVersion
         targetSdk = 35
-        versionCode = 22
-        versionName = "1.0.22"
+        versionCode = 23
+        versionName = "1.0.23"
     }
 
     signingConfigs {

@@ -1463,6 +1463,7 @@
 // }
 // }
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -1472,6 +1473,8 @@ import 'package:http/http.dart' as http;
 import '../admin/GenerateVisitorPass.dart';
 import '../admin/Visitorlist.dart';
 import '../admin/blockslots.dart';
+import '../admin/bookedslotscreen.dart';
+import '../admin/notifications/admin_notification.dart';
 import '../auth/login.dart';
 import '../coach/scanscreen.dart';
 import '../screens/login_screen.dart';
@@ -4019,8 +4022,70 @@ class _AdminDashboardScreen1State extends State<AdminDashboardScreen1>
 
 
 
-class AdminDashboardScreen extends StatelessWidget {
+class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({Key? key}) : super(key: key);
+
+  @override
+  State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
+}
+
+class _AdminDashboardScreenState extends State<AdminDashboardScreen>
+    with WidgetsBindingObserver {
+
+  int _unreadCount = 0;
+  Timer? _notificationTimer;
+
+  // @override
+  // void initState() {
+  //   super.initState();
+  //   _loadNotifications();
+  // }
+
+  // Future<void> _loadNotifications() async {
+  //   final response = await AdminNotificationService.fetchNotifications();
+  //   setState(() {
+  //     _unreadCount = response['count'];
+  //   });
+  // }
+  @override
+  void initState() {
+    super.initState();
+
+    // 👁 listen app lifecycle
+    WidgetsBinding.instance.addObserver(this);
+
+    // 🔔 initial load
+    _loadNotifications();
+
+    // 🔄 auto refresh every 10 seconds
+    _notificationTimer = Timer.periodic(
+      const Duration(seconds: 10),
+          (timer) {
+        _loadNotifications();
+      },
+    );
+  }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadNotifications(); // refresh when app comes foreground
+    }
+  }
+  @override
+  void dispose() {
+    _notificationTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+  Future<void> _loadNotifications() async {
+    final response = await AdminNotificationService.fetchNotifications();
+
+    if (!mounted) return;
+
+    setState(() {
+      _unreadCount = response['count'];
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4066,6 +4131,19 @@ class AdminDashboardScreen extends StatelessWidget {
         },
       ),
       _AdminOption(
+        title: "Booked Slots",
+        icon: Icons.event_available,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const BookedSlotsScreen(),
+            ),
+          );
+        },
+      ),
+
+      _AdminOption(
         title: "Block Slots",
         icon: Icons.block,
         onTap: () {
@@ -4103,6 +4181,52 @@ class AdminDashboardScreen extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+          actions: [
+      Stack(
+      children: [
+      IconButton(
+      icon: const Icon(Icons.notifications_none,size: 25,),
+      onPressed: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const AdminNotificationsScreen(),
+          ),
+        );
+        _loadNotifications(); // refresh badge after return
+      },
+    ),
+    if (_unreadCount > 0)
+    Positioned(
+    right: 10,
+    top: 10,
+    child: Container(
+    padding: const EdgeInsets.all(4),
+    decoration: BoxDecoration(
+    color: Colors.red,
+    borderRadius: BorderRadius.circular(12),
+    ),
+    constraints: const BoxConstraints(
+    minWidth: 10,
+    minHeight: 10,
+    ),
+    child: Text(
+    '$_unreadCount',
+    style: const TextStyle(
+    color: Colors.white,
+    fontSize: 9,
+    fontWeight: FontWeight.bold,
+    ),
+    textAlign: TextAlign.center,
+    ),
+    ),
+    ),
+    ],
+
+
+
+      ),
+      ],
         centerTitle: true,
         iconTheme: const IconThemeData(color: Colors.black),
       ),
@@ -4126,6 +4250,17 @@ class AdminDashboardScreen extends StatelessWidget {
   }
 }
 
+class _AdminOption {
+  final String title;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  _AdminOption({
+    required this.title,
+    required this.icon,
+    required this.onTap,
+  });
+}
 class _AdminCard extends StatelessWidget {
   final _AdminOption item;
 
@@ -4167,14 +4302,3 @@ class _AdminCard extends StatelessWidget {
   }
 }
 
-class _AdminOption {
-  final String title;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  _AdminOption({
-    required this.title,
-    required this.icon,
-    required this.onTap,
-  });
-}
