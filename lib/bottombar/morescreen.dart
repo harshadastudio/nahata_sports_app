@@ -3,13 +3,20 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:nahata_app/bottombar/Custombottombar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../auth/login.dart';
 import 'home.dart';
@@ -30,6 +37,8 @@ class _MoreScreenState extends State<MoreScreen> {
     super.initState();
     _fetchUserData();
     _getUserData();
+    fetchDashboard();
+
   }
 
 
@@ -100,8 +109,6 @@ class _MoreScreenState extends State<MoreScreen> {
     );
   }
 
-
-
   Future<void> _logout(BuildContext context) async {
     await AuthService.logout();
     // await AuthService.logout(); // clears prefs
@@ -155,6 +162,37 @@ print(response);
       setState(() => _isLoading = false);
     }
   }
+
+  Map<String, dynamic>? _student;
+
+  Future<void> fetchDashboard() async {
+    final studentId = await AuthService.getUserId();
+    debugPrint("Student ID: $studentId");
+
+    if (studentId == null) {
+      debugPrint("Student ID is null");
+      return;
+    }
+
+    final response = await http.get(
+      Uri.parse(
+        "https://nahatasports.com/api/student_dashboard?student_id=$studentId",
+      ),
+    );
+
+    debugPrint("Response: ${response.body}");
+
+    final jsonData = jsonDecode(response.body);
+
+    if (jsonData['status'] == true) {
+      debugPrint("Student Data: ${jsonData['data']['student']}");
+
+      setState(() {
+        _student = jsonData['data']['student'];
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -207,28 +245,90 @@ print(response);
                     //       ? const Icon(Icons.person, size: 35, color: Colors.white)
                     //       : null,
                     // ),
-            CircleAvatar(
-            radius: 35,
-              backgroundColor: Colors.blue,
-              child: ClipOval(
-                child: Image.network(
-                  "https://nahatasports.com/uploads/student_photo/${_userData?['student_photo']}",
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(Icons.person, size: 35, color: Colors.white);
-                  },
-                ),
-              ),
-            ),
+            // CircleAvatar(
+            // radius: 35,
+            //   backgroundColor: Colors.blue,
+            //   child: ClipOval(
+            //     child: Image.network(
+            //       "https://nahatasports.com/uploads/student_photo/${_userData?['student_photo']}",
+            //       fit: BoxFit.cover,
+            //       errorBuilder: (context, error, stackTrace) {
+            //         return const Icon(Icons.person, size: 35, color: Colors.white);
+            //       },
+            //     ),
+            //   ),
+            // ),
+            //
+            //         const SizedBox(height: 8),
+            //         Text(
+            //           _userData?['name'] ?? 'Guest User',
+            //           style: const TextStyle(
+            //             fontSize: 15,
+            //             fontWeight: FontWeight.bold,
+            //           ),
+            //         ),
+            //         CircleAvatar(
+            //           radius: 35,
+            //           backgroundColor: Colors.blue,
+            //           child: ClipOval(
+            //             child: Image.network(
+            //               _student?['student_photo'] != null
+            //                   ? "https://nahatasports.com/uploads/student_photo/${_student!['student_photo']}"
+            //                   : "",
+            //               fit: BoxFit.cover,
+            //               width: 70,
+            //               height: 70,
+            //               errorBuilder: (context, error, stackTrace) {
+            //                 return const Icon(
+            //                   Icons.person,
+            //                   size: 35,
+            //                   color: Colors.white,
+            //                 );
+            //               },
+            //             ),
+            //           ),
+            //         ),
+            //
+            //         const SizedBox(height: 8),
+            //
+            //         Text(
+            //           _student?['name'] ?? 'Guest User',
+            //           style: const TextStyle(
+            //             fontSize: 15,
+            //             fontWeight: FontWeight.bold,
+            //           ),
+            //         ),
+            _student == null
+            ?  _buildProfileShimmer()
+                : Column(
+          children: [
+          CircleAvatar(
+          radius: 35,
+            backgroundColor: Colors.blue,
+            backgroundImage: _student!['student_photo'] != null &&
+                _student!['student_photo'].toString().isNotEmpty
+                ? NetworkImage(
+              "https://nahatasports.com/public/uploads/students/${_student!['student_photo']}",
+            )
+                : null,
+            child: _student!['student_photo'] == null ||
+                _student!['student_photo'].toString().isEmpty
+                ? const Icon(Icons.person, color: Colors.white)
+                : null,
+          ),
 
-                    const SizedBox(height: 8),
-                    Text(
-                      _userData?['name'] ?? 'Guest User',
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+          const SizedBox(height: 8),
+
+          Text(
+            _student!['name'] ?? '',
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      )
+
                   ],
                 ),
                 const SizedBox(width: 24),
@@ -278,38 +378,38 @@ print(response);
 
 
                       SizedBox(height: 20,),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Column(
-                            children: [
-                              Text(
-                                (_userData?['games'] ?? 0).toString(),
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              const Text('Games', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                            ],
-                          ),
-                          const SizedBox(width: 32),
-                          Column(
-                            children: [
-                              Text(
-                                (_userData?['coaches'] ?? 0).toString(),
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              const Text('Coach', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                            ],
-                          ),
-                        ],
-                      ),
+                      // Row(
+                      //   mainAxisAlignment: MainAxisAlignment.center,
+                      //   children: [
+                      //     Column(
+                      //       children: [
+                      //         Text(
+                      //           (_userData?['games'] ?? 0).toString(),
+                      //           style: const TextStyle(
+                      //             fontSize: 18,
+                      //             fontWeight: FontWeight.bold,
+                      //           ),
+                      //         ),
+                      //         const SizedBox(height: 4),
+                      //         const Text('Games', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      //       ],
+                      //     ),
+                      //     const SizedBox(width: 32),
+                      //     Column(
+                      //       children: [
+                      //         Text(
+                      //           (_userData?['coaches'] ?? 0).toString(),
+                      //           style: const TextStyle(
+                      //             fontSize: 18,
+                      //             fontWeight: FontWeight.bold,
+                      //           ),
+                      //         ),
+                      //         const SizedBox(height: 4),
+                      //         const Text('Coach', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      //       ],
+                      //     ),
+                      //   ],
+                      // ),
                     ],
                   ),
                 ),
@@ -347,16 +447,16 @@ print(response);
                     MaterialPageRoute(builder: (_) => const YourPassScreen()),
                   );
                 }),
-                _buildMenuItem(Icons.book, 'My Enrollments', onTap: () {
-                  Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const Enrollments()),
-                  );
-                }),
-                _buildMenuItem(Icons.feedback_outlined, 'Feedback from Coaches', onTap: () {
-                  Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const StudentFeedbackScreen()),
-                  );
-                }),
+                // _buildMenuItem(Icons.book, 'My Enrollments', onTap: () {
+                //   Navigator.push(context,
+                //     MaterialPageRoute(builder: (_) => const Enrollments()),
+                //   );
+                // }),
+                // _buildMenuItem(Icons.feedback_outlined, 'Feedback from Coaches', onTap: () {
+                //   Navigator.push(context,
+                //     MaterialPageRoute(builder: (_) => const StudentFeedbackScreen()),
+                //   );
+                // }),
                 // _buildMenuItem(Icons.favorite_border, 'Favourite Venues', onTap: () {
                 //   Navigator.push(context,
                 //     MaterialPageRoute(builder: (_) => const FavouriteVenuesScreen()),
@@ -480,6 +580,33 @@ print(response);
   //   );
   // }
 }
+Widget _buildProfileShimmer() {
+  return Column(
+    children: [
+      Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: CircleAvatar(
+          radius: 35,
+          backgroundColor: Colors.white,
+        ),
+      ),
+
+      const SizedBox(height: 8),
+
+      Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: Container(
+          width: 100,
+          height: 15,
+          color: Colors.white,
+        ),
+      ),
+    ],
+  );
+}
+
 
 class Enrollment {
   static const baseUrl = "https://nahatasports.com/api";
@@ -625,16 +752,33 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
     _selectedTimeIndex = 0;
     _loadBookings();
   }
-
   Future<void> _loadBookings() async {
-    final prefs = await SharedPreferences.getInstance();
-    final List<String> bookingStrings = prefs.getStringList('bookings') ?? [];
-    final List<Map<String, dynamic>> loadedBookings = bookingStrings
-        .map((b) => jsonDecode(b) as Map<String, dynamic>)
-        .toList();
+    final email = await AuthService.getUserEmail();
+    if (email == null) return;
 
-    setState(() => allBookings = loadedBookings);
+    final filter = _selectedTimeIndex == 0 ? "upcoming" : "previous";
+
+    final response = await http.post(
+      Uri.parse("https://nahatasports.com/api/court-bookings?filter=$filter"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "email": email,
+      }),
+    );
+
+    final jsonData = jsonDecode(response.body);
+
+    if (jsonData['status'] == true) {
+      setState(() {
+        allBookings = List<Map<String, dynamic>>.from(jsonData['data']);
+      });
+    } else {
+      setState(() {
+        allBookings = [];
+      });
+    }
   }
+
 
   @override
   void dispose() {
@@ -663,7 +807,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _getFilteredBookings();
+    final filtered = allBookings;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -685,18 +829,18 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
           const SizedBox(height: 16),
 
           // --- Top Tabs (Venue / Coaching)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(child: _buildTabButton('Venue Bookings', 0)),
-                const SizedBox(width: 12),
-                Expanded(child: _buildTabButton('Coaching Bookings', 1)),
-              ],
-            ),
-          ),
+          // Padding(
+          //   padding: const EdgeInsets.symmetric(horizontal: 16),
+          //   child: Row(
+          //     children: [
+          //       Expanded(child: _buildTabButton('Venue Bookings', 0)),
+          //       const SizedBox(width: 12),
+          //       Expanded(child: _buildTabButton('Coaching Bookings', 1)),
+          //     ],
+          //   ),
+          // ),
 
-          const SizedBox(height: 24),
+          // const SizedBox(height: 24),
 
           // --- Upcoming / Previous Toggle
           Padding(
@@ -792,7 +936,12 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
   Widget _buildTimeToggle(String title, int index) {
     final isSelected = _selectedTimeIndex == index;
     return GestureDetector(
-      onTap: () => setState(() => _selectedTimeIndex = index),
+      onTap: () {
+        setState(() {
+          _selectedTimeIndex = index;
+        });
+        _loadBookings(); // reload API
+      },
       child: AnimatedDefaultTextStyle(
         duration: const Duration(milliseconds: 200),
         style: TextStyle(
@@ -827,56 +976,59 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
   }
 
   Widget _buildBookingCard(Map<String, dynamic> booking) {
+    List<dynamic> slots = [];
+
+    if (booking['slots'] != null) {
+      slots = jsonDecode(booking['slots']);
+    }
+
+    final slot = slots.isNotEmpty ? slots[0] : null;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border.all(color: Colors.grey.shade200),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.shade100,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.grey.shade200,
+            blurRadius: 6,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius:
-            const BorderRadius.horizontal(left: Radius.circular(12)),
-            child: Image.network(
-              booking['imageUrl'] ?? '',
-              width: 100,
-              height: 100,
-              fit: BoxFit.cover,
+          Text(
+            booking['court_name'] ?? '',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
             ),
           ),
-          Expanded(
-            child: Padding(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    booking['venueName'] ?? '',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 15),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    booking['sport'] ?? '',
-                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${booking['date']} • ${booking['time']}',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                  ),
-                ],
-              ),
+          const SizedBox(height: 6),
+
+          Text(
+            booking['selected_date'] ?? '',
+            style: TextStyle(color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 6),
+
+          if (slot != null)
+            Text(
+              slot['time'] ?? '',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
+
+          const SizedBox(height: 8),
+
+          Text(
+            "₹ ${booking['amount']}",
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Colors.green,
             ),
           ),
         ],
@@ -1065,6 +1217,142 @@ class _YourPassScreenState extends State<YourPassScreen> {
   int _selectedTimeIndex = 0; // 0 = Active, 1 = Expired
   static const brandBlue = Color(0xFF1A237E);
 
+  List<dynamic> _passes = [];
+  bool _isLoading = true;
+  @override
+  void initState() {
+    super.initState();
+    _fetchPasses();
+
+  }
+  // Future<void> _fetchPasses() async {
+  //   setState(() => _isLoading = true);
+  //
+  //   final studentId = await AuthService.getUserId();
+  //   if (studentId == null) return;
+  //
+  //   final status = _selectedTimeIndex == 0 ? ""
+  //       "active" : "expired";
+  //
+  //   final response = await http.get(
+  //     Uri.parse(
+  //       "https://nahatasports.com/api/booking-pass/$studentId?status=$status",
+  //     ),
+  //   );
+  //
+  //   final jsonData = jsonDecode(response.body);
+  //   print("Status: ${response.statusCode}");
+  //   print("Body: ${response.body}");
+  //   print(response);
+  //   if (jsonData['status'] == true) {
+  //     setState(() {
+  //       _passes = jsonData['data'];
+  //       _isLoading = false;
+  //     });
+  //   } else {
+  //     setState(() {
+  //       _passes = [];
+  //       _isLoading = false;
+  //     });
+  //   }
+  // }
+  // Future<void> _fetchGatePass() async {
+  //   setState(() => _isLoading = true);
+  //
+  //   final studentId = await AuthService.getUserId();
+  //   if (studentId == null) return;
+  //
+  //   final response = await http.get(
+  //     Uri.parse(
+  //       "https://nahatasports.com/api/student_getpass/$studentId",
+  //     ),
+  //   );
+  //
+  //   final jsonData = jsonDecode(response.body);
+  //
+  //   if (response.statusCode == 200 && jsonData['status'] == true) {
+  //     final pass = jsonData['pass'];
+  //
+  //     setState(() {
+  //       _passes = pass != null ? [pass] : [];
+  //       _isLoading = false;
+  //     });
+  //   } else {
+  //     setState(() {
+  //       _passes = [];
+  //       _isLoading = false;
+  //     });
+  //   }
+  // }
+  Future<void> _fetchPasses() async {
+    if (_selectedTimeIndex == 0) {
+      await _fetchGatePass();
+    } else {
+      await _fetchEventPass();
+    }
+  }
+
+  Future<void> _fetchGatePass() async {
+    setState(() => _isLoading = true);
+
+    final studentId = await AuthService.getUserId();
+    if (studentId == null) return;
+
+    final response = await http.get(
+      Uri.parse("https://nahatasports.com/api/student_getpass/$studentId"),
+    );
+
+    final jsonData = jsonDecode(response.body);
+
+    if (response.statusCode == 200 && jsonData['status'] == true) {
+      final pass = jsonData['pass'];
+      final student = jsonData['student'];
+
+      if (pass != null && student != null) {
+        // ✅ MERGE student info into pass
+        pass['name'] = student['name'];
+        pass['phone'] = student['phone'];
+        pass['id_card'] = student['id_card'];
+      }
+
+      setState(() {
+        _passes = pass != null ? [pass] : [];
+        _isLoading = false;
+      });
+    } else {
+      setState(() {
+        _passes = [];
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _fetchEventPass() async {
+    setState(() => _isLoading = true);
+
+    final studentId = await AuthService.getUserId();
+    if (studentId == null) return;
+
+    final response = await http.get(
+      Uri.parse(
+        "https://nahatasports.com/api/booking-pass/$studentId?status=active",
+      ),
+    );
+
+    final jsonData = jsonDecode(response.body);
+
+    if (response.statusCode == 200 && jsonData['status'] == true) {
+      setState(() {
+        _passes = jsonData['data'];
+        _isLoading = false;
+      });
+    } else {
+      setState(() {
+        _passes = [];
+        _isLoading = false;
+      });
+    }
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1097,9 +1385,11 @@ class _YourPassScreenState extends State<YourPassScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildTimeToggle('ACTIVE', 0),
+                _buildTimeToggle('GatePass', 0),
                 const SizedBox(width: 80),
-                _buildTimeToggle('EXPIRED', 1),
+                _buildTimeToggle('EventPass', 1),
+                // const SizedBox(width: 40),
+                // _buildTimeToggle('EXPIRED', 2),
               ],
             ),
           ),
@@ -1130,13 +1420,255 @@ class _YourPassScreenState extends State<YourPassScreen> {
           const SizedBox(height: 40),
 
           // Empty State
+          // Expanded(
+          //   child: _isLoading
+          //       ? const Center(child: CircularProgressIndicator())
+          //       : _passes.isEmpty
+          //       ? _buildEmptyState()
+          //       : ListView.builder(
+          //     padding: const EdgeInsets.symmetric(horizontal: 16),
+          //     itemCount: _passes.length,
+          //     itemBuilder: (context, index) {
+          //       final pass = _passes[index];
+          //
+          //       String qrUrl = pass['qr_code'] ?? '';
+          //
+          //       if (qrUrl.isNotEmpty) {
+          //         // Step 1: Remove wrong prefix
+          //         qrUrl = qrUrl.replaceFirst(
+          //           "https://nahatasports.com/",
+          //           "",
+          //         );
+          //
+          //         // Step 2: Fix single slash issue
+          //         if (qrUrl.startsWith("https:/") &&
+          //             !qrUrl.startsWith("https://")) {
+          //           qrUrl = qrUrl.replaceFirst("https:/", "https://");
+          //         }
+          //       }
+          //
+          //       debugPrint("FINAL QR URL: $qrUrl");
+          //
+          //       return _buildPassCard(pass, qrUrl,GlobalKey());
+          //     },
+          //   )
+          //
+          // )
+
           Expanded(
-            child: _buildEmptyState(),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _passes.isEmpty
+                ? _buildEmptyState()
+                : ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _passes.length,
+              itemBuilder: (context, index) {
+                final pass = _passes[index];
+                return _buildPassCard(pass);
+              },
+            ),
           ),
         ],
       ),
     );
   }
+  // ================= PASS CARD =================
+
+  Widget _buildPassCard(Map<String, dynamic> pass) {
+    final qr = pass['qr_code'] ?? '';
+    final repaintKey = GlobalKey();
+
+    return RepaintBoundary(
+      key: repaintKey,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.shade200,
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ================= HEADER =================
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: brandBlue,
+                borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(18)),
+              ),
+              child: Text(
+                _selectedTimeIndex == 0
+                    ? "Gate Pass"
+                    : pass['tournament_title'] ?? '',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // ================= GATE PASS DETAILS =================
+            if (_selectedTimeIndex == 0) ...[
+              _infoRow("Name", pass['name'] ?? "N/A"),
+              _infoRow("Phone", pass['phone'] ?? "N/A"),
+              _infoRow("ID Card", pass['id_card'] ?? "N/A"),
+            ],
+
+            // ================= EVENT PASS DETAILS =================
+            if (_selectedTimeIndex == 1) ...[
+              _infoRow("Date", pass['pass_date'] ?? ""),
+              _infoRow("Slot", pass['slot_name'] ?? ""),
+              _infoRow(
+                "Time",
+                "${pass['start_time']} - ${pass['end_time']}",
+              ),
+            ],
+
+            const SizedBox(height: 20),
+
+            // ================= QR =================
+            Center(
+              child: qr.toString().startsWith('data:image')
+                  ? Image.memory(
+                base64Decode(qr.split(',').last),
+                height: 200,
+                width: 200,
+              )
+                  : Image.network(
+                qr
+                    .replaceFirst(
+                    "https://nahatasports.com/", "")
+                    .replaceFirst("https:/", "https://"),
+                height: 200,
+                width: 200,
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // ================= ACTIVE BADGE =================
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: const Text(
+                  "ACTIVE PASS",
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // ================= SHARE =================
+            Center(
+              child: TextButton.icon(
+                onPressed: () => _sharePass(repaintKey),
+                icon: const Icon(Icons.share),
+                label: const Text("Share Pass"),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+  Widget _infoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Text(
+        _selectedTimeIndex == 0
+            ? "No active gate pass found"
+            : "No active event pass found",
+        style: TextStyle(color: Colors.grey[600], fontSize: 16),
+      ),
+    );
+  }
+
+
+  Future<void> _sharePass(GlobalKey repaintKey) async {
+    try {
+      // wait for UI to finish painting
+      await Future.delayed(const Duration(milliseconds: 300));
+      await WidgetsBinding.instance.endOfFrame;
+
+      final boundary =
+      repaintKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+
+      final image = await boundary.toImage(pixelRatio: 3.0);
+
+      final byteData =
+      await image.toByteData(format: ui.ImageByteFormat.png);
+
+      if (byteData == null) return;
+
+      final pngBytes = byteData.buffer.asUint8List();
+
+      final directory = await getTemporaryDirectory();
+      final file = File('${directory.path}/pass_${DateTime.now().millisecondsSinceEpoch}.png');
+
+      await file.writeAsBytes(pngBytes);
+
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: "Here is your tournament pass 🎟️",
+      );
+    } catch (e) {
+      debugPrint("Share failed: $e");
+    }
+  }
+
 
   Widget _buildTimeToggle(String title, int index) {
     final isSelected = _selectedTimeIndex == index;
@@ -1145,7 +1677,9 @@ class _YourPassScreenState extends State<YourPassScreen> {
         setState(() {
           _selectedTimeIndex = index;
         });
+        _fetchPasses(); // reload based on status
       },
+
       child: Text(
         title,
         style: TextStyle(
@@ -1157,25 +1691,9 @@ class _YourPassScreenState extends State<YourPassScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.qr_code_2_outlined, size: 70, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          Text(
-            'No ${_selectedTimeIndex == 0 ? 'active' : 'expired'} passes found',
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 16,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
+
+
 // edit_profile_screen.dart
 
 class EditProfileScreen extends StatefulWidget {
@@ -1193,7 +1711,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final idCardController = TextEditingController();
   final emailController = TextEditingController();
   final phoneController = TextEditingController();
-  final parentController = TextEditingController();
+  // final parentController = TextEditingController();
   final dobController = TextEditingController();
   final coachIdController = TextEditingController();
   final statusController = TextEditingController();
@@ -1249,7 +1767,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           idCardController.text = data['id_card']?.toString() ?? '';
           emailController.text = data['email']?.toString() ?? '';
           phoneController.text = data['phone']?.toString() ?? '';
-          parentController.text = data['parent_contact']?.toString() ?? '';
+          // parentController.text = data['parent_contact']?.toString() ?? '';
           dobController.text = data['dob']?.toString() ?? '';
           selectedGender = data['gender']?.toString();
           selectedBloodGroup = data['blood_group']?.toString();
@@ -1336,7 +1854,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       request.fields['name'] = nameController.text.trim();
       request.fields['email'] = emailController.text.trim();
       request.fields['phone'] = phoneController.text.trim();
-      request.fields['parent_contact'] = parentController.text.trim();
+      // request.fields['parent_contact'] = parentController.text.trim();
       request.fields['dob'] = dobController.text.trim();
       request.fields['gender'] = selectedGender ?? '';
       request.fields['blood_group'] = selectedBloodGroup ?? '';
@@ -1404,7 +1922,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     idCardController.dispose();
     emailController.dispose();
     phoneController.dispose();
-    parentController.dispose();
+    // parentController.dispose();
     dobController.dispose();
     coachIdController.dispose();
     statusController.dispose();
@@ -1533,20 +2051,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 const SizedBox(height: 12),
 
                 // Parent contact
-                _label('Parent / Guardian Contact'),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: parentController,
-                  decoration: _outlined('Parent / Guardian Contact'),
-                  keyboardType: TextInputType.phone,
-                  validator: (v) {
-                    if (v != null && v.isNotEmpty && !_phoneReg.hasMatch(v)) {
-                      return 'Enter 10 digit phone';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
+                // _label('Parent / Guardian Contact'),
+                // const SizedBox(height: 6),
+                // TextFormField(
+                //   controller: parentController,
+                //   decoration: _outlined('Parent / Guardian Contact'),
+                //   keyboardType: TextInputType.phone,
+                //   validator: (v) {
+                //     if (v != null && v.isNotEmpty && !_phoneReg.hasMatch(v)) {
+                //       return 'Enter 10 digit phone';
+                //     }
+                //     return null;
+                //   },
+                // ),
+                // const SizedBox(height: 12),
 
                 // DOB
                 _label('Date of Birth'),
@@ -2093,3 +2611,4 @@ class _StudentFeedbackScreenState extends State<StudentFeedbackScreen> {
     );
   }
 }
+

@@ -13,7 +13,7 @@ class GoogleAuthService {
   );
 
 
-  static Future<Map<String, dynamic>?> signInWithGoogle() async {
+  static Future<Map<String, dynamic>?> signInWithGoogle() async    {
     try {
       // 🔥 Always try to sign out old sessions first
       try {

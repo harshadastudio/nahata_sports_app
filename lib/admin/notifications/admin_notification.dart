@@ -601,43 +601,51 @@ class _NotificationDetailScreenState
 
 class CourtResponse {
   final String id;
-  final String transactionId;
-  final String selectedDate;
   final String courtName;
+  final String selectedDate;
   final List<SlotItem> slots;
-  final String amount;
-  final String bookedBy;
+  final double amount;
   final String status;
-  final String createdAt;
 
   CourtResponse({
     required this.id,
-    required this.transactionId,
-    required this.selectedDate,
     required this.courtName,
+    required this.selectedDate,
     required this.slots,
     required this.amount,
-    required this.bookedBy,
     required this.status,
-    required this.createdAt,
   });
 
   factory CourtResponse.fromJson(Map<String, dynamic> json) {
-    final List decodedSlots =
-    jsonDecode(json['slots'] ?? '[]');
+    List<SlotItem> parsedSlots = [];
+
+    final rawSlots = json['slots'];
+
+    if (rawSlots != null && rawSlots is String && rawSlots.isNotEmpty) {
+      try {
+        // 🔥 FIX: remove trailing dots/spaces
+        final cleanSlots =
+        rawSlots.trim().replaceAll(RegExp(r'\.\s*$'), '');
+
+        final decoded = jsonDecode(cleanSlots);
+
+        if (decoded is List) {
+          parsedSlots =
+              decoded.map((e) => SlotItem.fromJson(e)).toList();
+        }
+      } catch (e) {
+        // Fail silently to avoid crashing the app
+        parsedSlots = [];
+      }
+    }
 
     return CourtResponse(
-      id: json['id'].toString(),
-      transactionId: json['transaction_id'] ?? '',
-      selectedDate: json['selected_date'] ?? '',
+      id: json['id']?.toString() ?? '',
       courtName: json['court_name'] ?? '',
-      slots: decodedSlots
-          .map((e) => SlotItem.fromJson(e))
-          .toList(),
-      amount: json['amount'] ?? '0',
-      bookedBy: json['booked_by'] ?? '',
+      selectedDate: json['selected_date'] ?? '',
+      slots: parsedSlots,
+      amount: double.tryParse(json['amount']?.toString() ?? '0') ?? 0,
       status: json['status'] ?? '',
-      createdAt: json['created_at'] ?? '',
     );
   }
 }
@@ -675,29 +683,17 @@ class CourtResponseService {
 
 class SlotItem {
   final String court;
-  final String hourType;
-  final String dayType;
   final String time;
-  final String date;
-  final double price;
 
   SlotItem({
     required this.court,
-    required this.hourType,
-    required this.dayType,
     required this.time,
-    required this.date,
-    required this.price,
   });
 
   factory SlotItem.fromJson(Map<String, dynamic> json) {
     return SlotItem(
       court: json['court'] ?? '',
-      hourType: json['hourType'] ?? '',
-      dayType: json['dayType'] ?? '',
       time: json['time'] ?? '',
-      date: json['date'] ?? '',
-      price: (json['price'] as num).toDouble(),
     );
   }
 }

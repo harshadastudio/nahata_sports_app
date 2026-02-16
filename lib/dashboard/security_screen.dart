@@ -84,7 +84,9 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
           "message": "Invalid JSON response from server",
         };
       }
-
+      print("Status: ${response.statusCode}");
+      print("Body: ${response.body}");
+      print(response);
       setState(() {
         responseData = data;
       });
@@ -100,6 +102,7 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
     } finally {
       setState(() => isLoading = false);
     }
+
   }
 
   void _onQRViewCreated(QRViewController controller) {

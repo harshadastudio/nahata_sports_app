@@ -348,7 +348,8 @@ class _ScreenState extends State<Screen> {
 class StudentData {
   final Map<String, dynamic> student;
   final Map<String, dynamic>? fee;
-  final Map<String, dynamic>? gatePass;
+  final Map<String, dynamic>?
+  gatePass;
   final String? coachName;
 
   StudentData({required this.student, this.fee, this.gatePass, this.coachName});

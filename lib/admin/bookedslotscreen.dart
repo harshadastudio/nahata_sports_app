@@ -123,7 +123,7 @@ class _BookedSlotsScreenState extends State<BookedSlotsScreen> {
                         (s) => Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
-                        "• ${s.time} (${s.hourType}) - ₹${s.price}",
+                        "• ${s.time}",
                         style: const TextStyle(fontSize: 12),
                       ),
                     ),
