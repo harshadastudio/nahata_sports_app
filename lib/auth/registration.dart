@@ -295,22 +295,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 15),
-
-                  // Parent Phone (Optional)
-                  TextFormField(
-                    controller: parentPhoneController,
-
-
-            keyboardType: TextInputType.phone,
-                    decoration:
-                    _inputDecoration("Parent / Guardian Contact (Optional)"),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(10)
-                    ],
-
-                  ),
+            //       const SizedBox(height: 15),
+            //
+            //       // Parent Phone (Optional)
+            //       TextFormField(
+            //         controller: parentPhoneController,
+            //
+            //
+            // keyboardType: TextInputType.phone,
+            //         decoration:
+            //         _inputDecoration("Parent / Guardian Contact (Optional)"),
+            //         inputFormatters: [
+            //           FilteringTextInputFormatter.digitsOnly,
+            //           LengthLimitingTextInputFormatter(10)
+            //         ],
+            //
+            //       ),
                   const SizedBox(height: 15),
 
                   // DOB
@@ -422,7 +422,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             }
 
                             var response = await http.post(
-                              Uri.parse("https://nahatasports.com/api/register"),
+                              Uri.parse("https://api.nahatasports.com/api/students/register"),
+                              // Uri.parse("https://nahatasports.com/api/register"),
                               headers: {"Content-Type": "application/json"},
                               body: jsonEncode(body),
                             );

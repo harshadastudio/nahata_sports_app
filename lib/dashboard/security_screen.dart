@@ -64,45 +64,82 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
       controller!.resumeCamera();
     }
   }
-
   Future<void> sendQRtoAPI(String qrCodeData) async {
     setState(() => isLoading = true);
 
     try {
+      print("📤 Sending QR to API: $qrCodeData");
+
+      // Parse QR text into key-value map
+      final Map<String, String> parsed = {};
+      for (final line in qrCodeData.split('\n')) {
+        final colonIndex = line.indexOf(':');
+        if (colonIndex != -1) {
+          final key = line.substring(0, colonIndex).trim();
+          final value = line.substring(colonIndex + 1).trim();
+          parsed[key] = value;
+        }
+      }
+
       final response = await http.post(
         Uri.parse("https://nahatasports.com/api/scan"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({"qr_code_data": qrCodeData}),
       );
 
-      Map<String, dynamic> data;
-      try {
-        data = jsonDecode(response.body);
-      } catch (e) {
-        data = {
-          "status": "ERROR",
-          "message": "Invalid JSON response from server",
-        };
+      print("Status Code: ${response.statusCode}");
+      print("Response Body: ${response.body}");
+
+      final Map<String, dynamic> data = jsonDecode(response.body);
+
+      // Build details from parsed QR text
+      final List<Map<String, String>> details = [];
+
+      const fieldOrder = [
+        "Booking ID",
+        "Name",
+        "Email",
+        "Date",
+        "Courts",
+        "Amount",
+        "Transaction ID",
+      ];
+
+      for (final field in fieldOrder) {
+        if (parsed.containsKey(field)) {
+          details.add({"field": field, "value": parsed[field]!});
+        }
       }
-      print("Status: ${response.statusCode}");
-      print("Body: ${response.body}");
-      print(response);
+
+      // Fallback: also add student fields from API if present
+      if (details.isEmpty && data['student'] != null) {
+        details.addAll([
+          {"field": "Student ID", "value": data['student']['id'] ?? ''},
+          {"field": "Name", "value": data['student']['name'] ?? ''},
+        ]);
+      }
+
       setState(() {
-        responseData = data;
+        responseData = {
+          "status": data['status'] ?? 'error',
+          "message": data['message'] ?? 'Unknown error',
+          "details": details,
+        };
       });
+
       _animationController.forward(from: 0);
     } catch (e) {
       setState(() {
         responseData = {
-          "status": "ERROR",
-          "message": e.toString(),
+          "status": "red",
+          "message": "Something went wrong",
+          "details": [],
         };
       });
       _animationController.forward(from: 0);
     } finally {
       setState(() => isLoading = false);
     }
-
   }
 
   void _onQRViewCreated(QRViewController controller) {
@@ -361,10 +398,10 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
                                       controller?.resumeCamera();
                                     });
                                   },
-                                  icon: const Icon(Icons.qr_code),
-                                  label: const Text("Scan Next Person"),
+                                  icon: const Icon(Icons.qr_code,color: Colors.white,),
+                                  label: const Text("Scan Next Person",style: TextStyle(color: Colors.white),),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.blue[700],
+                                    backgroundColor: Colors.blue,
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 20, vertical: 14),
                                     shape: RoundedRectangleBorder(
@@ -413,8 +450,8 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
                           scanResult = null;
                         });
                       },
-                      icon: const Icon(Icons.refresh),
-                      label: const Text("Restart Scanner"),
+                      icon: const Icon(Icons.refresh,color: Colors.white,),
+                      label: const Text("Restart Scanner",style: TextStyle(color: Colors.white),),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue[700],
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),

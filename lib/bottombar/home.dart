@@ -1153,10 +1153,41 @@ class _HomeScreenState extends State<HomeScreen> {
   String userInitial = '?';
   bool isLoggedIn = false;
 
-  final List<Map<String, String>> _venues = [
-    {'name': 'Gangadham Chowk', 'image': 'assets/23.webp'},
-    {'name': 'Sinhgad Rd', 'image': 'assets/56.jpg'},
-  ];
+  List<Map<String, dynamic>> _venues = [];
+  bool _loadingVenues = true;
+
+  Future<void> _fetchVenues() async {
+    final baseUrl = 'https://api.nahatasports.com/api';
+    final url = Uri.parse('$baseUrl/sports-complexes?status=Active&showOnFrontend=true&limit=50');
+    try {
+      final res = await http.get(url, headers: {'Accept': 'application/json'});
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if ((body['success'] == true || body['status'] == true) && body['data'] != null) {
+          final List complexes = body['data']['sportsComplexes'] ?? [];
+          _venues = complexes.map<Map<String, dynamic>>((c) {
+            return {
+              'id': c['id'],
+              'name': c['name'] ?? '',
+              'image': c['image'] ?? '',
+              'address': c['address'] ?? '',
+              'raw': c,
+            };
+          }).toList();
+        } else {
+          _venues = [];
+        }
+      } else {
+        print('❌ Fetch venues failed HTTP ${res.statusCode}');
+        _venues = [];
+      }
+    } catch (e) {
+      print('❌ _fetchVenues error: $e');
+      _venues = [];
+    }
+
+    if (mounted) setState(() { _loadingVenues = false; });
+  }
 
   @override
   void initState() {
@@ -1164,6 +1195,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _pageController = PageController();
     _getCurrentLocation();
     _fetchUserInitial();
+    _fetchVenues();
 
     // Auto-slide every 3 seconds
     Future.delayed(const Duration(seconds: 2), _autoSlide);
@@ -1345,6 +1377,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     Future.delayed(const Duration(seconds: 3), () {
       if (!mounted) return;
+
+      if (_venues.isEmpty) {
+        // nothing to slide yet — try again later
+        _autoSlide();
+        return;
+      }
 
       int nextPage = (_currentPage + 1) % _venues.length;
       _pageController.animateToPage(
@@ -1819,10 +1857,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                 child: Stack(
                                   fit: StackFit.expand,
                                   children: [
-                                    Image.asset(
-                                      _venues[index]['image']!,
-                                      fit: BoxFit.cover,
-                                    ),
+                                    (() {
+                                      final img = (_venues[index]['image'] ?? '').toString();
+                                      if (img.startsWith('http')) {
+                                        return Image.network(img, fit: BoxFit.cover);
+                                      } else if (img.isNotEmpty) {
+                                        return Image.asset(img, fit: BoxFit.cover);
+                                      } else {
+                                        return Container(color: Colors.grey[300]);
+                                      }
+                                    })(),
                                     Container(
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(

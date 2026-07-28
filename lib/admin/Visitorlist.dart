@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:excel/excel.dart';
+import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -15,8 +16,8 @@ class VisitorPass {
   final String name;
   final String phone;
   final String purpose;
-  final String date;
-  final String scannedAt;
+  final DateTime date;
+  final DateTime? scannedAt;
 
   VisitorPass({
     required this.id,
@@ -24,20 +25,23 @@ class VisitorPass {
     required this.phone,
     required this.purpose,
     required this.date,
-    required this.scannedAt,
+    this.scannedAt,
   });
 
   factory VisitorPass.fromJson(Map<String, dynamic> json) {
+    final parsed = json['parsed'] ?? {};
+
     return VisitorPass(
-      id: json['id'],
-      name: json['parsed']['name'],
-      phone: json['parsed']['phone'],
-      purpose: json['parsed']['purpose'],
-      date: json['parsed']['date'],
-      scannedAt: json['scanned_at'],
+      id: json['id']?.toString() ?? '',
+      name: parsed['name']?.toString() ?? '',
+      phone: parsed['phone']?.toString() ?? '',
+      purpose: parsed['purpose']?.toString() ?? '',
+      date: DateTime.tryParse(parsed['date'] ?? '') ?? DateTime.now(),
+      scannedAt: DateTime.tryParse(json['scanned_at'] ?? ''),
     );
   }
 }
+
 Future<List<VisitorPass>> fetchVisitors({String? date}) async {
   final url = date == null
       ? "https://nahatasports.com/api/Visitor_passes"
@@ -90,11 +94,21 @@ class _VisitorPassScreenState extends State<VisitorPassScreen> {
   }
 
   Future<void> pickDate() async {
+    final now = DateTime.now();
+    final firstDate = DateTime(2024);
+    final lastDate = DateTime(2050, 12, 31); // full year
+
+    final safeInitialDate = selectedDate.isAfter(lastDate)
+        ? lastDate
+        : selectedDate.isBefore(firstDate)
+        ? firstDate
+        : selectedDate;
+
     DateTime? value = await showDatePicker(
       context: context,
-      firstDate: DateTime(2024),
-      lastDate: DateTime(2026),
-      initialDate: selectedDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      initialDate: safeInitialDate,
     );
 
     if (value != null) {
@@ -249,10 +263,20 @@ class _VisitorPassScreenState extends State<VisitorPassScreen> {
                       _infoRow(Icons.flag, "Purpose", v.purpose),
                       const SizedBox(height: 8),
 
-                      _infoRow(Icons.date_range, "Pass Date", v.date),
+                      _infoRow(
+                        Icons.date_range,
+                        "Pass Date",
+                        _formatDate(v.date),
+                      ),
+
                       const SizedBox(height: 8),
 
-                      _infoRow(Icons.access_time, "Scanned At", v.scannedAt),
+                      _infoRow(
+                        Icons.access_time,
+                        "Scanned At",
+                        _formatDate(v.scannedAt),
+                      ),
+
                     ],
                   ),
                 );
@@ -262,6 +286,10 @@ class _VisitorPassScreenState extends State<VisitorPassScreen> {
         ],
       ),
     );
+  }
+  String _formatDate(DateTime? date) {
+    if (date == null) return '-';
+    return DateFormat('dd MMM yyyy, hh:mm a').format(date);
   }
 
   Widget _infoRow(IconData icon, String label, String value) {
@@ -281,7 +309,10 @@ class _VisitorPassScreenState extends State<VisitorPassScreen> {
       ],
     );
   }
-
+  String formatDateTime(DateTime? date) {
+    if (date == null) return '-';
+    return DateFormat('dd MMM yyyy, hh:mm a').format(date);
+  }
   Future<void> exportToPdf() async {
     final pdf = pw.Document();
 
@@ -329,8 +360,8 @@ class _VisitorPassScreenState extends State<VisitorPassScreen> {
                   pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(v.name)),
                   pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(v.phone)),
                   pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(v.purpose)),
-                  pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(v.date)),
-                  pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(v.scannedAt)),
+                  pw.Padding(padding: pw.EdgeInsets.all(8), child: pw.Text(formatDateTime(v.date))),
+                  pw.Padding(padding:  pw.EdgeInsets.all(8), child: pw.Text(formatDateTime(v.scannedAt))),
                 ]);
               })
             ],
@@ -345,7 +376,10 @@ class _VisitorPassScreenState extends State<VisitorPassScreen> {
     await file.writeAsBytes(await pdf.save());
     OpenFile.open(file.path);
   }
-
+  String excelDate(DateTime? date) {
+    if (date == null) return '-';
+    return DateFormat('yyyy-MM-dd HH:mm').format(date);
+  }
   Future<void> exportToExcel() async {
     var excel = Excel.createExcel();
     Sheet sheetObject = excel['Visitor Passes'];
@@ -367,8 +401,9 @@ class _VisitorPassScreenState extends State<VisitorPassScreen> {
         TextCellValue(v.name),
         TextCellValue(v.phone),
         TextCellValue(v.purpose),
-        TextCellValue(v.date),
-        TextCellValue(v.scannedAt),
+        TextCellValue(excelDate(v.date)),
+        TextCellValue(excelDate(v.scannedAt)),
+
       ]);
     }
 

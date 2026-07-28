@@ -1,29 +1,52 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-
 class AdminNotificationService {
   static const baseUrl = "https://nahatasports.com/api/admin";
 
   static Future<Map<String, dynamic>> fetchNotifications() async {
-    final response =
-    await http.get(Uri.parse("$baseUrl/notifications"));
+    final response = await http
+        .get(Uri.parse("$baseUrl/notifications"))
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      throw Exception("Failed to fetch notifications");
+    }
 
     return jsonDecode(response.body);
   }
 
   static Future<void> markAsRead(String id) async {
-    await http.post(
-      Uri.parse("$baseUrl/notifications/read/$id"),
-    );
+    await http.post(Uri.parse("$baseUrl/notifications/read/$id"));
   }
 
   static Future<void> markAllAsRead() async {
-    await http.post(
-      Uri.parse("$baseUrl/notifications/read-all"),
-    );
+    await http.post(Uri.parse("$baseUrl/notifications/read-all"));
   }
 }
+
+// class AdminNotificationService {
+//   static const baseUrl = "https://nahatasports.com/api/admin";
+//
+//   static Future<Map<String, dynamic>>   fetchNotifications() async {
+//     final response =
+//     await http.get(Uri.parse("$baseUrl/notifications"));
+//
+//     return jsonDecode(response.body);
+//   }
+//
+//   static Future<void> markAsRead(String id) async {
+//     await http.post(
+//       Uri.parse("$baseUrl/notifications/read/$id"),
+//     );
+//   }
+//
+//   static Future<void> markAllAsRead() async {
+//     await http.post(
+//       Uri.parse("$baseUrl/notifications/read-all"),
+//     );
+//   }
+// }
 
 class AdminNotification {
   final String id;
@@ -606,6 +629,7 @@ class CourtResponse {
   final List<SlotItem> slots;
   final double amount;
   final String status;
+  final String? qrCode; // 👈 add this
 
   CourtResponse({
     required this.id,
@@ -614,6 +638,8 @@ class CourtResponse {
     required this.slots,
     required this.amount,
     required this.status,
+    this.qrCode, // 👈 add this
+
   });
 
   factory CourtResponse.fromJson(Map<String, dynamic> json) {
@@ -621,31 +647,35 @@ class CourtResponse {
 
     final rawSlots = json['slots'];
 
-    if (rawSlots != null && rawSlots is String && rawSlots.isNotEmpty) {
-      try {
-        // 🔥 FIX: remove trailing dots/spaces
-        final cleanSlots =
-        rawSlots.trim().replaceAll(RegExp(r'\.\s*$'), '');
+    try {
+      if (rawSlots is String && rawSlots.isNotEmpty) {
+        final cleaned = rawSlots
+            .trim()
+            .replaceAll(RegExp(r'\.+$'), ''); // remove trailing dots
 
-        final decoded = jsonDecode(cleanSlots);
+        final decoded = jsonDecode(cleaned);
 
         if (decoded is List) {
           parsedSlots =
               decoded.map((e) => SlotItem.fromJson(e)).toList();
         }
-      } catch (e) {
-        // Fail silently to avoid crashing the app
-        parsedSlots = [];
+      } else if (rawSlots is List) {
+        parsedSlots =
+            rawSlots.map((e) => SlotItem.fromJson(e)).toList();
       }
+    } catch (e) {
+      parsedSlots = [];
     }
 
     return CourtResponse(
       id: json['id']?.toString() ?? '',
-      courtName: json['court_name'] ?? '',
-      selectedDate: json['selected_date'] ?? '',
+      courtName: json['court_name']?.toString() ?? '',
+      selectedDate: json['selected_date']?.toString() ?? '',
       slots: parsedSlots,
       amount: double.tryParse(json['amount']?.toString() ?? '0') ?? 0,
-      status: json['status'] ?? '',
+      status: json['status']?.toString() ?? '',
+      qrCode: json['qr_code'], // 👈 add this (will be null if not set)
+
     );
   }
 }

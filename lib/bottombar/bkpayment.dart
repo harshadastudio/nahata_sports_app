@@ -35,7 +35,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
   String selectedPaymentMethod = 'online';
   bool isLoading = false;
   bool agreedToTerms = false;  // Add this line
+  bool _isVerifyingPayment = false;
 
+  // 🔄 NEW API: base url + booking/order state carried across the Razorpay flow
+  static const String _apiBase = "https://api.nahatasports.com/api";
+  static const String _bookingType = "facility";
+  List<int> _bookingIds = [];
+  String? _rzpOrderId;
+  String? _rzpKeyId;
+
+  Future<String?> _getAuthToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('authToken');
+  }
   @override
   void initState() {
     super.initState();
@@ -99,6 +111,25 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return null;
     }
   }
+  Future<String?> _getUserName() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      final userJson = prefs.getString('user'); // ✅ SAME AS EMAIL
+
+      if (userJson != null) {
+        final userData = jsonDecode(userJson);
+        final name = userData['name']?.toString();
+        print("👤 User Name: $name");
+        return name;
+      }
+
+      return null;
+    } catch (e) {
+      print("❌ SharedPreferences error (name): $e");
+      return null;
+    }
+  }
+
 
   Future<void> showBookingConfirmedNotification({
     required String date,
@@ -141,131 +172,129 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return email != null;
   }
 
-  Future<String?> _createRazorpayOrder(int amount) async {
-    try {
+  // Future<String?> _createRazorpayOrder(int amountInRupees)
+  // async {
+  //   try {
+  //     final res = await http.post(
+  //       Uri.parse("https://nahatasports.com/api/create-order-app"),
+  //       headers: {"Content-Type": "application/json"},
+  //       body: jsonEncode({
+  //         "amount": amountInRupees, // 🔥 MUST BE PAISA
+  //       }),
+  //     );
+  //
+  //     print("📦 Create Order Response: ${res.body}");
+  //
+  //     if (res.statusCode == 200) {
+  //       final data = jsonDecode(res.body);
+  //       if (data["success"] == true) {
+  //         return data["data"]["order_id"]; // safer
+  //       }
+  //     }
+  //   } catch (e) {
+  //     print("❌ Order Error: $e");
+  //   }
+  //   return null;
+  // }
+
+  // ---------------------- OLD API (commented out) ----------------------
+  // Future<String?> _createRazorpayOrder(int amount) async {
+  //   final res = await http.post(
+  //     Uri.parse("https://nahatasports.com/api/create-order-app"),
+  //     headers: {"Content-Type": "application/json"},
+  //     body: jsonEncode({"amount": amount}),
+  //   );
+  //
+  //   if (res.statusCode == 200) {
+  //     final data = jsonDecode(res.body);
+  //     return data["order_id"];
+  //   }
+  //   return null;
+  // }
+
+  // ---------------------- NEW API: reserve booking(s) ----------------------
+  // POST /courts/bookings/create  (one call per selected slot)
+  // Returns the list of created booking ids (paymentStatus = Pending).
+  Future<List<int>> _createBookings({
+    required String? token,
+    required List<Map<String, dynamic>> slots,
+  }) async {
+    final List<int> ids = [];
+    for (final s in slots) {
+      final body = {
+        "sportComplexId": s['sportComplexId'] ??
+            widget.bookingDetails['sportComplexId'],
+        "sportId": s['sportId'] ?? widget.bookingDetails['sportId'],
+        "date": s['date'],
+        "startTime": s['startTime'],
+        "endTime": s['endTime'],
+        "totalAmount": (s['price'] as num?)?.toInt() ?? 0,
+      };
+
       final res = await http.post(
-        Uri.parse("https://nahatasports.com/api/createOrder"),
+        Uri.parse("$_apiBase/courts/bookings/create"),
         headers: {
           "Content-Type": "application/json",
           "Accept": "application/json",
+          if (token != null) "Authorization": "Bearer $token",
         },
-        body: jsonEncode({
-          "amount": amount,
-        }),
+        body: jsonEncode(body),
       );
 
-      print("📦 Create Order Response: ${res.body}");
+      print("📦 create booking (${res.statusCode}): ${res.body}");
 
-      if (res.statusCode == 200) {
+      if (res.statusCode == 200 || res.statusCode == 201) {
         final data = jsonDecode(res.body);
-        if (data["success"] == true) {
-          return data["order_id"];
+        final List bookings = data['data']?['bookings'] ?? [];
+        for (final b in bookings) {
+          final id = b['id'];
+          if (id is int) {
+            ids.add(id);
+          } else {
+            final parsed = int.tryParse('$id');
+            if (parsed != null) ids.add(parsed);
+          }
         }
       }
-    } catch (e) {
-      print("❌ Create Order Error: $e");
+    }
+    return ids;
+  }
+
+  // POST /payments/create-order  -> { orderId, amount(paise), keyId }
+  Future<Map<String, dynamic>?> _createOrder({
+    required String? token,
+    required int bookingId,
+    required int amount, // rupees
+  }) async {
+    final res = await http.post(
+      Uri.parse("$_apiBase/payments/create-order"),
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        if (token != null) "Authorization": "Bearer $token",
+      },
+      body: jsonEncode({
+        "bookingType": _bookingType,
+        "bookingId": bookingId,
+        "amount": amount,
+      }),
+    );
+
+    print("📦 create-order (${res.statusCode}): ${res.body}");
+
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      final data = jsonDecode(res.body);
+      return data['data'] as Map<String, dynamic>?;
     }
     return null;
   }
 
 
 
-
-  //
-  //
-  // Future<void> _storeBooking({
-  //   required String email,
-  //   required String slot,
-  //   required String date,
-  //   required String courtName,
-  //   required String transactionId,
-  //   required String razorpayPaymentId,
-  //   required String razorpayOrderId,
-  //   required String razorpaySignature,
-  //   required int cashAmount,
-  //   required int onlinePaid,
-  // }) async {
-  //   if (isLoading) return;
-  //
-  //   setState(() => isLoading = true);
-  //
-  //   try {
-  //     final price =
-  //         (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
-  //     final actualOnlinePaid = onlinePaid;
-  //
-  //     final txnId = (actualOnlinePaid > 0 && transactionId.isNotEmpty)
-  //         ? transactionId
-  //         : "CASH-${DateTime.now().millisecondsSinceEpoch}";
-  //
-  //     final formattedDate = date.isNotEmpty
-  //         ? date
-  //         : DateTime.now().toIso8601String().split("T").first;
-  //
-  //     final bookingData = {
-  //       "transaction_id": txnId,
-  //       "razorpay_payment_id":
-  //       transactionId.isNotEmpty ? transactionId : "N/A",
-  //       "selected_date": formattedDate,
-  //       "selected_slots": slot,
-  //       "total_amount": price.toString(),
-  //       "booked_by": email,
-  //       "amount_paid": actualOnlinePaid,
-  //       "cash_amount": cashAmount,
-  //       // "razorpay_payment_id": razorpayPaymentId,
-  //       "razorpay_order_id": razorpayOrderId,
-  //       "razorpay_signature": razorpaySignature,
-  //       "status": (actualOnlinePaid > 0 && cashAmount > 0)
-  //           ? "partial"
-  //           : "full",
-  //       "created_at": DateTime.now().toIso8601String(),
-  //     };
-  //
-  //     print("🔍 Booking Data: $bookingData");
-  //
-  //     final res = await http
-  //         .post(
-  //       Uri.parse("https://nahatasports.com/api/verifyPayment"),
-  //       headers: {
-  //         "Content-Type": "application/json",
-  //         "Accept": "application/json",
-  //       },
-  //       body: jsonEncode(bookingData),
-  //     )
-  //         .timeout(const Duration(seconds: 30));
-  //
-  //     print("📥 API Response (${res.statusCode}): ${res.body}");
-  //
-  //     if (res.statusCode == 200) {
-  //       final data = jsonDecode(res.body);
-  //       if (data["success"] == true || data["status"] == true) {
-  //
-  //         // 🔔 Show booking notification
-  //         await showBookingConfirmedNotification(
-  //           date: formattedDate,
-  //           slot: slot,
-  //           totalAmount: price,
-  //         );
-  //
-  //
-  //         _showSuccessDialog();
-  //       } else {
-  //         _showErrorDialog(
-  //             "Booking failed: ${data["message"] ?? 'Unknown error'}");
-  //       }
-  //     } else {
-  //       _showErrorDialog("Server error (${res.statusCode})");
-  //     }
-  //   } catch (e) {
-  //     print("❌ API Error: $e");
-  //     _showErrorDialog("Network error: ${e.toString()}");
-  //   } finally {
-  //     setState(() => isLoading = false);
-  //   }
-  // }
-  //
+  /* ❌ Cash-only booking removed — online only (used old verify-payment-app API)
   Future<void> _storeBookingCashOnly({
     required String email,
+    required String name,
     required List<Map<String, dynamic>> slots,
     required String date,
     required String courtName,
@@ -278,32 +307,45 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final total =
           (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
 
+
       final bookingData = {
-        "transaction_id": "CASH-${DateTime.now().millisecondsSinceEpoch}",
         "selected_date": date,
-        "court_name": courtName,
-        "selected_court": courtName,
-        "selected_slots": slots,
+        "selected_courts": [courtName],
+        "selected_slots": slots
+            .where((s) => s['time'] != null)
+            .map((s) => {
+          "court": s['court'],
+          "time": s['time'],
+          "date": s['date'],
+        })
+            .toList(),
+
+        // "selected_slots": slots.map((s) => s['time']).toList(),
         "total_amount": total,
+        "email": email,
+        "name": email, // or user name
         "amount_paid": 0,
         "cash_amount": cashAmount,
-        "booked_by": email,
-        "status": "cash",
+        "booked_by": name,
+        "location_id": widget.bookingDetails['location_id'] ?? 1,
       };
+
 
       print("📤 CASH BOOKING PAYLOAD: $bookingData");
 
       final res = await http.post(
-        Uri.parse("https://nahatasports.com/api/verifyPayment"),
+         Uri.parse("https://nahatasports.com/api/verify-payment-app"),
+        // Uri.parse("https://demo.nahatasports.com/booking/paymentverify"),
         headers: {
           "Content-Type": "application/json",
           "Accept": "application/json",
         },
         body: jsonEncode(bookingData),
       );
+      print("🧪 onlinePaid:  0| cashAmount: $cashAmount | total:0");
 
       print("📥 CASH API RESPONSE (${res.statusCode}): ${res.body}");
-
+      print(res);
       if (res.statusCode == 200) {
         // 🔔 Show booking notification
         final slotText = slots
@@ -325,255 +367,262 @@ class _PaymentScreenState extends State<PaymentScreen> {
     } finally {
       setState(() => isLoading = false);
     }
+    // print(res);
   }
+  */
 
-
+  // 🔄 NEW API: verify the payment against every reserved booking id.
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
-    setState(() => isLoading = false);
-
     print("🎉 Payment Success");
     print("PaymentId: ${response.paymentId}");
     print("OrderId: ${response.orderId}");
     print("Signature: ${response.signature}");
 
-    final email = await _getUserEmail();
-    if (email == null) {
-      _showErrorDialog("Session expired. Please login again.");
-      return;
+    final token = await _getAuthToken();
+
+    bool allVerified = _bookingIds.isNotEmpty;
+    String? failMessage;
+
+    for (final bookingId in _bookingIds) {
+      final ok = await _verifyPayment(
+        token: token,
+        bookingId: bookingId,
+        orderId: response.orderId ?? _rzpOrderId ?? '',
+        paymentId: response.paymentId ?? '',
+        signature: response.signature ?? '',
+      );
+      if (!ok) {
+        allVerified = false;
+        failMessage = "Payment verification failed for booking #$bookingId";
+      }
     }
 
-    // final bookingData = {
-    //   "razorpay_payment_id": response.paymentId,
-    //   "razorpay_order_id": response.orderId,
-    //   "razorpay_signature": response.signature,
-    //   "selected_date": widget.bookingDetails['date'],
-    //   "selected_court": widget.bookingDetails['court'],
-    //   "selected_slots": widget.bookingDetails['slots'],
-    //   "total_amount": widget.bookingDetails['price'],
-    //   "booked_by": email,
-    // };
-    // final slots = widget.bookingDetails['slots'] as List;
-    // final courtName = slots.isNotEmpty
-    //     ? slots.first['court']?.toString()
-    //     : '';
-    //
-    // final bookingData = {
-    //   "razorpay_payment_id": response.paymentId,
-    //   "razorpay_order_id": response.orderId,
-    //   "razorpay_signature": response.signature,
-    //   "selected_date": widget.bookingDetails['date'],
-    //   "court_name": courtName,
-    //   "selected_court": courtName,
-    //   "selected_slots": slots,
-    //   "total_amount": widget.bookingDetails['price'],
-    //     "amount_paid": widget.bookingDetails['onlinePaid'],
-    //   "cash_amount": widget.bookingDetails['cash'],
-    //   "booked_by": email,
-    // };
-    // final List<Map<String, dynamic>> slots =
-    // List<Map<String, dynamic>>.from(widget.bookingDetails['slots']);
-    //
-    //
-    //
-    // final courtName =
-    // slots.isNotEmpty ? slots.first['court']?.toString() ?? '' : '';
+    if (!mounted) return;
+    setState(() => isLoading = false);
 
-    final List<Map<String, dynamic>> slots =
-    List<Map<String, dynamic>>.from(widget.bookingDetails['slots']);
-
-    final courtName =
-    slots.isNotEmpty ? slots.first['court']?.toString() ?? '' : '';
-
-
-
-
-
-    if (courtName.isEmpty) {
-      _showErrorDialog("Court name missing. Please try again.");
-      return;
+    if (allVerified) {
+      final total = (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
+      final List slots = widget.bookingDetails['slots'] ?? [];
+      final slotText = slots
+          .map((s) => (s is Map ? s['time']?.toString() : s.toString()) ?? '')
+          .where((t) => t.isNotEmpty)
+          .join(', ');
+      await showBookingConfirmedNotification(
+        date: widget.bookingDetails['date']?.toString() ?? '',
+        slot: slotText,
+        totalAmount: total,
+      );
+      _showSuccessDialog();
+    } else {
+      _showErrorDialog(failMessage ?? "Payment verification failed");
     }
-
-    final int cashAmount =
-        (widget.bookingDetails['cash'] as num?)?.toInt() ?? 0;
-
-    final int totalAmount =
-        (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
-
-    final int onlinePaid = totalAmount - cashAmount;
-
-    final bookingData = {
-      "razorpay_payment_id": response.paymentId,
-      "razorpay_order_id": response.orderId,
-      "razorpay_signature": response.signature,
-      "selected_date": widget.bookingDetails['date'],
-      "court_name": courtName,
-      "selected_court": courtName,
-      "selected_slots": slots,
-      "total_amount": totalAmount,
-      "amount_paid": onlinePaid, // ✅ FIXED
-      "cash_amount": cashAmount,
-      "booked_by": email,
-    };
-
-
-    print("📤 Verify Payment Payload: $bookingData");
-
-    await _verifyPayment(bookingData);
   }
-  // Future<void> _verifyPaymentAndStore(
-  //      Map<String, dynamic> bookingData,
-  //      String email,
-  //      String courtName,
-  //     // String courtName,
-  //     // Map<String, dynamic> bookingData,
-  //     // String email,
-  //     ) async {
-  //   final List<Map<String, dynamic>> slots =
-  //   List<Map<String, dynamic>>.from(widget.bookingDetails['slots']);
-  //
-  //   final courtName =
-  //   slots.isNotEmpty ? slots.first['court']?.toString() ?? '' : '';
-  //
-  //   try {
-  //     final res = await http.post(
-  //       Uri.parse("https://nahatasports.com/api/verifyPayment"),
-  //       headers: {
-  //         "Content-Type": "application/json",
-  //         "Accept": "application/json",
-  //       },
-  //       body: jsonEncode(bookingData),
-  //     );
-  //
-  //     print("✅ Verify Response: ${res.body}");
-  //
-  //     if (res.statusCode == 200) {
-  //       final data = jsonDecode(res.body);
-  //
-  //       if (data["success"] == true) {
-  //
-  //         // ✅ STORE BOOKING ONLY AFTER VERIFICATION
-  //         final slot = jsonEncode(widget.bookingDetails['slots']);
-  //         final date = widget.bookingDetails['date']?.toString() ?? '';
-  //         final price = (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
-  //         final cashAmount =
-  //             (widget.bookingDetails['cash'] as num?)?.toInt() ?? 0;
-  //         final onlinePaid = price - cashAmount;
-  //
-  //         await _storeBooking(
-  //           courtName: courtName,
-  //           email: email,
-  //           slot: slot,
-  //           date: date,
-  //           transactionId: bookingData["razorpay_payment_id"] ?? '',
-  //           cashAmount: cashAmount,
-  //           onlinePaid: onlinePaid,
-  //           razorpayPaymentId: bookingData["razorpay_payment_id"],
-  //           razorpayOrderId: bookingData["razorpay_order_id"],
-  //           razorpaySignature: bookingData["razorpay_signature"],
-  //         );
-  //       } else {
-  //         _showErrorDialog("Payment verification failed.");
-  //       }
-  //     } else {
-  //       _showErrorDialog("Server error during payment verification.");
-  //     }
-  //   } catch (e) {
-  //     _showErrorDialog("Verification error: ${e.toString()}");
-  //   }
-  // }
-
   // void _handlePaymentSuccess(PaymentSuccessResponse response) async {
-  //
-  //   print("🎉 Payment Success: ${response.paymentId}");
-  //   print("🎉 Payment Success");
-  //   print("PaymentId: ${response.paymentId}");
-  //   print("OrderId: ${response.orderId}");
-  //   print("Signature: ${response.signature}");
-  //
+  //   setState(() => isLoading = true); // Keep loading during verification
+  //     print("🎉 Payment Success");
+  //     print("PaymentId: ${response.paymentId}");
+  //     print("OrderId: ${response.orderId}");
+  //     print("Signature: ${response.signature}");
   //   final email = await _getUserEmail();
-  //   if (email == null) {
+  //   final name = await _getUserName();
+  //
+  //   if (email == null || name == null) {
   //     _showErrorDialog("Session expired. Please login again.");
   //     return;
   //   }
+  //
+  //   final List<Map<String, dynamic>> slots =
+  //   List<Map<String, dynamic>>.from(widget.bookingDetails['slots']);
+  //
+  //   final courtName = slots.isNotEmpty ? slots.first['court']?.toString() ?? '' : '';
+  //
+  //   // Get financial details
+  //   final double totalAmount = (widget.bookingDetails['price'] as num?)?.toDouble() ?? 0.0;
+  //   final double cashAmount = (widget.bookingDetails['cash'] as num?)?.toDouble() ?? 0.0;
+  //
+  //   // Logic: Online Paid = Total - What user promised to pay in cash later
+  //   // final double onlinePaid = totalAmount - cashAmount;
+  //   final int onlinePaid = (totalAmount - cashAmount).round();
+  //
+  //   if (onlinePaid <= 0) {
+  //     _showErrorDialog("Invalid partial payment amount");
+  //     setState(() => isLoading = false);
+  //     return;
+  //   }
+  //
+  //   // final bookingData = {
+  //   //   "razorpay_payment_id": response.paymentId,
+  //   //   "razorpay_order_id": response.orderId,
+  //   //   "razorpay_signature": response.signature,
+  //   //   "selected_date": widget.bookingDetails['date'],
+  //   //   "court_name": courtName,
+  //   //   "selected_slots": slots, // This will be json_encoded by the PHP side
+  //   //   "total_amount": totalAmount,
+  //   //   "online_paid": onlinePaid, // ✅ MATCHES PHP: 'online_paid'
+  //   //   "booked_by": name,
+  //   //   "email": email
+  //   // };
+  //
   //   final bookingData = {
   //     "razorpay_payment_id": response.paymentId,
   //     "razorpay_order_id": response.orderId,
   //     "razorpay_signature": response.signature,
-  //
   //     "selected_date": widget.bookingDetails['date'],
-  //     "selected_court": widget.bookingDetails['court'],
-  //     "selected_slots": widget.bookingDetails['slots'],
-  //     "total_amount": widget.bookingDetails['price'],
-  //     "booked_by": email,
+  //     "selected_courts": [courtName],
+  //     "selected_slots": slots.map((s) => {
+  //       "court": s['court'],
+  //       "time": s['time'],
+  //       "date": s['date'],
+  //     }).toList(),
+  //     "total_amount": (onlinePaid + cashAmount).toInt(), // ✅ FIX
+  //     "email": email,
+  //     "name": name,
+  //     "amount_paid": onlinePaid,
+  //     "cash_amount": cashAmount
   //   };
+  //   // final bookingData = {
+  //   //   "razorpay_payment_id": response.paymentId,
+  //   //   "razorpay_order_id": response.orderId,
+  //   //   "razorpay_signature": response.signature,
+  //   //   "selected_date": widget.bookingDetails['date'],
+  //   //   "selected_courts": [courtName],
+  //   //   "selected_slots": slots
+  //   //       .where((s) => s['time'] != null)
+  //   //       .map((s) => {
+  //   //     "court": s['court'],
+  //   //     "time": s['time'],
+  //   //     "date": s['date'],
+  //   //   })
+  //   //       .toList(),
+  //   //
+  //   //   // "selected_slots": slots.map((s) => s['time']).toList(),
+  //   //   "total_amount": totalAmount.toInt(),
+  //   //   "email": email,
+  //   //   "name": name,
+  //   //   "amount_paid": onlinePaid.toInt(),
+  //   //   "cash_amount": cashAmount.toInt()
+  //   // };
+  //   print("🧪 onlinePaid: $onlinePaid | cashAmount: $cashAmount | total: $totalAmount");
   //
-  //   print("📤 Verify Payment Payload: $bookingData");
-  //
+  //   print("📤 Verifying Partial/Full Payment: $bookingData");
   //   await _verifyPayment(bookingData);
+  //   print("🧪 onlinePaid: $onlinePaid | cashAmount: $cashAmount | total: $totalAmount");
   //
-  //   final slot = jsonEncode(widget.bookingDetails['slots']);
-  //   final date = widget.bookingDetails['date']?.toString() ?? '';
-  //   final price = (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
-  //   final cashAmount = (widget.bookingDetails['cash'] as num?)?.toInt() ?? 0;
-  //   final onlinePaid = price - cashAmount;
-  //   final transactionId = response.paymentId ?? '';
-  //
-  //   await _storeBooking(
-  //     email: email,
-  //     slot: slot,
-  //     date: date,
-  //     transactionId: transactionId,
-  //     cashAmount: cashAmount,
-  //     onlinePaid: onlinePaid,
-  //   );
   // }
 
 
-  Future<void> _verifyPayment(Map<String, dynamic> data) async {
+
+  // ---------------------- OLD API (commented out) ----------------------
+  // Future<void> _verifyPayment(Map<String, dynamic> data) async {
+  //   final res = await http.post(
+  //     Uri.parse("https://nahatasports.com/api/verify-payment-app"),
+  //     headers: {"Content-Type": "application/json"},
+  //     body: jsonEncode(data),
+  //   );
+  //
+  //   final result = jsonDecode(res.body);
+  // print(res);
+  // print(res.body);
+  // print(res.statusCode);
+  //   if (result["success"] == true) {
+  //     _showSuccessDialog();
+  //   } else {
+  //     _showErrorDialog(result["message"]);
+  //   }
+  // }
+
+  // ---------------------- NEW API: POST /payments/verify ----------------------
+  Future<bool> _verifyPayment({
+    required String? token,
+    required int bookingId,
+    required String orderId,
+    required String paymentId,
+    required String signature,
+  }) async {
     try {
       final res = await http.post(
-        Uri.parse("https://nahatasports.com/api/verifyPayment"),
+        Uri.parse("$_apiBase/payments/verify"),
         headers: {
           "Content-Type": "application/json",
           "Accept": "application/json",
+          if (token != null) "Authorization": "Bearer $token",
         },
-        body: jsonEncode(data),
+        body: jsonEncode({
+          "bookingType": _bookingType,
+          "bookingId": bookingId,
+          "razorpay_order_id": orderId,
+          "razorpay_payment_id": paymentId,
+          "razorpay_signature": signature,
+        }),
       );
 
-      print("✅ Verify Response: ${res.body}");
+      print("📥 verify (${res.statusCode}): ${res.body}");
 
-      if (res.statusCode == 200) {
-        final result = jsonDecode(res.body);
-        if (result["success"] == true) {
-
-          // ✅ Extract slots safely
-          final List slots = data["selected_slots"] ?? [];
-
-          final String slotText = slots
-              .map((s) => s["time"]?.toString() ?? "")
-              .where((t) => t.isNotEmpty)
-              .join(", ");
-
-          final int totalAmount =
-              (data["total_amount"] as num?)?.toInt() ?? 0;
-
-          await showBookingConfirmedNotification(
-            date: data["selected_date"] ?? "",
-            slot: slotText,
-            totalAmount: totalAmount,
-          );
-
-          _showSuccessDialog();
-        } else {
-          _showErrorDialog("Payment verification failed");
-        }
-      } else {
-        _showErrorDialog("Server error");
-      }
+      final result = jsonDecode(res.body);
+      return result["success"] == true;
     } catch (e) {
-      _showErrorDialog("Verification error: $e");
+      print("❌ verify error: $e");
+      return false;
     }
   }
+
+  // Future<void> _verifyPayment(Map<String, dynamic> data) async {
+  //   try {
+  //     final res = await http.post(
+  //       Uri.parse("https://nahatasports.com/api/verify-payment-app"),
+  //       headers: {
+  //         "Content-Type": "application/json",
+  //         "Accept": "application/json",
+  //       },
+  //       body: jsonEncode(data),
+  //     );
+  //
+  //     print("📥 Verify Payment Response: ${res}");
+  //     print(data);
+  //     print("✅ Verify Response: ${res.body}");
+  //
+  //     if (res.statusCode == 200) {
+  //       final result = jsonDecode(res.body);
+  //       if (result["success"] == true) {
+  //         setState(() => isLoading = false); // ✅ ADD THIS
+  //         _showSuccessDialog();
+  //         print("🎉 Booking confirmed: ${result["data"]["booking_id"]}");
+  //         // ✅ Extract slots safely
+  //         // final List slots = data["selected_slots"] ?? [];
+  //         //
+  //         // final String slotText = slots
+  //         //     .map((s) => s["time"]?.toString() ?? "")
+  //         //     .where((t) => t.isNotEmpty)
+  //         //     .join(", ");
+  //         final List slots = data["selected_slots"] ?? [];
+  //
+  //         final String slotText = slots
+  //             .map((s) => s.toString())
+  //             .where((t) => t.isNotEmpty)
+  //             .join(", ");
+  //
+  //         final int totalAmount =
+  //             (data["total_amount"] as num?)?.toInt() ?? 0;
+  //
+  //         await showBookingConfirmedNotification(
+  //           date: data["selected_date"] ?? "",
+  //           slot: slotText,
+  //           totalAmount: totalAmount,
+  //         );
+  //
+  //         // _showSuccessDialog();
+  //       } else {
+  //         _showErrorDialog("Payment verification failed");
+  //       }
+  //     } else {
+  //       _showErrorDialog("Server error");
+  //     }
+  //   } catch (e) {
+  //     _showErrorDialog("Verification error: $e");
+  //   }
+  // }
+
+
 
   void _handlePaymentError(PaymentFailureResponse response) {
     setState(() => isLoading = false);
@@ -661,58 +710,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
     _showErrorDialog(
         "Payment via ${response.walletName} is not supported currently.");
   }
-  // void _handleOnlinePayment() async {
-  //   if (isLoading) return;
-  //
-  //   if (!await _isLoggedIn()) {
-  //     _showErrorDialog("Please log in to make a payment.");
-  //     return;
-  //   }
-  //
-  //   try {
-  //     final total = (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
-  //     final cash = (widget.bookingDetails['cash'] as num?)?.toInt() ?? 0;
-  //     final onlineAmount = total - cash;
-  //     if (onlineAmount <= 0) {
-  //       _showErrorDialog("Invalid payment amount. Online amount must be > 0.");
-  //       return;
-  //     }
-  //     setState(() => isLoading = true);
-  //     // _razorpay.open(options);
-  //     // 🔹 CREATE ORDER FIRST
-  //     final orderId = await _createRazorpayOrder(onlineAmount);
-  //
-  //     if (orderId == null) {
-  //       setState(() => isLoading = false);
-  //       _showErrorDialog("Unable to create order. Please try again.");
-  //       return;
-  //     }
-  //     final email = await _getUserEmail();
-  //     final phone = widget.bookingDetails['phone']?.toString() ?? '';
-  //
-  //     var options = {
-  //       // 'key': 'rzp_live_R7b5MMCgg9AlWn',
-  //         'key': 'rzp_test_YwYUHvAMatnKBY',
-  //       'order_id': orderId,
-  //       'amount': onlineAmount * 100,
-  //       'name': 'Nahata Sports',
-  //       'description': '${widget.bookingDetails['game'] ?? 'Sports'} booking',
-  //       'currency': 'INR',
-  //       'prefill': {'contact': phone, 'email': email},
-  //       'method': {'upi': true, 'card': true, 'netbanking': true, 'wallet': true},
-  //       'theme': {'color': '#4A90E2'},
-  //       // REMOVE the invalid 'modal' key
-  //     };
-  //
-  //     _razorpay.open(options);
-  //   } catch (e) {
-  //     _showErrorDialog('Payment gateway error: ${e.toString()}');
-  //   }
-  //   finally {
-  //     setState(() => isLoading = false);
-  //   }
-  // }
 
+
+  // 🔄 NEW API flow: reserve booking(s) -> create order -> open Razorpay.
   void _handleOnlinePayment() async {
     if (isLoading) return;
 
@@ -730,41 +730,61 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return;
     }
 
+    final slots =
+        List<Map<String, dynamic>>.from(widget.bookingDetails['slots'] ?? []);
+    if (slots.isEmpty) {
+      _showErrorDialog("No slots selected.");
+      return;
+    }
+
     try {
       setState(() => isLoading = true);
 
-      // ✅ STEP 1: CREATE ORDER
-      final orderId = await _createRazorpayOrder(onlineAmount);
+      final token = await _getAuthToken();
 
-      if (orderId == null) {
+      // ✅ STEP 1: RESERVE BOOKING(S)
+      _bookingIds = await _createBookings(token: token, slots: slots);
+      if (_bookingIds.isEmpty) {
+        setState(() => isLoading = false);
+        _showErrorDialog("Unable to reserve the slot(s). Please try again.");
+        return;
+      }
+
+      // ✅ STEP 2: CREATE PAYMENT ORDER (for the total, against the first booking)
+      // NOTE: multi-slot uses one order tied to the primary booking id, then
+      // verifies every booking id on success. Adjust if the backend exposes a
+      // dedicated multi-booking order endpoint.
+      final orderData = await _createOrder(
+        token: token,
+        bookingId: _bookingIds.first,
+        amount: onlineAmount,
+      );
+
+      if (orderData == null || orderData['orderId'] == null) {
         setState(() => isLoading = false);
         _showErrorDialog("Unable to create order. Please try again.");
         return;
       }
 
-      // ✅ SAFE PREFILL VALUES (NO NULLS)
+      // Everything (key, order, amount, currency) comes from the backend
+      // create-order response — nothing hardcoded on the client.
+      _rzpOrderId = orderData['orderId']?.toString();
+      _rzpKeyId = orderData['keyId']?.toString();
+
       final email = (await _getUserEmail()) ?? '';
       final phone = widget.bookingDetails['phone']?.toString() ?? '';
 
       final options = {
-        'key': 'rzp_live_R7b5MMCgg9AlWn',
-
-        // 'key': 'rzp_test_YwYUHvAMatnKBY',
-        'order_id': orderId, // ✅ ONLY order_id controls amount
+        'key': _rzpKeyId,
+        'order_id': _rzpOrderId,
+        if (orderData['amount'] != null) 'amount': orderData['amount'],
+        'currency': (orderData['currency'] ?? 'INR').toString(),
         'name': 'Nahata Sports',
         'description': '${widget.bookingDetails['game']} booking',
-        'currency': 'INR',
         'prefill': {
-          'email': email,
-          'contact': phone,
+          if (email.isNotEmpty) 'email': email,
+          if (phone.isNotEmpty) 'contact': phone,
         },
-        'method': {
-          'upi': true,
-          'card': true,
-          'netbanking': true,
-          'wallet': true,
-        },
-        'theme': {'color': '#4A90E2'},
       };
 
       // ✅ Small delay prevents ANR
@@ -778,6 +798,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
 
+  /* ❌ Cash payment removed — online only
   void _handleCashPayment() async {
     if (isLoading) return;
     if (!await _isLoggedIn()) {
@@ -860,6 +881,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 _showErrorDialog("Session expired. Please login again.");
                 return;
               }
+              final name = await _getUserName();
+              if (name == null) {
+                _showErrorDialog("Session expired. Please login again.");
+                return;
+              }
 
               final slots =
               List<Map<String, dynamic>>.from(widget.bookingDetails['slots']);
@@ -880,6 +906,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
               // 💵 FULL CASH PAYMENT
               if (onlineAmount == 0) {
                 await _storeBookingCashOnly(
+                  name: name,
                   email: email,
                   slots: slots, // ✅ LIST
                   date: widget.bookingDetails['date']?.toString() ?? '',
@@ -916,7 +943,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ),
     );
   }
-
+  */
 
   void _showSuccessDialog() {
     showDialog(
@@ -981,8 +1008,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ),
     );
   }
-
-
 
   void _showSnackBar(String message, {required bool isError}) {
     if (!mounted) return;
@@ -1094,14 +1119,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       color: Colors.black87,
                     ),
                   ),
-                  // SizedBox(height: 4),
-                  // Text(
-                  //   booking['date']?.toString() ?? 'N/A',
-                  //   style: TextStyle(
-                  //     fontSize: 13,
-                  //     color: Colors.grey.shade600,
-                  //   ),
-                  // ),
+
 
                   SizedBox(height: 16),
 
@@ -1218,14 +1236,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     value: 'online',
                     isSelected: selectedPaymentMethod == 'online',
                   ),
-                  SizedBox(height: 12),
-                  _buildPaymentOption(
-                    title: "Pay with Cash at Venue",
-                    subtitle: "Pay when you arrive at the venue",
-                    icon: Icons.money,
-                    value: 'cash',
-                    isSelected: selectedPaymentMethod == 'cash',
-                  ),
+                  // SizedBox(height: 12),
+                  // _buildPaymentOption(
+                  //   title: "Pay with Cash at Venue",
+                  //   subtitle: "Pay when you arrive at the venue",
+                  //   icon: Icons.money,
+                  //   value: 'cash',
+                  //   isSelected: selectedPaymentMethod == 'cash',
+                  // ),
                 ],
               ),
             ),
@@ -1249,11 +1267,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
+                  // Online only — cash method removed
                   onPressed: (isLoading || total <= 0 || !agreedToTerms)
                       ? null
-                      : (selectedPaymentMethod == 'online'
-                      ? _handleOnlinePayment
-                      : _handleCashPayment),
+                      : _handleOnlinePayment,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: brandBlue,
@@ -1477,296 +1494,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }).toList();
   }
 
-
-  // Widget build(BuildContext context) {
-  //   final booking = widget.bookingDetails;
-  //   final total = booking['price'] as int? ?? 0;
-  //
-  //   return Scaffold(
-  //     backgroundColor: Colors.grey[50],
-  //     body: SafeArea(
-  //       child: Column(
-  //         children: [
-  //           // Custom App Bar
-  //           Container(
-  //             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-  //             decoration: BoxDecoration(
-  //               color: Colors.white,
-  //               boxShadow: [
-  //                 BoxShadow(
-  //                   color: Colors.black.withOpacity(0.05),
-  //                   blurRadius: 8,
-  //                   offset: Offset(0, 2),
-  //                 ),
-  //               ],
-  //             ),
-  //             child: Row(
-  //               children: [
-  //                 IconButton(
-  //                   onPressed: isLoading ? null : () => Navigator.pop(context),
-  //                   icon: Icon(Icons.arrow_back_ios, size: 20),
-  //                   style: IconButton.styleFrom(
-  //                     backgroundColor: Colors.grey[100],
-  //                     padding: EdgeInsets.all(8),
-  //                   ),
-  //                 ),
-  //                 SizedBox(width: 16),
-  //                 Text(
-  //                   "Complete Your Payment",
-  //                   style: TextStyle(
-  //                     fontSize: 18,
-  //                     fontWeight: FontWeight.w600,
-  //                     color: Colors.black87,
-  //                   ),
-  //                 ),
-  //                 Spacer(),
-  //                 if (isLoading)
-  //                   SizedBox(
-  //                     width: 20,
-  //                     height: 20,
-  //                     child: CircularProgressIndicator(
-  //                       strokeWidth: 2,
-  //                       valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1A237E)),
-  //                     ),
-  //                   ),
-  //               ],
-  //             ),
-  //           ),
-  //
-  //           // Main Content
-  //           Expanded(
-  //             child: SingleChildScrollView(
-  //               padding: EdgeInsets.all(20),
-  //               child: Column(
-  //                 crossAxisAlignment: CrossAxisAlignment.start,
-  //                 children: [
-  //                   // Booking Summary Card
-  //                   Container(
-  //                     decoration: BoxDecoration(
-  //                       gradient: LinearGradient(
-  //                         colors: [Color(0xFF1A237E), Color(0xFF1A237E)],
-  //                         begin: Alignment.topLeft,
-  //                         end: Alignment.bottomRight,
-  //                       ),
-  //                       borderRadius: BorderRadius.circular(20),
-  //                       boxShadow: [
-  //                         BoxShadow(
-  //                           color: Color(0xFF1A237E).withOpacity(0.3),
-  //                           blurRadius: 20,
-  //                           offset: Offset(0, 8),
-  //                         ),
-  //                       ],
-  //                     ),
-  //                     child: Stack(
-  //                       children: [
-  //                         // Background pattern/image can be added here
-  //                         Positioned(
-  //                           right: -20,
-  //                           top: -20,
-  //                           child: Container(
-  //                             width: 120,
-  //                             height: 120,
-  //                             decoration: BoxDecoration(
-  //                               color: Colors.white.withOpacity(0.1),
-  //                               shape: BoxShape.circle,
-  //                             ),
-  //                           ),
-  //                         ),
-  //                         Padding(
-  //                           padding: EdgeInsets.all(24),
-  //                           child: Column(
-  //                             crossAxisAlignment: CrossAxisAlignment.start,
-  //                             children: [
-  //                               Row(
-  //                                 children: [
-  //                                   Icon(
-  //                                     Icons.sports_basketball,
-  //                                     color: Colors.white,
-  //                                     size: 24,
-  //                                   ),
-  //                                   SizedBox(width: 12),
-  //                                   Text(
-  //                                     "Booking Summary",
-  //                                     style: TextStyle(
-  //                                       color: Colors.white,
-  //                                       fontSize: 20,
-  //                                       fontWeight: FontWeight.bold,
-  //                                     ),
-  //                                   ),
-  //                                 ],
-  //                               ),
-  //                               SizedBox(height: 20),
-  //                               _buildSummaryRow("Location", booking['location']?.toString() ?? 'N/A'),
-  //                               _buildSummaryRow("Game", booking['game']?.toString() ?? 'N/A'),
-  //                               _buildSummaryRow("Date", booking['date']?.toString() ?? 'N/A'),
-  //                               _buildSummaryRow("Slots", _formatSlots(booking['slots'])),
-  //                               SizedBox(height: 16),
-  //                               Divider(color: Colors.white.withOpacity(0.3), thickness: 1),
-  //                               SizedBox(height: 16),
-  //                               Row(
-  //                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  //                                 children: [
-  //                                   Text(
-  //                                     "Total Amount",
-  //                                     style: TextStyle(
-  //                                       color: Colors.white,
-  //                                       fontSize: 18,
-  //                                       fontWeight: FontWeight.w600,
-  //                                     ),
-  //                                   ),
-  //                                   Text(
-  //                                     "₹ ${total.toStringAsFixed(2)}",
-  //                                     style: TextStyle(
-  //                                       color: Colors.white,
-  //                                       fontSize: 24,
-  //                                       fontWeight: FontWeight.bold,
-  //                                     ),
-  //                                   ),
-  //                                 ],
-  //                               ),
-  //                             ],
-  //                           ),
-  //                         ),
-  //                       ],
-  //                     ),
-  //                   ),
-  //
-  //                   SizedBox(height: 32),
-  //
-  //                   // Payment Method Section
-  //                   Text(
-  //                     "Payment Method",
-  //                     style: TextStyle(
-  //                       fontSize: 20,
-  //                       fontWeight: FontWeight.bold,
-  //                       color: Colors.black87,
-  //                     ),
-  //                   ),
-  //                   SizedBox(height: 16),
-  //
-  //                   // Payment Options
-  //                   _buildPaymentOption(
-  //                     title: "Pay Online",
-  //                     subtitle: "UPI, Cards, Net Banking, Wallets",
-  //                     icon: Icons.credit_card,
-  //                     value: 'online',
-  //                     isSelected: selectedPaymentMethod == 'online',
-  //                   ),
-  //                   SizedBox(height: 12),
-  //                   _buildPaymentOption(
-  //                     title: "Pay with Cash at Venue",
-  //                     subtitle: "Pay when you arrive at the venue",
-  //                     icon: Icons.money,
-  //                     value: 'cash',
-  //                     isSelected: selectedPaymentMethod == 'cash',
-  //                   ),
-  //                 ],
-  //               ),
-  //             ),
-  //           ),
-  //
-  //           // Bottom Payment Button
-  //           Container(
-  //             padding: EdgeInsets.all(20),
-  //             decoration: BoxDecoration(
-  //               color: Colors.white,
-  //               boxShadow: [
-  //                 BoxShadow(
-  //                   color: Colors.black.withOpacity(0.1),
-  //                   blurRadius: 10,
-  //                   offset: Offset(0, -2),
-  //                 ),
-  //               ],
-  //             ),
-  //             child: SafeArea(
-  //               child: SizedBox(
-  //                 width: double.infinity,
-  //                 height: 56,
-  //                 child: ElevatedButton(
-  //                   onPressed: (isLoading || total <= 0) ? null : (selectedPaymentMethod == 'online'
-  //                       ? _handleOnlinePayment
-  //                       : _handleCashPayment),
-  //                   style: ElevatedButton.styleFrom(
-  //                     backgroundColor: Color(0xFF1A237E),
-  //                     elevation: 8,
-  //                     shadowColor: Color(0xFF1A237E).withOpacity(0.4),
-  //                     shape: RoundedRectangleBorder(
-  //                       borderRadius: BorderRadius.circular(16),
-  //                     ),
-  //                     disabledBackgroundColor: Colors.grey[400],
-  //                   ),
-  //                   child: isLoading
-  //                       ? Row(
-  //                     mainAxisAlignment: MainAxisAlignment.center,
-  //                     children: [
-  //                       SizedBox(
-  //                         width: 20,
-  //                         height: 20,
-  //                         child: CircularProgressIndicator(
-  //                           strokeWidth: 2,
-  //                           valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-  //                         ),
-  //                       ),
-  //                       SizedBox(width: 12),
-  //                       Text(
-  //                         "Processing...",
-  //                         style: TextStyle(
-  //                           color: Colors.white,
-  //                           fontSize: 18,
-  //                           fontWeight: FontWeight.bold,
-  //                         ),
-  //                       ),
-  //                     ],
-  //                   )
-  //                       : Text(
-  //                     selectedPaymentMethod == 'online'
-  //                         ? "Pay Online ₹${total.toStringAsFixed(2)}"
-  //                         : "Set Cash Payment",
-  //                     style: TextStyle(
-  //                       color: Colors.white,
-  //                       fontSize: 18,
-  //                       fontWeight: FontWeight.bold,
-  //                     ),
-  //                   ),
-  //                 ),
-  //               ),
-  //             ),
-  //           ),
-  //         ],
-  //       ),
-  //     ),
-  //   );
-  // }
-  //
-  // Widget _buildSummaryRow(String title, String value) {
-  //   return Padding(
-  //     padding: EdgeInsets.only(bottom: 8),
-  //     child: Row(
-  //       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  //       children: [
-  //         Text(
-  //           title,
-  //           style: TextStyle(
-  //             color: Colors.white.withOpacity(0.9),
-  //             fontSize: 14,
-  //           ),
-  //         ),
-  //         Flexible(
-  //           child: Text(
-  //             value,
-  //             textAlign: TextAlign.right,
-  //             style: TextStyle(
-  //               color: Colors.white,
-  //               fontSize: 14,
-  //               fontWeight: FontWeight.w500,
-  //             ),
-  //           ),
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
-
   Widget _buildPaymentOption({
     required String title,
     required String subtitle,
@@ -1897,4 +1624,558 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 }
+
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Widget build(BuildContext context) {
+//   final booking = widget.bookingDetails;
+//   final total = booking['price'] as int? ?? 0;
+//
+//   return Scaffold(
+//     backgroundColor: Colors.grey[50],
+//     body: SafeArea(
+//       child: Column(
+//         children: [
+//           // Custom App Bar
+//           Container(
+//             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+//             decoration: BoxDecoration(
+//               color: Colors.white,
+//               boxShadow: [
+//                 BoxShadow(
+//                   color: Colors.black.withOpacity(0.05),
+//                   blurRadius: 8,
+//                   offset: Offset(0, 2),
+//                 ),
+//               ],
+//             ),
+//             child: Row(
+//               children: [
+//                 IconButton(
+//                   onPressed: isLoading ? null : () => Navigator.pop(context),
+//                   icon: Icon(Icons.arrow_back_ios, size: 20),
+//                   style: IconButton.styleFrom(
+//                     backgroundColor: Colors.grey[100],
+//                     padding: EdgeInsets.all(8),
+//                   ),
+//                 ),
+//                 SizedBox(width: 16),
+//                 Text(
+//                   "Complete Your Payment",
+//                   style: TextStyle(
+//                     fontSize: 18,
+//                     fontWeight: FontWeight.w600,
+//                     color: Colors.black87,
+//                   ),
+//                 ),
+//                 Spacer(),
+//                 if (isLoading)
+//                   SizedBox(
+//                     width: 20,
+//                     height: 20,
+//                     child: CircularProgressIndicator(
+//                       strokeWidth: 2,
+//                       valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1A237E)),
+//                     ),
+//                   ),
+//               ],
+//             ),
+//           ),
+//
+//           // Main Content
+//           Expanded(
+//             child: SingleChildScrollView(
+//               padding: EdgeInsets.all(20),
+//               child: Column(
+//                 crossAxisAlignment: CrossAxisAlignment.start,
+//                 children: [
+//                   // Booking Summary Card
+//                   Container(
+//                     decoration: BoxDecoration(
+//                       gradient: LinearGradient(
+//                         colors: [Color(0xFF1A237E), Color(0xFF1A237E)],
+//                         begin: Alignment.topLeft,
+//                         end: Alignment.bottomRight,
+//                       ),
+//                       borderRadius: BorderRadius.circular(20),
+//                       boxShadow: [
+//                         BoxShadow(
+//                           color: Color(0xFF1A237E).withOpacity(0.3),
+//                           blurRadius: 20,
+//                           offset: Offset(0, 8),
+//                         ),
+//                       ],
+//                     ),
+//                     child: Stack(
+//                       children: [
+//                         // Background pattern/image can be added here
+//                         Positioned(
+//                           right: -20,
+//                           top: -20,
+//                           child: Container(
+//                             width: 120,
+//                             height: 120,
+//                             decoration: BoxDecoration(
+//                               color: Colors.white.withOpacity(0.1),
+//                               shape: BoxShape.circle,
+//                             ),
+//                           ),
+//                         ),
+//                         Padding(
+//                           padding: EdgeInsets.all(24),
+//                           child: Column(
+//                             crossAxisAlignment: CrossAxisAlignment.start,
+//                             children: [
+//                               Row(
+//                                 children: [
+//                                   Icon(
+//                                     Icons.sports_basketball,
+//                                     color: Colors.white,
+//                                     size: 24,
+//                                   ),
+//                                   SizedBox(width: 12),
+//                                   Text(
+//                                     "Booking Summary",
+//                                     style: TextStyle(
+//                                       color: Colors.white,
+//                                       fontSize: 20,
+//                                       fontWeight: FontWeight.bold,
+//                                     ),
+//                                   ),
+//                                 ],
+//                               ),
+//                               SizedBox(height: 20),
+//                               _buildSummaryRow("Location", booking['location']?.toString() ?? 'N/A'),
+//                               _buildSummaryRow("Game", booking['game']?.toString() ?? 'N/A'),
+//                               _buildSummaryRow("Date", booking['date']?.toString() ?? 'N/A'),
+//                               _buildSummaryRow("Slots", _formatSlots(booking['slots'])),
+//                               SizedBox(height: 16),
+//                               Divider(color: Colors.white.withOpacity(0.3), thickness: 1),
+//                               SizedBox(height: 16),
+//                               Row(
+//                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//                                 children: [
+//                                   Text(
+//                                     "Total Amount",
+//                                     style: TextStyle(
+//                                       color: Colors.white,
+//                                       fontSize: 18,
+//                                       fontWeight: FontWeight.w600,
+//                                     ),
+//                                   ),
+//                                   Text(
+//                                     "₹ ${total.toStringAsFixed(2)}",
+//                                     style: TextStyle(
+//                                       color: Colors.white,
+//                                       fontSize: 24,
+//                                       fontWeight: FontWeight.bold,
+//                                     ),
+//                                   ),
+//                                 ],
+//                               ),
+//                             ],
+//                           ),
+//                         ),
+//                       ],
+//                     ),
+//                   ),
+//
+//                   SizedBox(height: 32),
+//
+//                   // Payment Method Section
+//                   Text(
+//                     "Payment Method",
+//                     style: TextStyle(
+//                       fontSize: 20,
+//                       fontWeight: FontWeight.bold,
+//                       color: Colors.black87,
+//                     ),
+//                   ),
+//                   SizedBox(height: 16),
+//
+//                   // Payment Options
+//                   _buildPaymentOption(
+//                     title: "Pay Online",
+//                     subtitle: "UPI, Cards, Net Banking, Wallets",
+//                     icon: Icons.credit_card,
+//                     value: 'online',
+//                     isSelected: selectedPaymentMethod == 'online',
+//                   ),
+//                   SizedBox(height: 12),
+//                   _buildPaymentOption(
+//                     title: "Pay with Cash at Venue",
+//                     subtitle: "Pay when you arrive at the venue",
+//                     icon: Icons.money,
+//                     value: 'cash',
+//                     isSelected: selectedPaymentMethod == 'cash',
+//                   ),
+//                 ],
+//               ),
+//             ),
+//           ),
+//
+//           // Bottom Payment Button
+//           Container(
+//             padding: EdgeInsets.all(20),
+//             decoration: BoxDecoration(
+//               color: Colors.white,
+//               boxShadow: [
+//                 BoxShadow(
+//                   color: Colors.black.withOpacity(0.1),
+//                   blurRadius: 10,
+//                   offset: Offset(0, -2),
+//                 ),
+//               ],
+//             ),
+//             child: SafeArea(
+//               child: SizedBox(
+//                 width: double.infinity,
+//                 height: 56,
+//                 child: ElevatedButton(
+//                   onPressed: (isLoading || total <= 0) ? null : (selectedPaymentMethod == 'online'
+//                       ? _handleOnlinePayment
+//                       : _handleCashPayment),
+//                   style: ElevatedButton.styleFrom(
+//                     backgroundColor: Color(0xFF1A237E),
+//                     elevation: 8,
+//                     shadowColor: Color(0xFF1A237E).withOpacity(0.4),
+//                     shape: RoundedRectangleBorder(
+//                       borderRadius: BorderRadius.circular(16),
+//                     ),
+//                     disabledBackgroundColor: Colors.grey[400],
+//                   ),
+//                   child: isLoading
+//                       ? Row(
+//                     mainAxisAlignment: MainAxisAlignment.center,
+//                     children: [
+//                       SizedBox(
+//                         width: 20,
+//                         height: 20,
+//                         child: CircularProgressIndicator(
+//                           strokeWidth: 2,
+//                           valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+//                         ),
+//                       ),
+//                       SizedBox(width: 12),
+//                       Text(
+//                         "Processing...",
+//                         style: TextStyle(
+//                           color: Colors.white,
+//                           fontSize: 18,
+//                           fontWeight: FontWeight.bold,
+//                         ),
+//                       ),
+//                     ],
+//                   )
+//                       : Text(
+//                     selectedPaymentMethod == 'online'
+//                         ? "Pay Online ₹${total.toStringAsFixed(2)}"
+//                         : "Set Cash Payment",
+//                     style: TextStyle(
+//                       color: Colors.white,
+//                       fontSize: 18,
+//                       fontWeight: FontWeight.bold,
+//                     ),
+//                   ),
+//                 ),
+//               ),
+//             ),
+//           ),
+//         ],
+//       ),
+//     ),
+//   );
+// }
+//
+// Widget _buildSummaryRow(String title, String value) {
+//   return Padding(
+//     padding: EdgeInsets.only(bottom: 8),
+//     child: Row(
+//       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//       children: [
+//         Text(
+//           title,
+//           style: TextStyle(
+//             color: Colors.white.withOpacity(0.9),
+//             fontSize: 14,
+//           ),
+//         ),
+//         Flexible(
+//           child: Text(
+//             value,
+//             textAlign: TextAlign.right,
+//             style: TextStyle(
+//               color: Colors.white,
+//               fontSize: 14,
+//               fontWeight: FontWeight.w500,
+//             ),
+//           ),
+//         ),
+//       ],
+//     ),
+//   );
+// }
+//
+//
+// Future<void> _storeBooking({
+//   required String email,
+//   required String slot,
+//   required String date,
+//   required String courtName,
+//   required String transactionId,
+//   required String razorpayPaymentId,
+//   required String razorpayOrderId,
+//   required String razorpaySignature,
+//   required int cashAmount,
+//   required int onlinePaid,
+// }) async {
+//   if (isLoading) return;
+//
+//   setState(() => isLoading = true);
+//
+//   try {
+//     final price =
+//         (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
+//     final actualOnlinePaid = onlinePaid;
+//
+//     final txnId = (actualOnlinePaid > 0 && transactionId.isNotEmpty)
+//         ? transactionId
+//         : "CASH-${DateTime.now().millisecondsSinceEpoch}";
+//
+//     final formattedDate = date.isNotEmpty
+//         ? date
+//         : DateTime.now().toIso8601String().split("T").first;
+//
+//     final bookingData = {
+//       "transaction_id": txnId,
+//       "razorpay_payment_id":
+//       transactionId.isNotEmpty ? transactionId : "N/A",
+//       "selected_date": formattedDate,
+//       "selected_slots": slot,
+//       "total_amount": price.toString(),
+//       "booked_by": email,
+//       "amount_paid": actualOnlinePaid,
+//       "cash_amount": cashAmount,
+//       // "razorpay_payment_id": razorpayPaymentId,
+//       "razorpay_order_id": razorpayOrderId,
+//       "razorpay_signature": razorpaySignature,
+//       "status": (actualOnlinePaid > 0 && cashAmount > 0)
+//           ? "partial"
+//           : "full",
+//       "created_at": DateTime.now().toIso8601String(),
+//     };
+//
+//     print("🔍 Booking Data: $bookingData");
+//
+//     final res = await http
+//         .post(
+//       Uri.parse("https://nahatasports.com/api/verifyPayment"),
+//       headers: {
+//         "Content-Type": "application/json",
+//         "Accept": "application/json",
+//       },
+//       body: jsonEncode(bookingData),
+//     )
+//         .timeout(const Duration(seconds: 30));
+//
+//     print("📥 API Response (${res.statusCode}): ${res.body}");
+//
+//     if (res.statusCode == 200) {
+//       final data = jsonDecode(res.body);
+//       if (data["success"] == true || data["status"] == true) {
+//
+//         // 🔔 Show booking notification
+//         await showBookingConfirmedNotification(
+//           date: formattedDate,
+//           slot: slot,
+//           totalAmount: price,
+//         );
+//
+//
+//         _showSuccessDialog();
+//       } else {
+//         _showErrorDialog(
+//             "Booking failed: ${data["message"] ?? 'Unknown error'}");
+//       }
+//     } else {
+//       _showErrorDialog("Server error (${res.statusCode})");
+//     }
+//   } catch (e) {
+//     print("❌ API Error: $e");
+//     _showErrorDialog("Network error: ${e.toString()}");
+//   } finally {
+//     setState(() => isLoading = false);
+//   }
+// }
+//
+
+
+
+
+
+// void _handleOnlinePayment() async {
+//   if (isLoading) return;
+//
+//   if (!await _isLoggedIn()) {
+//     _showErrorDialog("Please log in to make a payment.");
+//     return;
+//   }
+//
+//   try {
+//     final total = (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
+//     final cash = (widget.bookingDetails['cash'] as num?)?.toInt() ?? 0;
+//     final onlineAmount = total - cash;
+//     if (onlineAmount <= 0) {
+//       _showErrorDialog("Invalid payment amount. Online amount must be > 0.");
+//       return;
+//     }
+//     setState(() => isLoading = true);
+//     // _razorpay.open(options);
+//     // 🔹 CREATE ORDER FIRST
+//     final orderId = await _createRazorpayOrder(onlineAmount);
+//
+//     if (orderId == null) {
+//       setState(() => isLoading = false);
+//       _showErrorDialog("Unable to create order. Please try again.");
+//       return;
+//     }
+//     final email = await _getUserEmail();
+//     final phone = widget.bookingDetails['phone']?.toString() ?? '';
+//
+//     var options = {
+//       // 'key': 'rzp_live_R7b5MMCgg9AlWn',
+//         'key': 'rzp_test_YwYUHvAMatnKBY',
+//       'order_id': orderId,
+//       'amount': onlineAmount * 100,
+//       'name': 'Nahata Sports',
+//       'description': '${widget.bookingDetails['game'] ?? 'Sports'} booking',
+//       'currency': 'INR',
+//       'prefill': {'contact': phone, 'email': email},
+//       'method': {'upi': true, 'card': true, 'netbanking': true, 'wallet': true},
+//       'theme': {'color': '#4A90E2'},
+//       // REMOVE the invalid 'modal' key
+//     };
+//
+//     _razorpay.open(options);
+//   } catch (e) {
+//     _showErrorDialog('Payment gateway error: ${e.toString()}');
+//   }
+//   finally {
+//     setState(() => isLoading = false);
+//   }
+// }
+
+// Future<String?> _createRazorpayOrder(int amount) async {
+//   try {
+//     final res = await http.post(
+//       Uri.parse("https://nahatasports.com/api/create-order-app"),
+//       headers: {
+//         "Content-Type": "application/json",
+//         "Accept": "application/json",
+//       },
+//       body: jsonEncode({
+//         // "amount": amount,
+//         "online_paid": 1,
+//         "total_amount": 200
+//       }),
+//     );
+//
+//     print("📦 Create Order Response: ${res.body}");
+//
+//     if (res.statusCode == 200) {
+//       final data = jsonDecode(res.body);
+//       if (data["success"] == true) {
+//         return data["order_id"];
+//       }
+//     }
+//   } catch (e) {
+//     print("❌ Create Order Error: $e");
+//   }
+//   return null;
+// }
+// void _handlePaymentSuccess(PaymentSuccessResponse response) async {
+//   setState(() => isLoading = false);
+//
+//   print("🎉 Payment Success");
+//   print("PaymentId: ${response.paymentId}");
+//   print("OrderId: ${response.orderId}");
+//   print("Signature: ${response.signature}");
+//
+//   final email = await _getUserEmail();
+//   if (email == null) {
+//     _showErrorDialog("Session expired. Please login again.");
+//     return;
+//   }
+//
+//   final name = await _getUserName();
+//   if (name == null) {
+//     _showErrorDialog("Session expired. Please login again.");
+//     return;
+//   }
+//
+//
+//   final List<Map<String, dynamic>> slots =
+//   List<Map<String, dynamic>>.from(widget.bookingDetails['slots']);
+//
+//   final courtName =
+//   slots.isNotEmpty ? slots.first['court']?.toString() ?? '' : '';
+//
+//
+//
+//
+//
+//   if (courtName.isEmpty) {
+//     _showErrorDialog("Court name missing. Please try again.");
+//     return;
+//   }
+//
+//   final int cashAmount =
+//       (widget.bookingDetails['cash'] as num?)?.toInt() ?? 0;
+//
+//   final int totalAmount =
+//       (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
+//
+//   final int onlinePaid = totalAmount - cashAmount;
+//
+//   final bookingData = {
+//     "transaction_id": response.paymentId,
+//     "razorpay_payment_id": response.paymentId,
+//     "razorpay_order_id": response.orderId,
+//     "razorpay_signature": response.signature,
+//     "selected_date": widget.bookingDetails['date'],
+//     "court_name": courtName,
+//     // "selected_court": courtName,
+//     "selected_slots": slots,
+//     "total_amount": totalAmount,
+//     // "amount_paid": onlinePaid, // ✅ FIXED
+//     "online_paid": onlinePaid,
+//     "cash_amount": cashAmount,
+//     "booked_by": email,
+//     // "email": email
+//   };
+//
+//
+//   print("📤 Verify Payment Payload: $bookingData");
+//
+//   await _verifyPayment(bookingData);
+// }
+//
+// Future<String?> _createRazorpayOrder(int amountInRupees) async                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  {
+//   try {
+//     final res = await http.post(
+//       Uri.parse("https://nahatasports.com/api/create-order-app"),
+//       headers: {"Content-Type": "application/json"},
+//       body: jsonEncode({
+//         "amount": amountInRupees, // Send as Rupees (e.g. 500)
+//       }),
+//     );
+//     print("📦 Create Order Response: ${res.body}");
+//     if (res.statusCode == 200) {
+//       final data = jsonDecode(res.body);
+//       if (data["success"] == true) return data["order_id"];
+//     }
+//   } catch (e) {
+//     print("❌ Order Error: $e");
+//   }
+//   return null;
+// }

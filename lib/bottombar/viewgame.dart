@@ -265,7 +265,7 @@ class _ViewgameState extends State<Viewgame>
                       itemCount: sports.length,
                       itemBuilder: (context, index) {
                         final sport = sports[index];
-                        return _buildGameCard(sport.name, sport.imageUrl, index);
+                        return _buildGameCard(sport, index);
                       },
                     );
                   },
@@ -280,7 +280,9 @@ class _ViewgameState extends State<Viewgame>
       ),
     );
   }
-  Widget _buildGameCard(String title, String imageUrl, int index) {
+  Widget _buildGameCard(Sport sport, int index) {
+    final String title = sport.name;
+    final String imageUrl = sport.imageUrl;
     return TweenAnimationBuilder<double>(
       duration: Duration(milliseconds: 600 + (index * 100)),
       tween: Tween(begin: 0.0, end: 1.0),
@@ -309,7 +311,13 @@ class _ViewgameState extends State<Viewgame>
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => SlotBookingScreen(game: title,location: widget.locationName ,),
+                      // 🔄 NEW API: forward resolved sportId & sportComplexId
+                      builder: (_) => SlotBookingScreen(
+                        game: title,
+                        location: widget.locationName,
+                        sportId: sport.id,
+                        sportComplexId: sport.complexId,
+                      ),
                     ),
                   );
                 },
@@ -593,50 +601,127 @@ class _ViewgameState extends State<Viewgame>
 }
 
 class Api_loc_Service {
-  static Future<List<Sport>> fetchSportsByLocation(String location) async {
-    final uri = Uri.parse('https://nahatasports.com/sports_list');
-    final response = await http.get(uri);
+  // 🔄 NEW API base
+  static const String _apiBase = "https://api.nahatasports.com/api";
 
-    print("API response: ${response.body}");
+  // ---------------------- OLD API (commented out) ----------------------
+  // static Future<List<Sport>> fetchSportsByLocation(String location) async {
+  //   final uri = Uri.parse('https://nahatasports.com/sports_list');
+  //   final response = await http.get(uri);
+  //
+  //   print("API response: ${response.body}");
+  //
+  //   if (response.statusCode == 200) {
+  //     final Map<String, dynamic> jsonMap = json.decode(response.body);
+  //
+  //     if (!jsonMap.containsKey('data')) {
+  //       throw Exception('No data found in API response');
+  //     }
+  //
+  //     final availableKeys = jsonMap['data'].keys;
+  //     print('Requested location: "$location"');
+  //     print('Available keys: $availableKeys');
+  //
+  //     final matchedKey = availableKeys.firstWhere(
+  //           (k) => k.toLowerCase().trim() == location.toLowerCase().trim(),
+  //       orElse: () => throw Exception('No data for "$location"'),
+  //     );
+  //
+  //     final List<dynamic> sportsList = jsonMap['data'][matchedKey];
+  //
+  //     return sportsList.map((e) => Sport.fromJson(e)).toList();
+  //   } else {
+  //     throw Exception('Failed to load sports');
+  //   }
+  // }
 
-    if (response.statusCode == 200) {
-      final Map<String, dynamic> jsonMap = json.decode(response.body);
+  // ---------------------- NEW API ----------------------
+  /// Resolve a sports-complex id from its display name.
+  static Future<int?> fetchComplexId(String location) async {
+    final uri = Uri.parse(
+        '$_apiBase/sports-complexes?status=Active&showOnFrontend=true&limit=50');
+    final response = await http.get(uri, headers: {'Accept': 'application/json'});
+    if (response.statusCode != 200) return null;
 
-      if (!jsonMap.containsKey('data')) {
-        throw Exception('No data found in API response');
+    final body = json.decode(response.body);
+    final List complexes = body['data']?['sportsComplexes'] ?? [];
+    for (final c in complexes) {
+      if ((c['name'] ?? '').toString().toLowerCase().trim() ==
+          location.toLowerCase().trim()) {
+        return c['id'] is int ? c['id'] as int : int.tryParse('${c['id']}');
       }
-
-      final availableKeys = jsonMap['data'].keys;
-      print('Requested location: "$location"');
-      print('Available keys: $availableKeys');
-
-      final matchedKey = availableKeys.firstWhere(
-            (k) => k.toLowerCase().trim() == location.toLowerCase().trim(),
-        orElse: () => throw Exception('No data for "$location"'),
-      );
-
-      final List<dynamic> sportsList = jsonMap['data'][matchedKey];
-
-      return sportsList.map((e) => Sport.fromJson(e)).toList();
-    } else {
-      throw Exception('Failed to load sports');
     }
+    return null;
   }
 
+  /// Fetch every active court of a complex (handles pagination).
+  static Future<List<dynamic>> _fetchAllCourts(int complexId) async {
+    final List<dynamic> all = [];
+    int page = 1;
+    while (true) {
+      final uri = Uri.parse(
+          '$_apiBase/courts?sportComplexId=$complexId&status=Active&limit=100&page=$page');
+      final response =
+          await http.get(uri, headers: {'Accept': 'application/json'});
+      if (response.statusCode != 200) break;
 
+      final body = json.decode(response.body);
+      final List data = body['data'] ?? [];
+      all.addAll(data);
 
+      final totalPages = body['pagination']?['totalPages'] ?? 1;
+      if (page >= (totalPages is int ? totalPages : 1)) break;
+      page++;
+    }
+    return all;
+  }
 
+  /// Build the distinct list of sports available at a location from /courts.
+  static Future<List<Sport>> fetchSportsByLocation(String location) async {
+    final complexId = await fetchComplexId(location);
+    if (complexId == null) {
+      throw Exception('No data for "$location"');
+    }
+
+    final courts = await _fetchAllCourts(complexId);
+
+    // Distinct sports keyed by sportId, first court image (if any) used as icon.
+    final Map<int, Sport> byId = {};
+    for (final c in courts) {
+      final sp = c['Sport'];
+      if (sp == null || sp['id'] == null) continue;
+      final id = sp['id'] is int ? sp['id'] as int : int.tryParse('${sp['id']}');
+      if (id == null || byId.containsKey(id)) continue;
+      byId[id] = Sport(
+        id: id,
+        name: (sp['name'] ?? 'Unknown').toString(),
+        imageUrl: (c['image'] ?? '').toString(),
+        complexId: complexId,
+      );
+    }
+
+    return byId.values.toList();
+  }
 }
+
 class Sport {
+  final int? id;
+  final int? complexId;
   final String name;
   final String imageUrl;
 
-  Sport({required this.name, required this.imageUrl});
+  Sport({
+    this.id,
+    this.complexId,
+    required this.name,
+    required this.imageUrl,
+  });
 
-  factory Sport.fromJson(Map<String, dynamic> json) {
-    return Sport(
-      name: json['sport_name'] ?? 'Unknown',
-      imageUrl: json['image'] ?? '',
-    );
-  }
+  // ---------------------- OLD API mapping (commented out) ----------------------
+  // factory Sport.fromJson(Map<String, dynamic> json) {
+  //   return Sport(
+  //     name: json['sport_name'] ?? 'Unknown',
+  //     imageUrl: json['image'] ?? '',
+  //   );
+  // }
 }

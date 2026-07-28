@@ -38,13 +38,11 @@ class _ScanScreenState extends State<ScanScreen> {
   // --------------- HANDLE QR SCAN ----------------
   Future<void> _handleScan(String scannedData) async {
     print("--------------- QR SCAN STARTED ---------------");
-    print("📥 RAW QR Data: $scannedData");
+    print("📥 RAW QR Data:\n$scannedData");
 
     try {
       setState(() => isProcessing = true);
-      print("🔄 isProcessing = true");
 
-      // Get logged in user
       final userId = await AuthService.getUserId();
       print("👤 Logged-in Coach/User ID: $userId");
 
@@ -53,40 +51,79 @@ class _ScanScreenState extends State<ScanScreen> {
         return;
       }
 
-      // ---------- DECODE QR JSON ----------
-      Map<String, dynamic> qrData;
-      try {
-        qrData = jsonDecode(scannedData);
-        print("🔍 Decoded QR JSON: $qrData");
-      } catch (e) {
-        print("❌ Invalid JSON in QR: $e");
-        _showDialog("Invalid QR", "QR data is not valid JSON.", Colors.red);
+      final trimmed = scannedData.trim();
+
+      // =====================================================
+      // 🟢 CASE 1: BOOKING CONFIRMATION (TEXT QR)
+      // =====================================================
+      if (!trimmed.startsWith('{')) {
+        print("📄 Detected BOOKING CONFIRMATION QR");
+
+        final lines = trimmed.split('\n');
+        final Map<String, String> bookingData = {};
+
+        for (final line in lines) {
+          if (line.contains(':')) {
+            final parts = line.split(':');
+            final key = parts.first.trim();
+            final value = parts.sublist(1).join(':').trim();
+            bookingData[key] = value;
+          }
+        }
+
+        print("📋 Parsed Booking Data: $bookingData");
+
+        _showDialog(
+          "Booking Details 📄",
+          """
+Booking ID: ${bookingData['Booking ID'] ?? '-'}
+Name: ${bookingData['Name'] ?? '-'}
+Email: ${bookingData['Email'] ?? '-'}
+Date: ${bookingData['Date'] ?? '-'}
+Amount: ${bookingData['Amount'] ?? '-'}
+""",
+          Colors.blue,
+        );
+
         return;
       }
 
-      final studentId = qrData["student_id"];
-      final validUntil = qrData["valid_until"];
+      // =====================================================
+      // 🟢 CASE 2: ATTENDANCE QR (JSON)
+      // =====================================================
+      late Map<String, dynamic> qrData;
 
-      print("🎯 Extracted student_id: $studentId");
-      print("📆 Valid Until: $validUntil");
+      try {
+        qrData = jsonDecode(trimmed);
+        print("✅ Attendance QR JSON decoded: $qrData");
+      } catch (e) {
+        _showDialog(
+          "Invalid QR ❌",
+          "Unsupported QR format.",
+          Colors.red,
+        );
+        return;
+      }
+
+      final studentId = qrData['student_id'];
 
       if (studentId == null) {
-        _showDialog("Invalid QR", "Student ID not found in QR.", Colors.red);
+        _showDialog(
+          "Invalid QR ❌",
+          "Student ID missing in QR.",
+          Colors.red,
+        );
         return;
       }
 
-      // ---------- API CALL ----------
       final url = Uri.parse("https://nahatasports.com/api/attendance/scan");
-      print("🌐 API URL: $url");
 
       final body = {
-        "student_id": studentId.toString(),
-        "coach_id": userId.toString(),
-        "qr_code": scannedData,
-        "valid_until": validUntil ?? "",
+        "student_id": studentId,
+        "coach_id": userId,
       };
 
-      print("📦 Request Body: $body");
+      print("📤 Sending Attendance Data: $body");
 
       final response = await http.post(
         url,
@@ -94,35 +131,39 @@ class _ScanScreenState extends State<ScanScreen> {
         body: jsonEncode(body),
       );
 
-      print("📡 Response Status Code: ${response.statusCode}");
-      print("📨 Raw Response Body: ${response.body}");
-
       final data = jsonDecode(response.body);
-      print("🔍 Decoded Response: $data");
+      print("📥 API Response: $data");
 
       if (response.statusCode == 200 && data['success'] == true) {
-        print("✅ Attendance Success");
-        _showDialog("Success ✅", data['message'], Colors.green);
+        final studentName = data['student']?['name'] ?? '';
+
+        _showDialog(
+          "Success ✅",
+          "Attendance marked for $studentName",
+          Colors.green,
+        );
       } else {
-        print("❌ Attendance Failed");
-        _showDialog("Failed ❌", data['message'], Colors.red);
+        _showDialog(
+          "Failed ❌",
+          data['message'] ?? "Attendance failed",
+          Colors.red,
+        );
       }
-    } catch (e) {
+    } catch (e, stack) {
       print("🔥 Exception: $e");
-      _showDialog("Error ⚠️", "Unexpected error: $e", Colors.orange);
+      print(stack);
+
+      _showDialog(
+        "Error ⚠️",
+        "Unexpected error occurred",
+        Colors.orange,
+      );
     } finally {
-      print("⏳ Resetting scan in 2 seconds...");
       await Future.delayed(const Duration(seconds: 2));
-
-      if (mounted) {
-        setState(() => isProcessing = false);
-      }
-
-      print("🔄 isProcessing = false");
+      if (mounted) setState(() => isProcessing = false);
       print("--------------- QR SCAN FINISHED ---------------");
     }
   }
-
   // ---------------- Result dialog ----------------
   void _showDialog(String title, String message, Color color) {
     showDialog(

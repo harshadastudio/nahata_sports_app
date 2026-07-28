@@ -1501,7 +1501,7 @@ class _SportsScreenState extends State<SportsScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text("Error: ${snapshot.error}"),
+                        Text("No available coaches"),
                         const SizedBox(height: 20),
                         ElevatedButton(
                           onPressed: () {

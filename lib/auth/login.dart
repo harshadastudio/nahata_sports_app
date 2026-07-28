@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -858,7 +859,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = false);
     if (success && ApiService.currentUser != null) {
-      final role = ApiService.currentUser!['role'] ?? 'user';
+      final role = ApiService.currentUser!['role'] ?? 'USER';
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('isLoggedIn', true);
@@ -877,7 +878,8 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       });
     } else {
-      _showInfoDialog("Login failed. Please check your credentials.");
+      final msg = ApiService.lastErrorMessage ?? "Login failed. Please check your credentials.";
+      _showInfoDialog(msg);
     }
 
 
@@ -891,7 +893,7 @@ class _LoginScreenState extends State<LoginScreen> {
       case 'security':
         return SecurityGateScannerScreen();
       case 'student':
-      case 'user':
+      case 'USER':
       default:
         return CustomBottomNav();
     }
@@ -1237,7 +1239,8 @@ class _LoginScreenState extends State<LoginScreen> {
         body: jsonEncode({"idToken": idToken}),
       );
 
-      print("🔥 Google Login API Response: ${response.body}");
+      print("🔥 "
+          "Google Login API Response: ${response.body}");
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -1256,6 +1259,11 @@ class _LoginScreenState extends State<LoginScreen> {
           await prefs.setString('user', jsonEncode(user));
 
           ApiService.currentUser = user;
+
+          // 🔥 SAVE FCM TOKEN — same as regular login
+          final int userId = int.parse(user['id'].toString());
+          await ApiService._saveFcmTokenToServer(userId);
+
 
           print("✅ Google Login Success, role = $role");
           return true;
@@ -1861,6 +1869,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
 class ApiService {
   static Map<String, dynamic>? currentUser;
+  static String? lastErrorMessage; // populated when login fails for UI to show
 
   /// Load user from local storage
   static Future<void> loadUserFromPrefs() async {
@@ -1891,59 +1900,164 @@ class ApiService {
 
   /// Login API
   static Future<bool> login(String email, String password) async {
-    final url = Uri.parse('https://nahatasports.com/api/login');
+    // Use the provided base URL for auth
+    final baseUrl = "https://api.nahatasports.com/api";
+    final url = Uri.parse("$baseUrl/auth/login");
+
+    // Prepare headers and body
+    final headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    final bodyMap = {'email': email, 'password': password};
+    final body = jsonEncode(bodyMap);
+
+    // Log request for debugging
+    print('➡️ POST $url');
+    print('➡️ Request headers: $headers');
+    print('➡️ Request body: $body');
 
     try {
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
+        headers: headers,
+        body: body,
       );
 
       print("🟢 Login API Status: ${response.statusCode}");
       print("🟢 Raw Response: ${response.body}");
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+      // Attempt to parse JSON body if available
+      Map<String, dynamic>? data;
+      try {
+        data = jsonDecode(response.body);
+      } catch (_) {
+        data = null;
+      }
 
-        if (data['status'] == true && data['data'] != null) {
-          currentUser = Map<String, dynamic>.from(data['data']);
+      if (response.statusCode == 200 && data != null) {
+        // Support both older 'status' and new 'success' responses
+        final bool ok = (data['success'] == true) || (data['status'] == true);
+
+        if (ok && data['data'] != null) {
+          final payload = data['data'];
+
+          // New API nests user under 'user'
+          final Map<String, dynamic> user = Map<String, dynamic>.from(payload['user'] ?? payload);
+          currentUser = user;
 
           final prefs = await SharedPreferences.getInstance();
-          final userRole = getRole();
 
           // Save essential info
           await prefs.setBool('isLoggedIn', true);
           await prefs.setString('user', jsonEncode(currentUser));
+
+          final userRole = currentUser?['role']?.toString() ?? 'user';
           await prefs.setString('role', userRole);
 
-          // Save token if present
-          if (data.containsKey('token')) {
-            await prefs.setString('authToken', data['token']);
+          // Save access & refresh tokens if provided
+          if (payload.containsKey('accessToken')) {
+            await prefs.setString('authToken', payload['accessToken']);
+          } else if (payload.containsKey('token')) {
+            await prefs.setString('authToken', payload['token']);
           }
 
+          if (payload.containsKey('refreshToken')) {
+            await prefs.setString('refreshToken', payload['refreshToken']);
+          }
+
+          // 🔥 SAVE FCM TOKEN HERE
+          final int userId = int.parse(currentUser!['id'].toString());
+          await _saveFcmTokenToServer(userId);
+
+          lastErrorMessage = null;
           print("💾 Saved Role: $userRole");
           print("✅ Login successful for $userRole");
+
           return true;
-        } else {
-          print("❌ Login failed: ${data['message']}");
-          return false;
         }
-      } else {
-        print("❌ Server Error: ${response.statusCode}");
-        return false;
       }
+
+      // Non-200 or unexpected body
+      final msg = (data != null && (data['message'] != null)) ? data['message'].toString() : 'Server error: ${response.statusCode}';
+      lastErrorMessage = msg;
+      print("❌ Login failed: $msg");
+      return false;
     } catch (e) {
+      lastErrorMessage = e.toString();
       print("❌ Error during login: $e");
       return false;
     }
   }
+  static Future<void> _saveFcmTokenToServer(int userId) async {
+    try {
+      String? token = await FirebaseMessaging.instance.getToken();
 
+      if (token == null) return;
+
+      await http.post(
+        Uri.parse("https://nahatasports.com/api/save-fcm-token"),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "user_id": userId,
+          "fcm_token": token,
+          "platform": "android",
+        }),
+      );
+
+      print("🔥 FCM Token saved successfully");
+    } catch (e) {
+      print("❌ FCM Save Error: $e");
+    }
+  }
   /// Check login state
   static Future<bool> isLoggedIn() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('isLoggedIn') ?? false;
   }
+// Add this method in ApiService
+  static Future<void> _removeFcmTokenFromServer(int userId) async {
+    try {
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken == null) return;
+
+      final response = await http.post(
+        Uri.parse("https://nahatasports.com/api/delete-fcm-token"),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "user_id": userId,
+          "fcm_token": fcmToken,
+        }),
+      );
+
+      print("🗑️ FCM token deleted: ${response.body}");
+    } catch (e) {
+      print("❌ FCM Delete Error: $e");
+    }
+  }
+
+// Update your logout method
+  static Future<void> logout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userJson = prefs.getString('user');
+
+      if (userJson != null) {
+        final user = jsonDecode(userJson);
+        final int userId = int.parse(user['id'].toString());
+        await _removeFcmTokenFromServer(userId); // 🔥 delete FCM token
+      }
+
+      await FirebaseMessaging.instance.deleteToken(); // invalidate on device too
+    } catch (e) {
+      print("⚠️ Error during FCM cleanup: $e");
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    print("🚪 User logged out, prefs cleared.");
+  }
+
 }
 class AuthService {
   static Future<Map<String, dynamic>?> getUser() async {
@@ -1961,6 +2075,11 @@ class AuthService {
     final user = await getUser();
     return user?['email'];
   }
+  static Future<String?> getUserName() async {
+    final user = await getUser();
+    return user?['name'];
+
+  }
 
   static Future<String?> getUserRole() async {
     final prefs = await SharedPreferences.getInstance();
@@ -1972,12 +2091,55 @@ class AuthService {
     return prefs.getString('authToken');
   }
 
-  /// ✅ Universal logout — clears *everything*
+// Add this method in ApiService
+  static Future<void> _removeFcmTokenFromServer(int userId) async {
+    try {
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken == null) return;
+
+      final response = await http.post(
+        Uri.parse("https://nahatasports.com/api/delete-fcm-token"),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "user_id": userId,
+          "fcm_token": fcmToken,
+        }),
+      );
+
+      print("🗑️ FCM token deleted: ${response.body}");
+    } catch (e) {
+      print("❌ FCM Delete Error: $e");
+    }
+  }
+
+// Update your logout method
   static Future<void> logout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userJson = prefs.getString('user');
+
+      if (userJson != null) {
+        final user = jsonDecode(userJson);
+        final int userId = int.parse(user['id'].toString());
+        await _removeFcmTokenFromServer(userId); // 🔥 delete FCM token
+      }
+
+      await FirebaseMessaging.instance.deleteToken(); // invalidate on device too
+    } catch (e) {
+      print("⚠️ Error during FCM cleanup: $e");
+    }
+
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // clears all keys like user, role, token, etc.
+    await prefs.clear();
     print("🚪 User logged out, prefs cleared.");
   }
+
+  void debugPrintRawPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userJson = prefs.getString('user');
+    print("🧪 RAW user JSON: $userJson");
+  }
+
 }
 
 

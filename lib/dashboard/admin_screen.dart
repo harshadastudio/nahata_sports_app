@@ -1471,10 +1471,12 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../admin/GenerateVisitorPass.dart';
+import '../admin/Studentattendancescreen.dart';
 import '../admin/Visitorlist.dart';
 import '../admin/blockslots.dart';
 import '../admin/bookedslotscreen.dart';
 import '../admin/notifications/admin_notification.dart';
+import '../admin/notifications/sendnotificationtoall.dart';
 import '../auth/login.dart';
 import '../coach/scanscreen.dart';
 import '../screens/login_screen.dart';
@@ -4028,64 +4030,123 @@ class AdminDashboardScreen extends StatefulWidget {
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
-
 class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     with WidgetsBindingObserver {
 
   int _unreadCount = 0;
   Timer? _notificationTimer;
+  bool _isFetching = false;
 
-  // @override
-  // void initState() {
-  //   super.initState();
-  //   _loadNotifications();
-  // }
-
-  // Future<void> _loadNotifications() async {
-  //   final response = await AdminNotificationService.fetchNotifications();
-  //   setState(() {
-  //     _unreadCount = response['count'];
-  //   });
-  // }
   @override
   void initState() {
     super.initState();
-
-    // 👁 listen app lifecycle
     WidgetsBinding.instance.addObserver(this);
 
-    // 🔔 initial load
     _loadNotifications();
+    _startTimer();
+  }
 
-    // 🔄 auto refresh every 10 seconds
+  void _startTimer() {
+    _notificationTimer?.cancel();
     _notificationTimer = Timer.periodic(
       const Duration(seconds: 10),
-          (timer) {
-        _loadNotifications();
-      },
+          (_) => _loadNotifications(),
     );
   }
+
+  void _stopTimer() {
+    _notificationTimer?.cancel();
+    _notificationTimer = null;
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _loadNotifications(); // refresh when app comes foreground
+      _loadNotifications();
+      _startTimer();
+    } else if (state == AppLifecycleState.paused) {
+      _stopTimer();
     }
   }
+
   @override
   void dispose() {
-    _notificationTimer?.cancel();
+    _stopTimer();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
+
   Future<void> _loadNotifications() async {
-    final response = await AdminNotificationService.fetchNotifications();
+    if (_isFetching) return; // prevent overlap
+    _isFetching = true;
 
-    if (!mounted) return;
+    try {
+      final response =
+      await AdminNotificationService.fetchNotifications();
 
-    setState(() {
-      _unreadCount = response['count'];
-    });
+      if (!mounted) return;
+
+      final int newCount = response['count'] ?? 0;
+
+      if (newCount != _unreadCount) {
+        setState(() {
+          _unreadCount = newCount;
+        });
+      }
+    } catch (e) {
+      debugPrint("❌ Notification fetch failed: $e");
+    } finally {
+      _isFetching = false;
+    }
   }
+
+
+// class _AdminDashboardScreenState extends State<AdminDashboardScreen>
+//     with WidgetsBindingObserver {
+//
+//   int _unreadCount = 0;
+//   Timer? _notificationTimer;
+//
+//
+//   @override
+//   void initState() {
+//     super.initState();
+//
+//     // 👁 listen app lifecycle
+//     WidgetsBinding.instance.addObserver(this);
+//
+//     // 🔔 initial load
+//     _loadNotifications();
+//
+//     // 🔄 auto refresh every 10 seconds
+//     _notificationTimer = Timer.periodic(
+//       const Duration(seconds: 10),
+//           (timer) {
+//         _loadNotifications();
+//       },
+//     );
+//   }
+//   @override
+//   void didChangeAppLifecycleState(AppLifecycleState state) {
+//     if (state == AppLifecycleState.resumed) {
+//       _loadNotifications(); // refresh when app comes foreground
+//     }
+//   }
+//   @override
+//   void dispose() {
+//     _notificationTimer?.cancel();
+//     WidgetsBinding.instance.removeObserver(this);
+//     super.dispose();
+//   }
+//   Future<void> _loadNotifications() async {
+//     final response = await AdminNotificationService.fetchNotifications();
+//
+//     if (!mounted) return;
+//
+//     setState(() {
+//       _unreadCount = response['count'];
+//     });
+//   }
 
   @override
   Widget build(BuildContext context) {
@@ -4100,6 +4161,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           );
         },
       ),
+      _AdminOption(
+        title: "Student Attendance",
+        icon: Icons.people_alt_outlined,
+        onTap: () {
+          // Navigate to Fees Approve
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => StudentAttendanceScreen()),
+          );
+        },
+      ),
+
       _AdminOption(
         title: "Fees Approve",
         icon: Icons.check_circle_outline,
@@ -4138,6 +4211,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             context,
             MaterialPageRoute(
               builder: (_) => const BookedSlotsScreen(),
+            ),
+          );
+        },
+      ),
+      _AdminOption(
+        title: "Send Notifications",
+        icon: Icons.notifications_active,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const SendNotificationToAll(),
             ),
           );
         },
@@ -4286,12 +4371,12 @@ class _AdminCard extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(item.icon, size: 50, color: Colors.blueAccent),
+            Icon(item.icon, size: 40, color: Colors.blueAccent),
             const SizedBox(height: 12),
             Text(
               item.title,
               style: const TextStyle(
-                fontSize: 18,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
               ),
             )

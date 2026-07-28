@@ -2045,11 +2045,16 @@ import 'package:nahata_app/bottombar/bkpayment.dart';
 class SlotBookingScreen extends StatefulWidget {
   final String location;
   final String game;
+  // 🔄 NEW API: numeric ids resolved upstream (optional; resolved by name if null)
+  final int? sportId;
+  final int? sportComplexId;
 
   const SlotBookingScreen({
     super.key,
     required this.location,
     required this.game,
+    this.sportId,
+    this.sportComplexId,
   });
 
   @override
@@ -2058,6 +2063,11 @@ class SlotBookingScreen extends StatefulWidget {
 
 class _SlotBookingScreenState extends State<SlotBookingScreen> {
   static const brandBlue = Color(0xFF1A237E);
+
+  // 🔄 NEW API base + resolved ids
+  static const String _apiBase = "https://api.nahatasports.com/api";
+  int? _sportComplexId;
+  int? _sportId;
 
   DateTime _selectedDay = DateTime.now();
   bool isLoading = false;
@@ -2096,6 +2106,13 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
       60,
           (index) => DateTime.now().add(Duration(days: index)),
     );
+  }
+  String normalizeTime(String time) {
+    return time
+        .toLowerCase()
+        .replaceAll(' to ', ' to ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   // ---------------------- Day matcher ----------------------
@@ -2150,8 +2167,143 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     return dayKey == selectedDayName;
   }
 
+  // ---------------------- OLD API: per-court availability (commented out) ----------------------
+  // Replaced by GET /courts/{courtId}/available-slots?date=... in the new API.
+  // Future<Map<String, bool>> fetchSlotAvailability({
+  //   required String date,
+  //   required String court,
+  // }) async {
+  //   final url = Uri.parse("https://nahatasports.com/booking_new");
+  //
+  //   final response = await http.post(
+  //     url,
+  //     headers: {"Content-Type": "application/json"},
+  //     body: jsonEncode({
+  //       "date": date,
+  //       "court": court,
+  //     }),
+  //   );
+  // print("🚀 fetchSlotAvailability()");
+  // print(response);
+  //   print("📅 Fetching availability for $court");
+  //   if (response.statusCode != 200) {
+  //     throw Exception("Failed to fetch availability");
+  //   }
+  //
+  //   final decoded = jsonDecode(response.body);
+  //
+  //   final Map<String, bool> availabilityMap = {};
+  //
+  //   final monthKey = date.substring(0, 7); // yyyy-MM
+  //   final slots =
+  //   decoded['data']?[monthKey]?[date]?[court] as List<dynamic>?;
+  //
+  //   if (slots != null) {
+  //     for (var slot in slots) {
+  //       final rawStatus = slot['status'];
+  //
+  //       // 🔥 NORMALIZE TO BOOL
+  //       bool isBlocked;
+  //       if (rawStatus is bool) {
+  //         isBlocked = rawStatus;
+  //       } else if (rawStatus is String) {
+  //         isBlocked = rawStatus.toLowerCase() == "true" || rawStatus == "1";
+  //       } else if (rawStatus is int) {
+  //         isBlocked = rawStatus == 1;
+  //       } else {
+  //         isBlocked = false;
+  //       }
+  //       final normalizedTime = normalizeTime(slot['time'].toString());
+  //       availabilityMap[normalizedTime] = isBlocked;
+  //
+  //       // availabilityMap[slot['time']] = isBlocked;
+  //     }
+  //   }
+  //
+  //   return availabilityMap;
+  // }
 
+  // ---------------------- NEW API helpers ----------------------
+
+  /// "06:00:00" -> "6:00 AM", "00:00:00" -> "12:00 AM"
+  String _fmtTime(String hhmmss) {
+    try {
+      final parts = hhmmss.split(':');
+      final h = int.parse(parts[0]);
+      final m = parts.length > 1 ? parts[1] : '00';
+      final period = h >= 12 ? 'PM' : 'AM';
+      var h12 = h % 12;
+      if (h12 == 0) h12 = 12;
+      return '$h12:$m $period';
+    } catch (_) {
+      return hhmmss;
+    }
+  }
+
+  /// Resolve the sports-complex id for the current [widget.location] by name.
+  Future<int?> _resolveComplexId() async {
+    if (widget.sportComplexId != null) return widget.sportComplexId;
+    final url = Uri.parse(
+        '$_apiBase/sports-complexes?status=Active&showOnFrontend=true&limit=50');
+    final res = await http.get(url, headers: {'Accept': 'application/json'});
+    if (res.statusCode != 200) return null;
+    final body = jsonDecode(res.body);
+    final List complexes = body['data']?['sportsComplexes'] ?? [];
+    for (final c in complexes) {
+      if ((c['name'] ?? '').toString().toLowerCase().trim() ==
+          widget.location.toLowerCase().trim()) {
+        return c['id'] is int ? c['id'] as int : int.tryParse('${c['id']}');
+      }
+    }
+    return null;
+  }
+
+  /// GET /courts of a complex (paginated), filtered to [widget.game].
+  Future<List<dynamic>> _fetchCourtsForSport(int complexId) async {
+    final List<dynamic> matching = [];
+    int page = 1;
+    while (true) {
+      final url = Uri.parse(
+          '$_apiBase/courts?sportComplexId=$complexId&status=Active&limit=100&page=$page');
+      final res = await http.get(url, headers: {'Accept': 'application/json'});
+      if (res.statusCode != 200) break;
+      final body = jsonDecode(res.body);
+      final List data = body['data'] ?? [];
+      for (final c in data) {
+        final sportName = (c['Sport']?['name'] ?? '').toString();
+        final sportId = c['Sport']?['id'];
+        final matchesName =
+            sportName.toLowerCase().trim() == widget.game.toLowerCase().trim();
+        final matchesId = widget.sportId != null && sportId == widget.sportId;
+        if (matchesName || matchesId) matching.add(c);
+      }
+      final totalPages = body['pagination']?['totalPages'] ?? 1;
+      if (page >= (totalPages is int ? totalPages : 1)) break;
+      page++;
+    }
+    return matching;
+  }
+
+  /// GET /courts/{courtId}/available-slots?date=...
+  Future<List<dynamic>> _fetchAvailableSlots(dynamic courtId, String date) async {
+    final url = Uri.parse('$_apiBase/courts/$courtId/available-slots?date=$date');
+    final res = await http.get(url, headers: {'Accept': 'application/json'});
+    if (res.statusCode != 200) return [];
+    final body = jsonDecode(res.body);
+    return body['data'] ?? [];
+  }
+
+
+
+
+  // ---------------------- NEW API: courts + slots ----------------------
+  // Builds the same `courts` slot-map list the existing UI consumes:
+  //   court, hourType, dayType, time, price, date, isSoldOut
+  // plus hidden booking metadata: courtId, slotId, sportId, sportComplexId,
+  // startTime, endTime (ignored by the UI, used by PaymentScreen).
   Future<void> fetchCourtsWisePrice() async {
+    print("🚀 fetchCourtsWisePrice() [NEW API] called");
+
     setState(() {
       isLoading = true;
       error = null;
@@ -2160,90 +2312,189 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDay);
     final selectedDayName = DateFormat('EEEE').format(_selectedDay);
 
-    final url = Uri.https(
-      "nahatasports.com",
-      "/api/courts_wise_price",
-      {
-        "date": formattedDate,
-        "sport_name": widget.game,
-        "location": widget.location,
-      },
-    );
-
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        if (responseData["status"] == "success") {
-          final data = responseData["data"] as Map<String, dynamic>;
-          final List<Map<String, dynamic>> parsedSlots = [];
+      _sportComplexId ??= await _resolveComplexId();
+      if (_sportComplexId == null) {
+        setState(() {
+          courts = [];
+          error = "Location \"${widget.location}\" not found";
+        });
+        return;
+      }
 
-          data.forEach((courtName, courtData) {
-            final courtMap = courtData as Map<String, dynamic>;
-            courtMap.forEach((hourType, daysMap) {
-              if (daysMap is Map<String, dynamic>) {
-                daysMap.forEach((dayType, slotList) {
-                  if (slotList is List &&
-                      isSlotForSelectedDay(dayType, selectedDayName)) {
-                    for (var slot in slotList) {
-                      parsedSlots.add({
-                        "court": courtName,
-                        "hourType": hourType,
-                        "dayType": dayType,
-                        "time": slot["time"].toString(),
-                        "price": int.tryParse(slot["price"].toString()) ?? 0,
-                        "date": formattedDate, // Add date to each slot
-                      });
-                    }
-                  }
-                });
-              }
-            });
-          });
+      final matchingCourts = await _fetchCourtsForSport(_sportComplexId!);
+      if (matchingCourts.isNotEmpty) {
+        _sportId = widget.sportId ??
+            (matchingCourts.first['Sport']?['id'] is int
+                ? matchingCourts.first['Sport']['id'] as int
+                : int.tryParse('${matchingCourts.first['Sport']?['id']}'));
+      }
 
-          // Keep selected slots from other dates, only update current date
-          final otherDateSlots = selectedSlots.where((sel) => sel['date'] != formattedDate).toList();
-          final currentDateSlots = selectedSlots.where((sel) {
-            return sel['date'] == formattedDate && parsedSlots.any((p) =>
-            p['court'] == sel['court'] &&
-                p['hourType'] == sel['hourType'] &&
-                p['time'] == sel['time'] &&
-                p['date'] == sel['date']);
-          }).toList();
+      final List<Map<String, dynamic>> parsedSlots = [];
 
-          setState(() {
-            courts = parsedSlots;
-            // Combine slots from other dates with current date selections
-            selectedSlots = [...otherDateSlots, ...currentDateSlots];
-            totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
+      for (final court in matchingCourts) {
+        final courtId = court['id'];
+        final courtName = (court['name'] ?? '').toString();
+        final courtSportId = court['Sport']?['id'];
 
-            final courtNames = _getCourtNames();
-            if (courtNames.isNotEmpty) {
-              selectedCourt = courtNames.first;
-            }
+        final slots = await _fetchAvailableSlots(courtId, formattedDate);
 
-            if (selectedCourt != null) {
-              final hourTypes = _getHourTypesForCourt(selectedCourt);
-              if (hourTypes.isNotEmpty) {
-                selectedHourTypeTab = hourTypes.first;
-              }
-            }
-          });
-        } else {
-          setState(() {
-            courts = [];
-            error = responseData["message"]?.toString() ?? "No data";
+        for (final s in slots) {
+          final start = (s['startTime'] ?? '').toString(); // "06:00:00"
+          final end = (s['endTime'] ?? '').toString();
+          final booked = s['isBooked'] == true;
+          final price = (s['price'] is num)
+              ? (s['price'] as num).toInt()
+              : int.tryParse('${s['price']}') ?? 0;
+
+          parsedSlots.add({
+            "court": courtName,
+            "hourType": (s['slotType'] ?? 'Regular').toString(),
+            "dayType": selectedDayName,
+            "time": "${_fmtTime(start)} - ${_fmtTime(end)}",
+            "price": price,
+            "date": formattedDate,
+            "isSoldOut": booked,
+            // ---- hidden booking metadata (new API) ----
+            "courtId": courtId,
+            "slotId": s['id'],
+            "sportId": courtSportId ?? _sportId,
+            "sportComplexId": _sportComplexId,
+            "startTime": start,
+            "endTime": end,
           });
         }
-      } else {
-        setState(() => error = "Server error ${response.statusCode}");
       }
-    } catch (e) {
+
+      print("✅ Total AVAILABLE slots: ${parsedSlots.length}");
+
+      setState(() {
+        courts = parsedSlots;
+        selectedSlots =
+            selectedSlots.where((s) => s['date'] != formattedDate).toList();
+        totalPrice = selectedSlots.fold(
+            0, (sum, s) => sum + (s['price'] as int));
+
+        final courtNames = _getCourtNames();
+        if (courtNames.isNotEmpty) {
+          selectedCourt = courtNames.first;
+          final ht = _getHourTypesForCourt(selectedCourt);
+          selectedHourTypeTab = ht.isNotEmpty ? ht.first : null;
+        } else {
+          selectedCourt = null;
+          selectedHourTypeTab = null;
+        }
+      });
+
+      print("🎉 fetchCourtsWisePrice() [NEW API] completed");
+    } catch (e, stack) {
+      print("🔥 Exception: $e");
+      print(stack);
       setState(() => error = "Error: $e");
     } finally {
       setState(() => isLoading = false);
+      print("⏹️ Loading finished");
     }
   }
+
+  // Future<void> fetchCourtsWisePrice() async {
+  //   setState(() {
+  //     isLoading = true;
+  //     error = null;
+  //   });
+  //
+  //   final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDay);
+  //   final selectedDayName = DateFormat('EEEE').format(_selectedDay);
+  //
+  //   final url = Uri.https(
+  //     "nahatasports.com",
+  //     "/api/courts_wise_price",
+  //     {
+  //       "date": formattedDate,
+  //       "sport_name": widget.game,
+  //       "location": widget.location,
+  //     },
+  //   );
+  //
+  //   try {
+  //     final response = await http.get(url);
+  //     if (response.statusCode == 200) {
+  //       final responseData = json.decode(response.body);
+  //       if (responseData["status"] == "success") {
+  //         final data = responseData["data"] as Map<String, dynamic>;
+  //         final List<Map<String, dynamic>> parsedSlots = [];
+  //
+  //         data.forEach((courtName, courtData) {
+  //           final courtMap = courtData as Map<String, dynamic>;
+  //           courtMap.forEach((hourType, daysMap) {
+  //             if (daysMap is Map<String, dynamic>) {
+  //               daysMap.forEach((dayType, slotList) {
+  //                 if (slotList is List &&
+  //                     isSlotForSelectedDay(dayType, selectedDayName)) {
+  //                   for (var slot in slotList) {
+  //                     parsedSlots.add({
+  //                       "court": courtName,
+  //                       "hourType": hourType,
+  //                       "dayType": dayType,
+  //                       "time": slot["time"].toString(),
+  //                       "price": int.tryParse(slot["price"].toString()) ?? 0,
+  //                       "date": formattedDate, // Add date to each slot
+  //                     });
+  //                   }
+  //                 }
+  //               });
+  //             }
+  //           });
+  //         });
+  //
+  //         // Keep selected slots from other dates, only update current date
+  //         final otherDateSlots = selectedSlots.where((sel) => sel['date'] != formattedDate).toList();
+  //         final currentDateSlots = selectedSlots.where((sel) {
+  //           return sel['date'] == formattedDate && parsedSlots.any((p) =>
+  //           p['court'] == sel['court'] &&
+  //               p['hourType'] == sel['hourType'] &&
+  //               p['time'] == sel['time'] &&
+  //               p['date'] == sel['date']);
+  //         }).toList();
+  //
+  //         setState(() {
+  //           courts = parsedSlots;
+  //           // Combine slots from other dates with current date selections
+  //           selectedSlots = [...otherDateSlots, ...currentDateSlots];
+  //           totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
+  //
+  //           final courtNames = _getCourtNames();
+  //           if (courtNames.isNotEmpty) {
+  //             selectedCourt = courtNames.first;
+  //           }
+  //
+  //           if (selectedCourt != null) {
+  //             final hourTypes = _getHourTypesForCourt(selectedCourt);
+  //             if (hourTypes.isNotEmpty) {
+  //               selectedHourTypeTab = hourTypes.first;
+  //             }
+  //           }
+  //         });
+  //       } else {
+  //         setState(() {
+  //           courts = [];
+  //           error = responseData["message"]?.toString() ?? "No data";
+  //         });
+  //       }
+  //     } else {
+  //       setState(() => error = "Server error ${response.statusCode}");
+  //     }
+  //   } catch (e) {
+  //     setState(() => error = "Error: $e");
+  //   } finally {
+  //     setState(() => isLoading = false);
+  //   }
+  //   // final availability = await fetchSlotAvailability(
+  //   //   date: formattedDate,
+  //   //   court: courtNames.first, // or selectedCourt
+  //   // );
+  //
+  // }
 
   // ---------------------- Helpers ----------------------
   List<String> _getCourtNames() {
@@ -2258,7 +2509,10 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     final list = courts
         .where((s) => s['court'] == court && s['hourType'] == hourType)
         .toList();
-    list.sort((a, b) => a['time'].toString().compareTo(b['time'].toString()));
+    // 🔄 NEW API: sort by 24h startTime so slots stay chronological
+    list.sort((a, b) => (a['startTime'] ?? a['time'])
+        .toString()
+        .compareTo((b['startTime'] ?? b['time']).toString()));
     return list;
   }
 
@@ -2273,6 +2527,8 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     return hourTypes;
   }
   void toggleSlot(Map<String, dynamic> slot) {
+    if (slot['isSoldOut'] == true) return;
+
     setState(() {
       final exists = selectedSlots.any((s) =>
       s['court'] == slot['court'] &&
@@ -2292,24 +2548,7 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
       totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
     });
   }
-  // void toggleSlot(Map<String, dynamic> slot) {
 
-  //   setState(() {
-  //     final exists = selectedSlots.any((s) =>
-  //     s['court'] == slot['court'] &&
-  //         s['hourType'] == slot['hourType'] &&
-  //         s['time'] == slot['time']);
-  //     if (exists) {
-  //       selectedSlots.removeWhere((s) =>
-  //       s['court'] == slot['court'] &&
-  //           s['hourType'] == slot['hourType'] &&
-  //           s['time'] == slot['time']);
-  //     } else {
-  //       selectedSlots.add(slot);
-  //     }
-  //     totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
-  //   });
-  // }
   void _showConfirmationBottomSheet() {
     // Group slots by date
     Map<String, List<Map<String, dynamic>>> groupedSlots = {};
@@ -2470,6 +2709,9 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
                               "date": DateFormat('yyyy-MM-dd').format(_selectedDay),
                               "phone": userDetails?['phone'] ?? '',
                               "cash": 0,
+                              // 🔄 NEW API booking metadata
+                              "sportComplexId": _sportComplexId,
+                              "sportId": _sportId,
                             },
                           ),
                         ),
@@ -3101,7 +3343,8 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
         s['hourType'] == slot['hourType'] &&
         s['time'] == slot['time'] &&
         s['date'] == slot['date']);
-    final isSoldOut = (slot['price'] == 0);
+    // final isSoldOut = (slot['price'] == 0);
+    final isSoldOut = slot['isSoldOut'] == true;
 
     return Container(
       width: double.infinity,
@@ -3386,3 +3629,24 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     });
   }
 }
+
+
+
+// void toggleSlot(Map<String, dynamic> slot) {
+
+//   setState(() {
+//     final exists = selectedSlots.any((s) =>
+//     s['court'] == slot['court'] &&
+//         s['hourType'] == slot['hourType'] &&
+//         s['time'] == slot['time']);
+//     if (exists) {
+//       selectedSlots.removeWhere((s) =>
+//       s['court'] == slot['court'] &&
+//           s['hourType'] == slot['hourType'] &&
+//           s['time'] == slot['time']);
+//     } else {
+//       selectedSlots.add(slot);
+//     }
+//     totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
+//   });
+// }

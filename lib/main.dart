@@ -622,12 +622,15 @@
 //   }
 // }
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth/login.dart';
 import 'bottombar/Custombottombar.dart';
@@ -637,6 +640,15 @@ import 'dashboard/coach_screen.dart';
 import 'dashboard/security_screen.dart';
 import 'network.dart';
 import 'notification.dart';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'package:flutter/foundation.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
   // 🔹 Global notification plugin
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -695,64 +707,17 @@ import 'notification.dart';
     }
   }
 
-// Future<void> main() async {
-//   WidgetsFlutterBinding.ensureInitialized();
-//   await Firebase.initializeApp();
-//
-//   // 🔹 Request notification permission (important for Android 13+ & iOS)
-//   NotificationSettings settings =
-//   await FirebaseMessaging.instance.requestPermission(
-//     alert: true,
-//     badge: true,
-//     sound: true,
-//   );
-//   print('🔔 Permission status: ${settings.authorizationStatus}');
-//
-//   // 🔹 Get FCM token (for backend use)
-//   String? token = await FirebaseMessaging.instance.getToken();
-//   print('📱 FCM Token: $token');
-//
-//   // 🔹 Setup background message handler
-//   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-//
-//   // 🔹 Android notification channel setup
-//   const AndroidNotificationChannel channel = AndroidNotificationChannel(
-//     'high_importance_channel',
-//     'High Importance Notifications',
-//     description: 'Used for important notifications',
-//     importance: Importance.high,
-//   );
-//
-//   await flutterLocalNotificationsPlugin
-//       .resolvePlatformSpecificImplementation<
-//       AndroidFlutterLocalNotificationsPlugin>()
-//       ?.createNotificationChannel(channel);
-//
-//   // 🔹 Foreground listener
-//   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-//     print('📩 Foreground message: ${message.messageId}');
-//     _showLocalNotification(message);
-//   });
-//
-//   // 🔹 Notification click while app in background
-//   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-//     print('📌 Notification clicked (background): ${message.data}');
-//     _handleNotificationNavigation(message);
-//   });
-//
-//   // 🔹 Handle terminated state (app killed)
-//   RemoteMessage? initialMessage =
-//   await FirebaseMessaging.instance.getInitialMessage();
-//   print('🚀 Initial message (terminated): $initialMessage');
-//
-//   runApp(MyApp(initialMessage: initialMessage));
-// }
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Ensure Firebase initialized first
   await Firebase.initializeApp();
-
+  // 🌐 Initialize connectivity
+  Connectivity().onConnectivityChanged.listen((status) async {
+    final hasNet = await InternetService.hasInternet();
+    debugPrint(hasNet ? "✅ Internet Connected" : "❌ No Internet");
+  });
   // Register background handler
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
@@ -775,7 +740,22 @@ Future<void> main() async {
   );
 
 
+  FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+    final userId = await AuthService.getUserId();
 
+    if (userId != null) {
+      await http.post(
+        Uri.parse("https://nahatasports.com/api/save-fcm-token"),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "user_id": int.parse(userId),
+          "fcm_token": newToken,
+          "platform": "android",
+        }),
+      );
+      print("🔔 New FCM token: $newToken");
+    }
+  });
 
 
 
@@ -826,7 +806,15 @@ Future<void> main() async {
     print("❌ Failed to get FCM token: $e");
   }
 
-  runApp(MyApp(initialMessage: initialMessage));
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ConnectivityProvider()),
+      ],
+      child: MyApp(initialMessage: initialMessage),
+    ),
+  );
+
 }
 
 class MyApp extends StatelessWidget {
@@ -850,13 +838,25 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A237E)),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1A237E),
+        ),
+        textTheme: GoogleFonts.dmSansTextTheme(),
+        useMaterial3: true,
       ),
-       home: const SplashStep3(), // your splash or main screen
-      // home: CoachHomeScreen(),
+      builder: (context, child) {
+        return Stack(
+          children: [
+            if (child != null) child,
+            const ConnectivityOverlay(), // ✅ global overlay
+          ],
+        );
+      },
+      home: const SplashStep3(),
     );
   }
 }
+
 
 // void main() async {
 //   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -1526,6 +1526,241 @@ class _SplashStep3State extends State<SplashStep3> {
 
 
 
+class InternetService {
+  /// Quick network type check + real internet lookup
+  static Future<bool> hasInternet() async {
+    final connectivity = await Connectivity().checkConnectivity();
+    if (connectivity == ConnectivityResult.none) return false;
+
+    try {
+      final result = await InternetAddress.lookup('google.com').timeout(const Duration(seconds: 5));
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+}
 
 
 
+class ConnectivityService {
+  ConnectivityService._internal();
+  static final ConnectivityService _instance =
+  ConnectivityService._internal();
+
+  factory ConnectivityService() => _instance;
+
+  final Connectivity _connectivity = Connectivity();
+  final StreamController<bool> _controller =
+  StreamController<bool>.broadcast();
+
+  Stream<bool> get connectivityStream => _controller.stream;
+
+  Future<void> initialize() async {
+    final results = await _connectivity.checkConnectivity();
+    _controller.add(_isConnected(results));
+
+    _connectivity.onConnectivityChanged.listen((results) {
+      _controller.add(_isConnected(results));
+    });
+  }
+
+  bool _isConnected(List<ConnectivityResult> results) {
+    // If ANY connection is available → online
+    return results.any((result) => result != ConnectivityResult.none);
+  }
+
+  void dispose() {
+    _controller.close();
+  }
+}
+
+class ConnectivityProvider extends ChangeNotifier {
+  bool _isOnline = true;
+  bool get isOnline => _isOnline;
+
+  late StreamSubscription _sub; // avoid strict generic to prevent cast issues
+  Timer? _debounce; // small debounce to avoid flicker
+
+  ConnectivityProvider() {
+    _init();
+    // listen for connectivity changes (wifi/mobile/none)
+    _sub = Connectivity().onConnectivityChanged.listen((_) => _handleChange());
+  }
+
+  Future<void> _init() async {
+    final online = await InternetService.hasInternet();
+    _updateState(online);
+  }
+
+  void _handleChange() {
+    // debounce rapid flaps
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () async {
+      final online = await InternetService.hasInternet();
+      _updateState(online);
+    });
+  }
+
+  Future<void> retryNow() async {
+    final online = await InternetService.hasInternet();
+    _updateState(online);
+  }
+
+  void _updateState(bool online) {
+    if (_isOnline != online) {
+      _isOnline = online;
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sub.cancel();
+    _debounce?.cancel();
+    super.dispose();
+  }
+}
+
+class ConnectivityOverlay extends StatefulWidget {
+  const ConnectivityOverlay({super.key});
+
+  @override
+  State<ConnectivityOverlay> createState() => _ConnectivityOverlayState();
+}
+
+class _ConnectivityOverlayState extends State<ConnectivityOverlay>
+    with SingleTickerProviderStateMixin {
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<ConnectivityProvider>(context);
+    final isOnline = provider.isOnline;
+
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 350),
+        offset: isOnline ? const Offset(0, -1) : Offset.zero,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Material(
+              elevation: 6,
+              borderRadius: BorderRadius.circular(12),
+              color: isOnline ? Colors.green[600] : Colors.red[600],
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                child: Row(
+                  children: [
+                    Icon(
+                      isOnline ? Icons.wifi : Icons.wifi_off,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isOnline ? 'Back online' : 'No internet connection',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            isOnline
+                                ? 'You are connected. Sync resumed.'
+                                : 'Some features may be unavailable. Check your connection.',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.95),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (!isOnline) ...[
+                      TextButton(
+                        onPressed: () async {
+                          await provider.retryNow();
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          backgroundColor: Colors.white24,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('RETRY'),
+                      ),
+                    ]
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Future<void> main() async {
+//   WidgetsFlutterBinding.ensureInitialized();
+//   await Firebase.initializeApp();
+//
+//   // 🔹 Request notification permission (important for Android 13+ & iOS)
+//   NotificationSettings settings =
+//   await FirebaseMessaging.instance.requestPermission(
+//     alert: true,
+//     badge: true,
+//     sound: true,
+//   );
+//   print('🔔 Permission status: ${settings.authorizationStatus}');
+//
+//   // 🔹 Get FCM token (for backend use)
+//   String? token = await FirebaseMessaging.instance.getToken();
+//   print('📱 FCM Token: $token');
+//
+//   // 🔹 Setup background message handler
+//   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+//
+//   // 🔹 Android notification channel setup
+//   const AndroidNotificationChannel channel = AndroidNotificationChannel(
+//     'high_importance_channel',
+//     'High Importance Notifications',
+//     description: 'Used for important notifications',
+//     importance: Importance.high,
+//   );
+//
+//   await flutterLocalNotificationsPlugin
+//       .resolvePlatformSpecificImplementation<
+//       AndroidFlutterLocalNotificationsPlugin>()
+//       ?.createNotificationChannel(channel);
+//
+//   // 🔹 Foreground listener
+//   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+//     print('📩 Foreground message: ${message.messageId}');
+//     _showLocalNotification(message);
+//   });
+//
+//   // 🔹 Notification click while app in background
+//   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+//     print('📌 Notification clicked (background): ${message.data}');
+//     _handleNotificationNavigation(message);
+//   });
+//
+//   // 🔹 Handle terminated state (app killed)
+//   RemoteMessage? initialMessage =
+//   await FirebaseMessaging.instance.getInitialMessage();
+//   print('🚀 Initial message (terminated): $initialMessage');
+//
+//   runApp(MyApp(initialMessage: initialMessage));
+// }

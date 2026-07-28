@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:nahata_app/bottombar/Custombottombar.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -31,6 +32,7 @@ class MoreScreen extends StatefulWidget {
 class _MoreScreenState extends State<MoreScreen> {
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
+  String? _profileImageVersion;
 
   @override
   void initState() {
@@ -131,7 +133,7 @@ class _MoreScreenState extends State<MoreScreen> {
     final response = await http.get(
       Uri.parse('https://nahatasports.com/api/$userId/edit'),
     );
-print(response);
+      print(response);
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       if (data['status'] == true) {
@@ -164,6 +166,29 @@ print(response);
   }
 
   Map<String, dynamic>? _student;
+  Map<String, dynamic>? _pass;
+  Uint8List _getQrImageBytes(String base64String) {
+    final cleanedBase64 = base64String.split(',').last;
+    return base64Decode(cleanedBase64);
+  }
+  String? get profileImageUrl {
+    // 1️⃣ FULL URL from local storage user
+    if (_userData != null &&
+        _userData!['photo'] != null &&
+        _userData!['photo'].toString().isNotEmpty) {
+      return _userData!['photo'].toString();
+    }
+
+    // 2️⃣ Filename from dashboard API
+    if (_student != null &&
+        _student!['student_photo'] != null &&
+        _student!['student_photo'].toString().isNotEmpty) {
+      return "https://nahatasports.com/public/uploads/students/"
+          "${_student!['student_photo']}?v=$_profileImageVersion";
+    }
+
+    return null;
+  }
 
   Future<void> fetchDashboard() async {
     final studentId = await AuthService.getUserId();
@@ -176,7 +201,7 @@ print(response);
 
     final response = await http.get(
       Uri.parse(
-        "https://nahatasports.com/api/student_dashboard?student_id=$studentId",
+          "https://nahatasports.com/api/student_dashboard?student_id=$studentId",
       ),
     );
 
@@ -186,11 +211,24 @@ print(response);
 
     if (jsonData['status'] == true) {
       debugPrint("Student Data: ${jsonData['data']['student']}");
+      debugPrint("PASS DATA: $_pass");
 
       setState(() {
         _student = jsonData['data']['student'];
+        _profileImageVersion = DateTime.now().millisecondsSinceEpoch.toString();
+
+        _pass = jsonData['data']['pass'];
       });
+      print(_profileImageVersion);
     }
+  }
+  bool _isPassValid(Map<String, dynamic> pass) {
+    if (pass['status'] != 'active') return false;
+
+    final validUntil = DateTime.tryParse(pass['valid_until'] ?? '');
+    if (validUntil == null) return false;
+
+    return validUntil.isAfter(DateTime.now());
   }
 
   @override
@@ -203,341 +241,397 @@ print(response);
         centerTitle: true,
         title: const Text(
           'More',
-          style: TextStyle(color: Colors.black),
+          style: TextStyle(
+              color: Colors.black,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+             ),
         ),
 
       ),
-      body: Column(
-        children: [
-          const SizedBox(height: 24),
-
-          // Profile Card
-// Profile Section
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.2),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Profile Image + Name
-                Column(
-                  children: [
-                    // CircleAvatar(
-                    //   radius: 35,
-                    //   backgroundColor: Colors.blue,
-                    //   backgroundImage: _userData?['image'] != null
-                    //       ? NetworkImage(_userData!['image'])
-                    //       : null,
-                    //   child: _userData?['image'] == null
-                    //       ? const Icon(Icons.person, size: 35, color: Colors.white)
-                    //       : null,
-                    // ),
-            // CircleAvatar(
-            // radius: 35,
-            //   backgroundColor: Colors.blue,
-            //   child: ClipOval(
-            //     child: Image.network(
-            //       "https://nahatasports.com/uploads/student_photo/${_userData?['student_photo']}",
-            //       fit: BoxFit.cover,
-            //       errorBuilder: (context, error, stackTrace) {
-            //         return const Icon(Icons.person, size: 35, color: Colors.white);
-            //       },
-            //     ),
-            //   ),
-            // ),
-            //
-            //         const SizedBox(height: 8),
-            //         Text(
-            //           _userData?['name'] ?? 'Guest User',
-            //           style: const TextStyle(
-            //             fontSize: 15,
-            //             fontWeight: FontWeight.bold,
-            //           ),
-            //         ),
-            //         CircleAvatar(
-            //           radius: 35,
-            //           backgroundColor: Colors.blue,
-            //           child: ClipOval(
-            //             child: Image.network(
-            //               _student?['student_photo'] != null
-            //                   ? "https://nahatasports.com/uploads/student_photo/${_student!['student_photo']}"
-            //                   : "",
-            //               fit: BoxFit.cover,
-            //               width: 70,
-            //               height: 70,
-            //               errorBuilder: (context, error, stackTrace) {
-            //                 return const Icon(
-            //                   Icons.person,
-            //                   size: 35,
-            //                   color: Colors.white,
-            //                 );
-            //               },
-            //             ),
-            //           ),
-            //         ),
-            //
-            //         const SizedBox(height: 8),
-            //
-            //         Text(
-            //           _student?['name'] ?? 'Guest User',
-            //           style: const TextStyle(
-            //             fontSize: 15,
-            //             fontWeight: FontWeight.bold,
-            //           ),
-            //         ),
-            _student == null
-            ?  _buildProfileShimmer()
-                : Column(
+      body: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-          CircleAvatar(
-          radius: 35,
-            backgroundColor: Colors.blue,
-            backgroundImage: _student!['student_photo'] != null &&
-                _student!['student_photo'].toString().isNotEmpty
-                ? NetworkImage(
-              "https://nahatasports.com/public/uploads/students/${_student!['student_photo']}",
-            )
-                : null,
-            child: _student!['student_photo'] == null ||
-                _student!['student_photo'].toString().isEmpty
-                ? const Icon(Icons.person, color: Colors.white)
-                : null,
-          ),
-
-          const SizedBox(height: 8),
-
-          Text(
-            _student!['name'] ?? '',
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      )
-
-                  ],
-                ),
-                const SizedBox(width: 24),
-                // Edit + Stats
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+            /// PROFILE CARD
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: _isLoading
+                  ? const Padding(
+                padding: EdgeInsets.all(40),
+                child: Center(child: CircularProgressIndicator()),
+              )
+                  : _student == null
+                  ? _buildProfileShimmer()
+                  : Column(
+                children: [
+                  /// HEADER
+                  Row(
                     children: [
-                      // IconButton(
-                      //   icon: const Icon(Icons.edit, size: 20),
-                      //   onPressed: () {
-                      //     // Navigate to Edit Profile
-                      //   },
-                      //   padding: EdgeInsets.zero,
-                      //   constraints: const BoxConstraints(),
-                      // ),
+                      /// AVATAR
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border:
+                          Border.all(color: Colors.white, width: 3),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                     child:CircleAvatar(
+                       radius: 40,
+                       backgroundColor: Colors.grey.shade200,
+                       child: ClipOval(
+                         child: profileImageUrl == null
+                             ? Icon(Icons.person, size: 40, color: Colors.blue.shade600)
+                             : Image.network(
+                           profileImageUrl!,
+                           width: 80,
+                           height: 80,
+                           fit: BoxFit.cover,
+                           errorBuilder: (_, __, ___) => Icon(
+                             Icons.person,
+                             size: 40,
+                             color: Colors.blue.shade600,
+                           ),
+                         ),
+                       ),
+                     ),
+
+
+
+                        // child: CircleAvatar(
+                        //   radius: 40,
+                        //   backgroundColor: Colors.white,
+                        //   // backgroundImage:
+                        //   // _student!['student_photo'] != null &&
+                        //   //     _student!['student_photo']
+                        //   //         .toString()
+                        //   //         .isNotEmpty
+                        //   //     ? NetworkImage(
+                        //   //     "https://nahatasports.com/public/uploads/students/${_student!['student_photo']}?v=${DateTime.now().millisecondsSinceEpoch}",
+                        //   //
+                        //   //   // "https://nahatasports.com/public/uploads/students/${_student!['student_photo']}",
+                        //   // )
+                        //   //     : null,
+                        //   backgroundImage: _student!['student_photo'] != null &&
+                        //       _student!['student_photo'].toString().isNotEmpty
+                        //       ? NetworkImage(
+                        //     "https://nahatasports.com/public/uploads/students/"
+                        //         "${_student!['student_photo']}?v=$_profileImageVersion",
+                        //   )
+                        //       : null,
+                        //
+                        //   child: _student!['student_photo'] == null ||
+                        //       _student!['student_photo']
+                        //           .toString()
+                        //           .isEmpty
+                        //       ? Icon(Icons.person,
+                        //       color: Colors.blue.shade600, size: 40)
+                        //       : null,
+                        // ),
+                      ),
+
+                      const SizedBox(width: 16),
+
+                      /// NAME & EMAIL
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _student!['name'] ?? '',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(Icons.email_outlined,
+                                    size: 14),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    _student!['email'] ?? '',
+                                    style: const TextStyle(fontSize: 13),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      /// EDIT
                       IconButton(
-                        icon: const Icon(Icons.edit, size: 20),
+                        icon: const Icon(Icons.edit_outlined),
                         onPressed: () async {
-                          // 🔹 Get current logged-in user's ID from SharedPreferences
-                          final userId = await AuthService.getUserId();
-
-                          if (userId == null) {
-                            // 🚪 Redirect to LoginScreen if not logged in
-                            Navigator.pushAndRemoveUntil(
-                              context,
-                              MaterialPageRoute(builder: (_) => const LoginScreen()),
-                                  (route) => false,
-                            );
-                            return;
-                          }
-
-                          // 🔹 Navigate to Edit Profile screen with that ID
                           final updated = await Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+                            MaterialPageRoute(
+                              builder: (_) =>
+                              const EditProfileScreen(),
+                            ),
                           );
-
-                          // 🔹 Refresh data if user saved updates
                           if (updated == true) {
-                            await _getUserData(); // ✅ Make sure _getUserData is async
-                            setState(() {}); // refresh UI
+                            await fetchDashboard(); // refresh student + photo
+                            await _getUserData();   // refresh user data if needed
+                            setState(() {});
                           }
                         },
                       ),
-
-
-
-                      SizedBox(height: 20,),
-                      // Row(
-                      //   mainAxisAlignment: MainAxisAlignment.center,
-                      //   children: [
-                      //     Column(
-                      //       children: [
-                      //         Text(
-                      //           (_userData?['games'] ?? 0).toString(),
-                      //           style: const TextStyle(
-                      //             fontSize: 18,
-                      //             fontWeight: FontWeight.bold,
-                      //           ),
-                      //         ),
-                      //         const SizedBox(height: 4),
-                      //         const Text('Games', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                      //       ],
-                      //     ),
-                      //     const SizedBox(width: 32),
-                      //     Column(
-                      //       children: [
-                      //         Text(
-                      //           (_userData?['coaches'] ?? 0).toString(),
-                      //           style: const TextStyle(
-                      //             fontSize: 18,
-                      //             fontWeight: FontWeight.bold,
-                      //           ),
-                      //         ),
-                      //         const SizedBox(height: 4),
-                      //         const Text('Coach', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                      //       ],
-                      //     ),
-                      //   ],
-                      // ),
                     ],
                   ),
-                ),
-              ],
-            ),
-          ),
 
-          const SizedBox(height: 32),
-
-          // Menu Items
-          Expanded(
-            child: ListView(
-              children: [
-                // _buildMenuItem(Icons.receipt, 'Your Bookings'),
-                _buildMenuItem(Icons.receipt, 'Your Bookings', onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const MyBookingsScreen(),
-                    ),
-                  );
-                }),
-                // _buildMenuItem(
-                //   Icons.event,
-                //   'My Events',
-                //   onTap: () {
-                //     Navigator.push(
-                //       context,
-                //       MaterialPageRoute(builder: (_) => const MyEventsScreen()),
-                //     );
-                //   },
-                // ),
-                _buildMenuItem(Icons.qr_code, 'Your Pass', onTap: () {
-                  Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const YourPassScreen()),
-                  );
-                }),
-                // _buildMenuItem(Icons.book, 'My Enrollments', onTap: () {
-                //   Navigator.push(context,
-                //     MaterialPageRoute(builder: (_) => const Enrollments()),
-                //   );
-                // }),
-                // _buildMenuItem(Icons.feedback_outlined, 'Feedback from Coaches', onTap: () {
-                //   Navigator.push(context,
-                //     MaterialPageRoute(builder: (_) => const StudentFeedbackScreen()),
-                //   );
-                // }),
-                // _buildMenuItem(Icons.favorite_border, 'Favourite Venues', onTap: () {
-                //   Navigator.push(context,
-                //     MaterialPageRoute(builder: (_) => const FavouriteVenuesScreen()),
-                //   );
-                // }),
-
-                // _buildMenuItem(Icons.help_outline, 'Help and FAQs'),
-                // _buildMenuItem(Icons.rate_review_outlined, 'Raise a Request'),
-                // _buildMenuItem(Icons.payment, 'Payment & Refund'),
-                _buildMenuItem(Icons.article, 'Blogs and Articles', onTap: () async {
-                  const url = 'https://nahatasports.com/blogs';
-                  if (await canLaunchUrl(Uri.parse(url))) {
-                    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                  } else {
-                    debugPrint('Could not launch $url');
-                  }
-                }),
-
-                _buildMenuItem(
-                  Icons.description,
-                  'Terms and Conditions',
-                  onTap: () async {
-                    const url = 'https://nahatasports.com/termsandcondition';
-                    if (await canLaunchUrl(Uri.parse(url))) {
-                      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                    } else {
-                      debugPrint('Could not launch $url');
-                    }
-                  },
-                ),
-                _buildMenuItem(
-                  Icons.privacy_tip_outlined,
-                  'Privacy Policy',
-                  onTap: () async {
-                    const url = 'https://nahatasports.com/privacy';
-                    if (await canLaunchUrl(Uri.parse(url))) {
-                      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                    } else {
-                      debugPrint('Could not launch $url');
-                    }
-                  },
-                ),
-                _buildMenuItem(
-                  Icons.delete_forever,
-                  'Delete Account',
-
-                  onTap: () => _confirmDeleteAccount(context),
-                ),
-
-
-                const SizedBox(height: 24),
-
-                // Logout Button
-                GestureDetector(
-                  onTap: () => _logout(context),
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    alignment: Alignment.center,
-                    child: const Text(
-                      'LOGOUT',
-                      style: TextStyle(
-                        color: Colors.red,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.2,
+                  /// QR SECTION
+                  if (_pass != null &&
+                      _pass!['qr_code'] != null &&
+                      _pass!['qr_code'].toString().isNotEmpty &&
+                      _isPassValid(_pass!))
+                    Padding(
+                      padding:
+                      const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius:
+                              BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: Colors.grey.shade200),
+                            ),
+                            child: Image.memory(
+                              _getQrImageBytes(_pass!['qr_code']),
+                              width: 80,
+                              height: 80,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius:
+                              BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: Colors.green.shade200),
+                            ),
+                            child: Text(
+                              'Valid until ${DateFormat('dd-MM-yyyy').format(DateTime.parse(_pass!['valid_until']))}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            /// MENU ITEMS (NO ListView, just Column)
+            _buildMenuItem(Icons.receipt, 'Your Bookings', onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MyBookingsScreen()),
+              );
+            }),
+            _buildMenuItem(Icons.qr_code, 'Your Pass', onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const YourPassScreen()),
+              );
+            }),
+            _buildMenuItem(Icons.article, 'Blogs and Articles', onTap: () async {
+              const url = 'https://nahatasports.com/blogs';
+              if (await canLaunchUrl(Uri.parse(url))) {
+                await launchUrl(Uri.parse(url),
+                    mode: LaunchMode.externalApplication);
+              }
+            }),
+            _buildMenuItem(Icons.description, 'Terms and Conditions',
+                onTap: () async {
+                  const url =
+                      'https://nahatasports.com/termsandcondition';
+                  if (await canLaunchUrl(Uri.parse(url))) {
+                    await launchUrl(Uri.parse(url),
+                        mode: LaunchMode.externalApplication);
+                  }
+                }),
+            _buildMenuItem(Icons.privacy_tip_outlined, 'Privacy Policy',
+                onTap: () async {
+                  const url = 'https://nahatasports.com/privacy';
+                  if (await canLaunchUrl(Uri.parse(url))) {
+                    await launchUrl(Uri.parse(url),
+                        mode: LaunchMode.externalApplication);
+                  }
+                }),
+            _buildMenuItem(Icons.delete_forever, 'Delete Account',
+                onTap: () => _confirmDeleteAccount(context)),
+
+            const SizedBox(height: 24),
+
+            /// LOGOUT
+            GestureDetector(
+              onTap: () => _logout(context),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                alignment: Alignment.center,
+                child: const Text(
+                  'LOGOUT',
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-
-                const SizedBox(height: 24),
-              ],
+              ),
             ),
-          ),
-        ],
+
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }
 
+  // const SizedBox(height: 24),
 
+  // Profile Card
+// Profile Section
+//           Container(
+//             margin: const EdgeInsets.symmetric(horizontal: 16),
+//             padding: const EdgeInsets.all(16),
+//             decoration: BoxDecoration(
+//               color: Colors.white,
+//               borderRadius: BorderRadius.circular(12),
+//               boxShadow: [
+//                 BoxShadow(
+//                   color: Colors.grey.withOpacity(0.2),
+//                   blurRadius: 8,
+//                   offset: const Offset(0, 2),
+//                 ),
+//               ],
+//             ),
+//             child: _isLoading
+//                 ? const Center(child: CircularProgressIndicator())
+//                 : Row(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 // Profile Image + Name
+//                 Column(
+//                   children: [
+//
+//             _student == null
+//             ?  _buildProfileShimmer()
+//                 : Column(
+//           children: [
+//           CircleAvatar(
+//           radius: 35,
+//             backgroundColor: Colors.blue,
+//             backgroundImage: _student!['student_photo'] != null &&
+//                 _student!['student_photo'].toString().isNotEmpty
+//                 ? NetworkImage(
+//               "https://nahatasports.com/public/uploads/students/${_student!['student_photo']}",
+//             )
+//                 : null,
+//             child: _student!['student_photo'] == null ||
+//                 _student!['student_photo'].toString().isEmpty
+//                 ? const Icon(Icons.person, color: Colors.white)
+//                 : null,
+//           ),
+//
+//           const SizedBox(height: 8),
+//
+//           Text(
+//             _student!['name'] ?? '',
+//             style: const TextStyle(
+//               fontSize: 15,
+//               fontWeight: FontWeight.bold,
+//             ),
+//           ),
+//         ],
+//       )
+//
+//                   ],
+//                 ),
+//                 const SizedBox(width: 24),
+//                 // Edit + Stats
+//                 Expanded(
+//                   child: Column(
+//                     crossAxisAlignment: CrossAxisAlignment.end,
+//                     children: [
+//
+//                       IconButton(
+//                         icon: const Icon(Icons.edit, size: 20),
+//                         onPressed: () async {
+//                           // 🔹 Get current logged-in user's ID from SharedPreferences
+//                           final userId = await AuthService.getUserId();
+//
+//                           if (userId == null) {
+//                             // 🚪 Redirect to LoginScreen if not logged in
+//                             Navigator.pushAndRemoveUntil(
+//                               context,
+//                               MaterialPageRoute(builder: (_) => const LoginScreen()),
+//                                   (route) => false,
+//                             );
+//                             return;
+//                           }
+//
+//                           // 🔹 Navigate to Edit Profile screen with that ID
+//                           final updated = await Navigator.push(
+//                             context,
+//                             MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+//                           );
+//
+//                           // 🔹 Refresh data if user saved updates
+//                           if (updated == true) {
+//                             await _getUserData(); // ✅ Make sure _getUserData is async
+//                             setState(() {}); // refresh UI
+//                           }
+//                         },
+//                       ),
+//
+//
+//
+//                       SizedBox(height: 20,),
+//
+//                     ],
+//                   ),
+//                 ),
+//               ],
+//             ),
+//           ),
   Widget _buildMenuItem(IconData icon, String title, {VoidCallback? onTap}) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -557,29 +651,10 @@ print(response);
       ),
     );
   }
-  // Widget _buildMenuItem(IconData icon, String title) {
-  //
-  //
-  //
-  //   return Container(
-  //     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-  //     decoration: BoxDecoration(
-  //       border: Border(
-  //         bottom: BorderSide(color: Colors.grey[200]!),
-  //       ),
-  //     ),
-  //     child: ListTile(
-  //       leading: Icon(icon, color: Colors.grey[700]),
-  //       title: Text(
-  //         title,
-  //         style: const TextStyle(fontSize: 15),
-  //       ),
-  //       trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-  //       onTap: () {},
-  //     ),
-  //   );
-  // }
+
 }
+
+
 Widget _buildProfileShimmer() {
   return Column(
     children: [
@@ -742,72 +817,123 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
   static const Color brandBlue = Color(0xFF1A237E);
 
   List<Map<String, dynamic>> allBookings = [];
+  final ScrollController _scrollController = ScrollController();
+
+  static const int _pageSize = 10;
+  int _currentPage = 1;
+
+  List<Map<String, dynamic>> _visibleBookings = [];
+  bool _isLoadingMore = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-
+    _scrollController.addListener(_onScroll);
     // Default to Upcoming
     _selectedTimeIndex = 0;
     _loadBookings();
   }
+  // Future<void> _loadBookings() async {
+  //   final email = await AuthService.getUserEmail();
+  //   if (email == null) return;
+  //
+  //   final filter = _selectedTimeIndex == 0 ? "upcoming" : "previous";
+  //
+  //   final response = await http.post(
+  //     Uri.parse("https://nahatasports.com/api/court-bookings"),
+  //     headers: {"Content-Type": "application/json"},
+  //     body: jsonEncode({"email": email}),
+  //   );
+  //
+  //   final jsonData = jsonDecode(response.body);
+  //   final data = jsonData['data'];
+  //
+  //   final raw = _selectedTimeIndex == 0
+  //       ? data['upcoming_bookings']
+  //       : data['previous_bookings'];
+  //
+  //   setState(() {
+  //     allBookings = List<Map<String, dynamic>>.from(raw ?? []);
+  //     _currentPage = 1;
+  //     _visibleBookings = allBookings.take(_pageSize).toList();
+  //   });
+  //
+  //   debugPrint('Final bookings count: ${allBookings.length}');
+  //
+  // }
+
   Future<void> _loadBookings() async {
     final email = await AuthService.getUserEmail();
     if (email == null) return;
 
-    final filter = _selectedTimeIndex == 0 ? "upcoming" : "previous";
-
     final response = await http.post(
-      Uri.parse("https://nahatasports.com/api/court-bookings?filter=$filter"),
+      Uri.parse("https://nahatasports.com/api/court-bookings"),
       headers: {"Content-Type": "application/json"},
-      body: jsonEncode({
-        "email": email,
-      }),
+      body: jsonEncode({"email": email}),
     );
 
     final jsonData = jsonDecode(response.body);
+    final data = jsonData['data'];
 
-    if (jsonData['status'] == true) {
-      setState(() {
-        allBookings = List<Map<String, dynamic>>.from(jsonData['data']);
-      });
+    List<Map<String, dynamic>> fetchedBookings = [];
+
+    if (_selectedTimeIndex == 0) {
+      fetchedBookings =
+      List<Map<String, dynamic>>.from(data['upcoming_bookings'] ?? []);
     } else {
-      setState(() {
-        allBookings = [];
-      });
+      fetchedBookings =
+      List<Map<String, dynamic>>.from(data['previous_bookings'] ?? []);
+    }
+
+    setState(() {
+      allBookings = fetchedBookings;
+      _currentPage = 1;
+      _visibleBookings = allBookings.take(_pageSize).toList();
+      _isLoadingMore = false;
+    });
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 100 &&
+        !_isLoadingMore) {
+      _loadMore();
     }
   }
+
+  void _loadMore() {
+    if (_visibleBookings.length >= allBookings.length) return;
+
+    setState(() => _isLoadingMore = true);
+
+    Future.delayed(const Duration(milliseconds: 300), () {
+      final nextItems = allBookings.skip(_visibleBookings.length).take(_pageSize);
+
+      setState(() {
+
+
+        _visibleBookings.addAll(nextItems);
+        _isLoadingMore = false;
+      });
+    });
+  }
+
+
 
 
   @override
   void dispose() {
+    _scrollController.dispose();
+
     _tabController.dispose();
     super.dispose();
   }
 
-  List<Map<String, dynamic>> _getFilteredBookings() {
-    final now = DateTime.now();
-    final upcoming = <Map<String, dynamic>>[];
-    final previous = <Map<String, dynamic>>[];
-
-    for (var booking in allBookings) {
-      try {
-        final date = DateFormat('yyyy-MM-dd').parse(booking['date']);
-        if (date.isBefore(now)) {
-          previous.add(booking);
-        } else {
-          upcoming.add(booking);
-        }
-      } catch (_) {}
-    }
-
-    return _selectedTimeIndex == 0 ? upcoming : previous;
-  }
 
   @override
   Widget build(BuildContext context) {
-    final filtered = allBookings;
+    final filtered = _visibleBookings;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -828,21 +954,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
         children: [
           const SizedBox(height: 16),
 
-          // --- Top Tabs (Venue / Coaching)
-          // Padding(
-          //   padding: const EdgeInsets.symmetric(horizontal: 16),
-          //   child: Row(
-          //     children: [
-          //       Expanded(child: _buildTabButton('Venue Bookings', 0)),
-          //       const SizedBox(width: 12),
-          //       Expanded(child: _buildTabButton('Coaching Bookings', 1)),
-          //     ],
-          //   ),
-          // ),
 
-          // const SizedBox(height: 24),
-
-          // --- Upcoming / Previous Toggle
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -894,15 +1006,27 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
 
           // --- Bookings list
           Expanded(
-            child: filtered.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: filtered.length,
-              itemBuilder: (context, index) {
-                final booking = filtered[index];
-                return _buildBookingCard(booking);
-              },
+            child: RefreshIndicator(
+              onRefresh: _loadBookings,
+              child: filtered.isEmpty
+                  ? _buildEmptyState()
+                  :ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: filtered.length + (_isLoadingMore ? 1 : 0),
+                itemBuilder: (context, index) {
+                  if (index == filtered.length) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+
+                  final booking = filtered[index];
+                  return _buildBookingCard(booking);
+                },
+              ),
+
             ),
           ),
         ],
@@ -910,28 +1034,6 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
     );
   }
 
-  Widget _buildTabButton(String title, int index) {
-    final isSelected = _selectedTabIndex == index;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedTabIndex = index),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? brandBlue : Colors.grey[200],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.grey[700],
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildTimeToggle(String title, int index) {
     final isSelected = _selectedTimeIndex == index;
@@ -974,15 +1076,147 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
       ),
     );
   }
+  void _showQrDialog(Map<String, dynamic> booking) {
+    final String qrUrl = booking['qr_code'];
+    final String court = booking['court_name'] ?? '';
+    final String date = booking['selected_date'] ?? '';
+    final String amount = booking['amount'] ?? '';
+
+    showDialog(
+      context: context,
+      builder: (_) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  "Booking QR Code",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                Text(court, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(date),
+                Text("₹ $amount"),
+
+                const SizedBox(height: 16),
+
+                Image.network(
+                  qrUrl,
+                  height: 220,
+                  width: 220,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) =>
+                  const Text("Failed to load QR"),
+                ),
+
+                const SizedBox(height: 16),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: () => _shareQrImage(
+                        qrUrl,
+                        court: court,
+                        date: date,
+                        amount: amount,
+                      ),
+                      child: const Text("SHARE"),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text("CLOSE"),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+  Future<void> _shareQrImage(
+      String qrUrl, {
+        required String court,
+        required String date,
+        required String amount,
+      }) async {
+    final response = await http.get(Uri.parse(qrUrl));
+
+    final tempDir = await getTemporaryDirectory();
+    final file = File('${tempDir.path}/booking_qr.png');
+
+    await file.writeAsBytes(response.bodyBytes);
+
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      text: '''
+Booking Details
+Court: $court
+Date: $date
+Amount: ₹$amount
+''',
+    );
+  }
 
   Widget _buildBookingCard(Map<String, dynamic> booking) {
     List<dynamic> slots = [];
+    final String? qrCodeUrl = booking['qr_code'];
 
-    if (booking['slots'] != null) {
-      slots = jsonDecode(booking['slots']);
+    /// 🔹 SAFELY PARSE SLOTS (string / list / map)
+
+
+    final rawSlots = booking['slots'];
+
+    if (rawSlots == null) {
+      slots = [];
     }
+    else if (rawSlots is List) {
+      slots = rawSlots;
+    }
+    else if (rawSlots is Map) {
+      slots = [rawSlots];
+    }
+    else if (rawSlots is String && rawSlots.isNotEmpty) {
+      try {
+        final safeJson = rawSlots
+            .replaceAll('–', '-')   // en dash
+            .replaceAll('—', '-');  // em dash
 
-    final slot = slots.isNotEmpty ? slots[0] : null;
+        final decoded = jsonDecode(safeJson);
+
+        if (decoded is List) {
+          slots = decoded;
+        } else if (decoded is Map) {
+          slots = [decoded];
+        }
+      } catch (e) {
+        debugPrint('Slot parse error: $e');
+        slots = [];
+      }
+    }
+    String slotTime = '';
+
+    if (slots.isNotEmpty) {
+      final slot = slots.first;
+
+      if (slot is Map && slot['time'] != null) {
+        slotTime = slot['time'].toString();
+      } else if (slot is String) {
+        slotTime = slot;
+      }
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1001,8 +1235,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          /// COURT NAME
           Text(
-            booking['court_name'] ?? '',
+            booking['court_name']?.toString() ?? '',
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 16,
@@ -1010,33 +1245,79 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
           ),
           const SizedBox(height: 6),
 
+          /// DATE
           Text(
-            booking['selected_date'] ?? '',
+            booking['selected_date']?.toString() ?? '',
             style: TextStyle(color: Colors.grey.shade600),
           ),
           const SizedBox(height: 6),
 
-          if (slot != null)
+          /// SLOT TIME (ONLY IF AVAILABLE)
+          if (slotTime.isNotEmpty)
             Text(
-              slot['time'] ?? '',
+              slotTime,
               style: TextStyle(color: Colors.grey.shade700),
             ),
 
           const SizedBox(height: 8),
 
+          /// AMOUNT
           Text(
-            "₹ ${booking['amount']}",
+            "₹ ${booking['amount'] ?? ''}",
             style: const TextStyle(
               fontWeight: FontWeight.w600,
               color: Colors.green,
             ),
           ),
+
+          /// QR CODE LINK
+          if (qrCodeUrl != null && qrCodeUrl.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: GestureDetector(
+                onTap: () => _showQrDialog(booking),
+                child: Row(
+                  children: [
+                    const Icon(Icons.qr_code, size: 20),
+                    const SizedBox(width: 6),
+                    const Text(
+                      "Show Booking Pass",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                    // const Spacer(),
+                    // IconButton(
+                    //   icon: const Icon(Icons.share, size: 20),
+                    //   onPressed: () => _shareQrImage(qrCodeUrl),
+                    // ),
+                  ],
+                ),
+
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
+
+
+Future<void> _shareQrImage(String qrUrl) async {
+  final response = await http.get(Uri.parse(qrUrl));
+
+  final tempDir = await getTemporaryDirectory();
+  final file = File('${tempDir.path}/booking_qr.png');
+
+  await file.writeAsBytes(response.bodyBytes);
+
+  await Share.shareXFiles(
+    [XFile(file.path)],
+    text: 'My Booking QR Code',
+  );
+}
 
 class MyEventsScreen extends StatefulWidget {
   const MyEventsScreen({super.key});
@@ -1225,65 +1506,7 @@ class _YourPassScreenState extends State<YourPassScreen> {
     _fetchPasses();
 
   }
-  // Future<void> _fetchPasses() async {
-  //   setState(() => _isLoading = true);
-  //
-  //   final studentId = await AuthService.getUserId();
-  //   if (studentId == null) return;
-  //
-  //   final status = _selectedTimeIndex == 0 ? ""
-  //       "active" : "expired";
-  //
-  //   final response = await http.get(
-  //     Uri.parse(
-  //       "https://nahatasports.com/api/booking-pass/$studentId?status=$status",
-  //     ),
-  //   );
-  //
-  //   final jsonData = jsonDecode(response.body);
-  //   print("Status: ${response.statusCode}");
-  //   print("Body: ${response.body}");
-  //   print(response);
-  //   if (jsonData['status'] == true) {
-  //     setState(() {
-  //       _passes = jsonData['data'];
-  //       _isLoading = false;
-  //     });
-  //   } else {
-  //     setState(() {
-  //       _passes = [];
-  //       _isLoading = false;
-  //     });
-  //   }
-  // }
-  // Future<void> _fetchGatePass() async {
-  //   setState(() => _isLoading = true);
-  //
-  //   final studentId = await AuthService.getUserId();
-  //   if (studentId == null) return;
-  //
-  //   final response = await http.get(
-  //     Uri.parse(
-  //       "https://nahatasports.com/api/student_getpass/$studentId",
-  //     ),
-  //   );
-  //
-  //   final jsonData = jsonDecode(response.body);
-  //
-  //   if (response.statusCode == 200 && jsonData['status'] == true) {
-  //     final pass = jsonData['pass'];
-  //
-  //     setState(() {
-  //       _passes = pass != null ? [pass] : [];
-  //       _isLoading = false;
-  //     });
-  //   } else {
-  //     setState(() {
-  //       _passes = [];
-  //       _isLoading = false;
-  //     });
-  //   }
-  // }
+
   Future<void> _fetchPasses() async {
     if (_selectedTimeIndex == 0) {
       await _fetchGatePass();
@@ -2612,3 +2835,89 @@ class _StudentFeedbackScreenState extends State<StudentFeedbackScreen> {
   }
 }
 
+// Future<void> _loadBookings() async {
+//   final email = await AuthService.getUserEmail();
+//   if (email == null) return;
+//
+//   final filter = _selectedTimeIndex == 0 ? "upcoming" : "previous";
+//
+//   final response = await http.post(
+//     Uri.parse("https://nahatasports.com/api/court-bookings?filter=$filter"),
+//     headers: {"Content-Type": "application/json"},
+//     body: jsonEncode({
+//       "email": email,
+//     }),
+//   );
+//
+//   final jsonData = jsonDecode(response.body);
+//
+//   if (jsonData['status'] == true) {
+//     setState(() {
+//       allBookings = List<Map<String, dynamic>>.from(jsonData['data']);
+//     });
+//   } else {
+//     setState(() {
+//       allBookings = [];
+//     });
+//   }
+// }
+
+// Future<void> _fetchPasses() async {
+//   setState(() => _isLoading = true);
+//
+//   final studentId = await AuthService.getUserId();
+//   if (studentId == null) return;
+//
+//   final status = _selectedTimeIndex == 0 ? ""
+//       "active" : "expired";
+//
+//   final response = await http.get(
+//     Uri.parse(
+//       "https://nahatasports.com/api/booking-pass/$studentId?status=$status",
+//     ),
+//   );
+//
+//   final jsonData = jsonDecode(response.body);
+//   print("Status: ${response.statusCode}");
+//   print("Body: ${response.body}");
+//   print(response);
+//   if (jsonData['status'] == true) {
+//     setState(() {
+//       _passes = jsonData['data'];
+//       _isLoading = false;
+//     });
+//   } else {
+//     setState(() {
+//       _passes = [];
+//       _isLoading = false;
+//     });
+//   }
+// }
+// Future<void> _fetchGatePass() async {
+//   setState(() => _isLoading = true);
+//
+//   final studentId = await AuthService.getUserId();
+//   if (studentId == null) return;
+//
+//   final response = await http.get(
+//     Uri.parse(
+//       "https://nahatasports.com/api/student_getpass/$studentId",
+//     ),
+//   );
+//
+//   final jsonData = jsonDecode(response.body);
+//
+//   if (response.statusCode == 200 && jsonData['status'] == true) {
+//     final pass = jsonData['pass'];
+//
+//     setState(() {
+//       _passes = pass != null ? [pass] : [];
+//       _isLoading = false;
+//     });
+//   } else {
+//     setState(() {
+//       _passes = [];
+//       _isLoading = false;
+//     });
+//   }
+// }

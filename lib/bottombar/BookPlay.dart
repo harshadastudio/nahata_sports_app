@@ -313,6 +313,10 @@ class _VenueListScreenState extends State<VenueListScreen> {
   bool isLoading = true;
   Map<String, List<String>> venueSports = {}; // venueName -> list of sports
 
+  // 🔄 NEW API: base + per-venue metadata (id/address/image) from /sports-complexes
+  static const String _apiBase = "https://api.nahatasports.com/api";
+  Map<String, Map<String, dynamic>> venueInfo = {}; // venueName -> {id,address,image}
+
   final List<String> sliderImages = [
     'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800',
     'https://images.unsplash.com/photo-1521412644187-c49fa049e84d?w=800',
@@ -328,39 +332,114 @@ class _VenueListScreenState extends State<VenueListScreen> {
     fetchVenueSports();
   }
 
-  // ✅ Fetch data dynamically
+  // ---------------------- OLD API (commented out) ----------------------
+  // Future<void> fetchVenueSports() async {
+  //   try {
+  //     final response =
+  //     await http.get(Uri.parse('https://nahatasports.com/sports_list'));
+  //
+  //     if (response.statusCode == 200) {
+  //       final jsonResponse = json.decode(response.body);
+  //       final data = jsonResponse['data'] as Map<String, dynamic>;
+  //
+  //       Map<String, List<String>> parsed = {};
+  //       data.forEach((venueName, sportsList) {
+  //         parsed[venueName] = (sportsList as List)
+  //             .map<String>((item) => item['sport_name'].toString())
+  //             .toList();
+  //       });
+  //
+  //       setState(() {
+  //         venueSports = parsed;
+  //         isLoading = false;
+  //       });
+  //     } else {
+  //       setState(() => isLoading = false);
+  //     }
+  //   } catch (e) {
+  //     setState(() => isLoading = false);
+  //     debugPrint('Error fetching sports: $e');
+  //   }
+  // }
+
+  // ---------------------- NEW API ----------------------
+  // 1) GET /sports-complexes -> venues (id, name, address, image)
+  // 2) GET /courts?sportComplexId= -> distinct sports per venue
   Future<void> fetchVenueSports() async {
     try {
-      final response =
-      await http.get(Uri.parse('https://nahatasports.com/sports_list'));
+      final compRes = await http.get(
+        Uri.parse(
+            '$_apiBase/sports-complexes?status=Active&showOnFrontend=true&limit=50'),
+        headers: {'Accept': 'application/json'},
+      );
 
-      if (response.statusCode == 200) {
-        final jsonResponse = json.decode(response.body);
-        final data = jsonResponse['data'] as Map<String, dynamic>;
-
-        Map<String, List<String>> parsed = {};
-        data.forEach((venueName, sportsList) {
-          parsed[venueName] = (sportsList as List)
-              .map<String>((item) => item['sport_name'].toString())
-              .toList();
-        });
-
-        setState(() {
-          venueSports = parsed;
-          isLoading = false;
-        });
-      } else {
+      if (compRes.statusCode != 200) {
         setState(() => isLoading = false);
+        return;
       }
+
+      final compBody = json.decode(compRes.body);
+      final List complexes = compBody['data']?['sportsComplexes'] ?? [];
+
+      final Map<String, List<String>> parsed = {};
+      final Map<String, Map<String, dynamic>> info = {};
+
+      for (final c in complexes) {
+        final name = (c['name'] ?? '').toString();
+        if (name.isEmpty) continue;
+        info[name] = {
+          'id': c['id'],
+          'address': (c['address'] ?? '').toString(),
+          'image': (c['image'] ?? '').toString(),
+        };
+        parsed[name] = await _fetchSportsForComplex(c['id']);
+      }
+
+      setState(() {
+        venueSports = parsed;
+        venueInfo = info;
+        isLoading = false;
+      });
     } catch (e) {
       setState(() => isLoading = false);
-      debugPrint('Error fetching sports: $e');
+      debugPrint('Error fetching venues: $e');
     }
   }
+
+  /// Distinct sport names offered at a complex (paginated /courts).
+  Future<List<String>> _fetchSportsForComplex(dynamic complexId) async {
+    final List<String> sports = [];
+    final Set<int> seen = {};
+    int page = 1;
+    while (true) {
+      final res = await http.get(
+        Uri.parse(
+            '$_apiBase/courts?sportComplexId=$complexId&status=Active&limit=100&page=$page'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (res.statusCode != 200) break;
+
+      final body = json.decode(res.body);
+      final List data = body['data'] ?? [];
+      for (final court in data) {
+        final sp = court['Sport'];
+        if (sp == null || sp['id'] == null) continue;
+        final sid = sp['id'] is int ? sp['id'] as int : int.tryParse('${sp['id']}');
+        if (sid == null || seen.contains(sid)) continue;
+        seen.add(sid);
+        sports.add((sp['name'] ?? '').toString());
+      }
+
+      final totalPages = body['pagination']?['totalPages'] ?? 1;
+      if (page >= (totalPages is int ? totalPages : 1)) break;
+      page++;
+    }
+    return sports;
+  }
   List<String> getFilteredVenues() {
-    // ✅ Always show both venues for "All Sports"
+    // ✅ All venues from the API for "All Sports"
     if (selectedSport == 'All Sports') {
-      return ['Sinhgad Rd', 'Gangadham Chowk'];
+      return venueSports.keys.toList();
     }
 
     // ✅ Otherwise, filter dynamically based on API data
@@ -544,16 +623,12 @@ class _VenueListScreenState extends State<VenueListScreen> {
 
             // ✅ Filtered Venues List
             ...filteredVenues.map((venue) {
+              final info = venueInfo[venue] ?? const {};
               return VenueCard(
                 name: venue,
-                address:
-                venue == 'Sinhgad Rd'
-                    ? 'Nahata Sports Complex , Near Veer Baji Pasalkar Chowk, Near Wadgaon Highway Bridge, Wadgaon Bk , Pune-411030'
-                    : 'Aai Mata Mandir, Najushree Hall -on the way of, to, Chowk, Ganga Dham, Pune, Maharashtra 411037',
+                address: (info['address'] ?? '').toString(),
                 rating: '5.0(2)',
-                imageUrl: venue == 'Sinhgad Rd'
-                    ? 'assets/56.jpg'
-                    : 'assets/23.webp',
+                imageUrl: (info['image'] ?? '').toString(),
               );
             }).toList(),
           ],
@@ -610,12 +685,26 @@ class VenueCard extends StatelessWidget {
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
               ),
-              child: Image.asset(
-                imageUrl,
-                height: 200,
-                width: double.infinity,
-                fit: BoxFit.cover,
-              ),
+              // 🔄 NEW API image is a network URL; fall back to a bundled asset
+              child: imageUrl.startsWith('http')
+                  ? Image.network(
+                      imageUrl,
+                      height: 200,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Image.asset(
+                        'assets/56.jpg',
+                        height: 200,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  : Image.asset(
+                      imageUrl.isNotEmpty ? imageUrl : 'assets/56.jpg',
+                      height: 200,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
             ),
             Padding(
               padding: const EdgeInsets.all(12),

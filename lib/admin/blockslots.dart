@@ -480,7 +480,7 @@ class _BlockSlotsScreenState extends State<BlockSlotsScreen> {
       height: 52,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.black,
+          backgroundColor: Color(0xFF0A198D),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
@@ -540,7 +540,7 @@ class _BlockSlotsScreenState extends State<BlockSlotsScreen> {
         columnSpacing: 40,
         headingRowColor: MaterialStateProperty.all(Colors.grey.shade100),
         columns: const [
-          DataColumn(label: Text('Select')),
+          // DataColumn(label: Text('Select')),
           DataColumn(label: Text('Time')),
           DataColumn(label: Text('Price')),
           DataColumn(label: Text('Type')),
@@ -555,16 +555,6 @@ class _BlockSlotsScreenState extends State<BlockSlotsScreen> {
               });
             },
             cells: [
-              DataCell(
-                Checkbox(
-                  value: slot.isSelected,
-                  onChanged: (value) {
-                    setState(() {
-                      slot.isSelected = value ?? false;
-                    });
-                  },
-                ),
-              ),
               DataCell(Text(slot.time)),
               DataCell(Text(slot.price.toString())),
               DataCell(Text(slot.type)),
