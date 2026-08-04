@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:http_parser/http_parser.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:nahata_app/bottombar/Custombottombar.dart';
@@ -19,7 +19,20 @@ import 'dart:ui' as ui;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'package:provider/provider.dart';
+
 import '../auth/login.dart';
+import '../core/network/api_client.dart';
+import '../core/network/api_exception.dart';
+import '../core/utils/app_logger.dart';
+import '../models/court_booking_model.dart';
+import '../models/profile_model.dart';
+import '../models/student_profile_model.dart';
+import '../providers/profile_provider.dart';
+import '../repositories/auth_repository.dart';
+import '../repositories/court_booking_repository.dart';
+import '../repositories/event_booking_repository.dart';
+import '../repositories/user_repository.dart';
 import 'home.dart';
 
 class MoreScreen extends StatefulWidget {
@@ -34,6 +47,10 @@ class _MoreScreenState extends State<MoreScreen> {
   bool _isLoading = true;
   String? _profileImageVersion;
 
+  /// Live profile from `/auth/profile`, shared with Home and the dashboard.
+  ProfileModel? _profile;
+  ProfileProvider? _profileProvider;
+
   @override
   void initState() {
     super.initState();
@@ -43,45 +60,73 @@ class _MoreScreenState extends State<MoreScreen> {
 
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_profileProvider != null) return;
+
+    final provider = context.read<ProfileProvider>();
+    _profileProvider = provider;
+    provider.addListener(_onProfileChanged);
+    _onProfileChanged();
+  }
+
+  void _onProfileChanged() {
+    final provider = _profileProvider;
+    if (provider == null || !mounted) return;
+    if (provider.profile == _profile) return;
+    setState(() => _profile = provider.profile);
+  }
+
+  @override
+  void dispose() {
+    _profileProvider?.removeListener(_onProfileChanged);
+    super.dispose();
+  }
+
 
   Future<void> _deleteAccount(BuildContext context) async {
     final userId = await AuthService.getUserId();
     if (userId == null) return;
 
-    final url = "https://nahatasports.com/api/students/$userId";
-
     try {
-      final response = await http.delete(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        if (data["status"] == true) {
-          // Clear user session
-          await AuthService.logout();
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("Account deleted successfully"),
-                backgroundColor: Colors.red,
-              ),
-            );
-
-            // Navigate to Login screen
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  (route) => false,
-            );
-          }
-        }
-      } else {
-        print("❌ Failed to delete user. Status: ${response.statusCode}");
+      final deleted = await UserRepository.instance.deleteAccount(userId);
+      if (!deleted) {
+        if (mounted) _showError("Could not delete your account. Please try again.");
+        return;
       }
+
+      // Clear the session locally too.
+      await AuthService.logout();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Account deleted successfully"),
+            backgroundColor: Colors.red,
+          ),
+        );
+
+        // Navigate to Login screen
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+              (route) => false,
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) _showError(e.message);
     } catch (e) {
-      print("❌ Delete Error: $e");
+      debugPrint("Delete Error: $e");
+      if (mounted) _showError("Something went wrong. Please try again.");
     }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
   }
   void _confirmDeleteAccount(BuildContext context) {
     showDialog(
@@ -112,8 +157,9 @@ class _MoreScreenState extends State<MoreScreen> {
   }
 
   Future<void> _logout(BuildContext context) async {
+    // De-registers push, then clears tokens, cached profile and permissions
+    // and notifies every screen listening to the profile.
     await AuthService.logout();
-    // await AuthService.logout(); // clears prefs
     if (mounted) {
       Navigator.pushAndRemoveUntil(
         context,
@@ -126,42 +172,47 @@ class _MoreScreenState extends State<MoreScreen> {
     //     context, MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
+  /// Detail record from the legacy `/{id}/edit` endpoint (dob, gender, …).
   Future<void> _getUserData() async {
     final userId = await AuthService.getUserId();
     if (userId == null) return;
 
-    final response = await http.get(
-      Uri.parse('https://nahatasports.com/api/$userId/edit'),
-    );
-      print(response);
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      if (data['status'] == true) {
-        setState(() {
-          _userData = data['data'];
-        });
-      }
+    try {
+      final data = await UserRepository.instance.fetchUserDetails(userId);
+      if (!mounted || data == null) return;
+      setState(() => _userData = data);
+    } on ApiException catch (e) {
+      debugPrint('_getUserData failed: ${e.message}');
     }
   }
 
+  /// Cached profile first (instant), then `/auth/profile` in the background.
   Future<void> _fetchUserData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
-    try {
-      final user = await AuthService.getUser();
 
-      if (user != null) {
-        print("✅ Loaded user from local storage: $user");
+    try {
+      final provider = _profileProvider ?? context.read<ProfileProvider>();
+      await provider.loadFromCache();
+
+      if (mounted) {
         setState(() {
-          _userData = user;
+          _profile = provider.profile;
+          _userData = provider.profile?.toLegacyUserMap();
           _isLoading = false;
         });
-      } else {
-        print("⚠️ No user found in local storage.");
-        setState(() => _isLoading = false);
+      }
+
+      await provider.refresh();
+      if (mounted) {
+        setState(() {
+          _profile = provider.profile;
+          _userData = provider.profile?.toLegacyUserMap() ?? _userData;
+        });
       }
     } catch (e) {
-      print("❌ Error loading user: $e");
-      setState(() => _isLoading = false);
+      debugPrint('Error loading profile: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -171,55 +222,59 @@ class _MoreScreenState extends State<MoreScreen> {
     final cleanedBase64 = base64String.split(',').last;
     return base64Decode(cleanedBase64);
   }
-  String? get profileImageUrl {
-    // 1️⃣ FULL URL from local storage user
-    if (_userData != null &&
-        _userData!['photo'] != null &&
-        _userData!['photo'].toString().isNotEmpty) {
-      return _userData!['photo'].toString();
-    }
-
-    // 2️⃣ Filename from dashboard API
-    if (_student != null &&
-        _student!['student_photo'] != null &&
-        _student!['student_photo'].toString().isNotEmpty) {
-      return "https://nahatasports.com/public/uploads/students/"
-          "${_student!['student_photo']}?v=$_profileImageVersion";
-    }
-
-    return null;
+  /// Name from the live profile, falling back to the student record while the
+  /// profile call is still in flight. Never null.
+  String get _displayName {
+    final fromProfile = _profile?.name;
+    if (fromProfile != null && fromProfile.isNotEmpty) return fromProfile;
+    return _student?['name']?.toString() ?? '';
   }
 
+  String get _displayEmail {
+    final fromProfile = _profile?.email;
+    if (fromProfile != null && fromProfile.isNotEmpty) return fromProfile;
+    return _student?['email']?.toString() ?? '';
+  }
+
+  String? get profileImageUrl {
+    // 1️⃣ Live profile picture / avatar from /auth/profile
+    final fromProfile = _profile?.imageUrl;
+    if (fromProfile != null && fromProfile.isNotEmpty) return fromProfile;
+
+    // 2️⃣ Photo stored on the cached user record
+    final photo = _userData?['photo'];
+    if (photo != null && photo.toString().isNotEmpty) {
+      return photo.toString();
+    }
+
+    // 3️⃣ Student photo from the dashboard API
+    return _dashboard?.photoUrl(version: _profileImageVersion);
+  }
+
+  StudentDashboard? _dashboard;
+
+  /// `GET /student_dashboard` — student record + entry pass.
   Future<void> fetchDashboard() async {
     final studentId = await AuthService.getUserId();
-    debugPrint("Student ID: $studentId");
 
     if (studentId == null) {
       debugPrint("Student ID is null");
       return;
     }
 
-    final response = await http.get(
-      Uri.parse(
-          "https://nahatasports.com/api/student_dashboard?student_id=$studentId",
-      ),
-    );
-
-    debugPrint("Response: ${response.body}");
-
-    final jsonData = jsonDecode(response.body);
-
-    if (jsonData['status'] == true) {
-      debugPrint("Student Data: ${jsonData['data']['student']}");
-      debugPrint("PASS DATA: $_pass");
+    try {
+      final dashboard = await UserRepository.instance.fetchDashboard(studentId);
+      if (!mounted) return;
 
       setState(() {
-        _student = jsonData['data']['student'];
+        _dashboard = dashboard;
+        _student = dashboard.student;
+        _pass = dashboard.pass;
+        // Cache-buster so a freshly uploaded photo shows immediately.
         _profileImageVersion = DateTime.now().millisecondsSinceEpoch.toString();
-
-        _pass = jsonData['data']['pass'];
       });
-      print(_profileImageVersion);
+    } on ApiException catch (e) {
+      debugPrint('fetchDashboard failed: ${e.message}');
     }
   }
   bool _isPassValid(Map<String, dynamic> pass) {
@@ -273,7 +328,7 @@ class _MoreScreenState extends State<MoreScreen> {
                 padding: EdgeInsets.all(40),
                 child: Center(child: CircularProgressIndicator()),
               )
-                  : _student == null
+                  : (_profile == null && _student == null)
                   ? _buildProfileShimmer()
                   : Column(
                 children: [
@@ -356,7 +411,7 @@ class _MoreScreenState extends State<MoreScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              _student!['name'] ?? '',
+                              _displayName,
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -372,7 +427,7 @@ class _MoreScreenState extends State<MoreScreen> {
                                 const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
-                                    _student!['email'] ?? '',
+                                    _displayEmail,
                                     style: const TextStyle(fontSize: 13),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -396,9 +451,14 @@ class _MoreScreenState extends State<MoreScreen> {
                             ),
                           );
                           if (updated == true) {
+                            // Global sync: refreshes Home, More, Profile and
+                            // the dashboard from one /auth/profile call.
+                            await context
+                                .read<ProfileProvider>()
+                                .profileUpdated();
                             await fetchDashboard(); // refresh student + photo
                             await _getUserData();   // refresh user data if needed
-                            setState(() {});
+                            if (mounted) setState(() {});
                           }
                         },
                       ),
@@ -834,11 +894,54 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
     _selectedTimeIndex = 0;
     _loadBookings();
   }
+  /// `GET /courts/bookings/my` returns every booking in one list, so the
+  /// Upcoming / Previous split is done here: a slot counts as upcoming until
+  /// its **end time** passes, so a court booked for later today stays under
+  /// Upcoming and one that finished this morning drops to Previous.
+  ///
+  /// Upcoming is sorted soonest-first, Previous most-recent-first.
+  ///
+  /// Old API (commented out below): `POST court-bookings` with the user's
+  /// email, which split the two lists server-side.
+  Future<void> _loadBookings() async {
+    try {
+      final bookings = await CourtBookingRepository.instance.fetchMyBookings();
+
+      final sorted = _selectedTimeIndex == 0
+          ? CourtBooking.upcomingFrom(bookings)
+          : CourtBooking.previousFrom(bookings);
+
+      final fetchedBookings =
+          sorted.map((b) => b.toBookingMap()).toList();
+
+      AppLogger.debug(
+        '${_selectedTimeIndex == 0 ? 'Upcoming' : 'Previous'} bookings: '
+        '${fetchedBookings.length} of ${bookings.length}',
+        name: 'MyBookings',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        allBookings = fetchedBookings;
+        _currentPage = 1;
+        _visibleBookings = allBookings.take(_pageSize).toList();
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      AppLogger.error('Could not load bookings', name: 'MyBookings', error: e);
+      if (!mounted) return;
+      setState(() {
+        allBookings = [];
+        _visibleBookings = [];
+        _isLoadingMore = false;
+      });
+    }
+  }
+
+  // ---------------------- OLD API (commented out) ----------------------
   // Future<void> _loadBookings() async {
   //   final email = await AuthService.getUserEmail();
   //   if (email == null) return;
-  //
-  //   final filter = _selectedTimeIndex == 0 ? "upcoming" : "previous";
   //
   //   final response = await http.post(
   //     Uri.parse("https://nahatasports.com/api/court-bookings"),
@@ -849,50 +952,23 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
   //   final jsonData = jsonDecode(response.body);
   //   final data = jsonData['data'];
   //
-  //   final raw = _selectedTimeIndex == 0
-  //       ? data['upcoming_bookings']
-  //       : data['previous_bookings'];
+  //   List<Map<String, dynamic>> fetchedBookings = [];
+  //
+  //   if (_selectedTimeIndex == 0) {
+  //     fetchedBookings =
+  //     List<Map<String, dynamic>>.from(data['upcoming_bookings'] ?? []);
+  //   } else {
+  //     fetchedBookings =
+  //     List<Map<String, dynamic>>.from(data['previous_bookings'] ?? []);
+  //   }
   //
   //   setState(() {
-  //     allBookings = List<Map<String, dynamic>>.from(raw ?? []);
+  //     allBookings = fetchedBookings;
   //     _currentPage = 1;
   //     _visibleBookings = allBookings.take(_pageSize).toList();
+  //     _isLoadingMore = false;
   //   });
-  //
-  //   debugPrint('Final bookings count: ${allBookings.length}');
-  //
   // }
-
-  Future<void> _loadBookings() async {
-    final email = await AuthService.getUserEmail();
-    if (email == null) return;
-
-    final response = await http.post(
-      Uri.parse("https://nahatasports.com/api/court-bookings"),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"email": email}),
-    );
-
-    final jsonData = jsonDecode(response.body);
-    final data = jsonData['data'];
-
-    List<Map<String, dynamic>> fetchedBookings = [];
-
-    if (_selectedTimeIndex == 0) {
-      fetchedBookings =
-      List<Map<String, dynamic>>.from(data['upcoming_bookings'] ?? []);
-    } else {
-      fetchedBookings =
-      List<Map<String, dynamic>>.from(data['previous_bookings'] ?? []);
-    }
-
-    setState(() {
-      allBookings = fetchedBookings;
-      _currentPage = 1;
-      _visibleBookings = allBookings.take(_pageSize).toList();
-      _isLoadingMore = false;
-    });
-  }
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
@@ -1515,34 +1591,30 @@ class _YourPassScreenState extends State<YourPassScreen> {
     }
   }
 
+  /// Gate passes are the user's court bookings — `GET /courts/bookings/my`
+  /// carries the pass code and QR for each one.
+  ///
+  /// Old API (commented out below): `GET student_getpass/{studentId}`.
   Future<void> _fetchGatePass() async {
     setState(() => _isLoading = true);
 
-    final studentId = await AuthService.getUserId();
-    if (studentId == null) return;
+    try {
+      final bookings = await CourtBookingRepository.instance.fetchMyBookings();
+      final passes = bookings.map((b) => b.toPassMap()).toList();
 
-    final response = await http.get(
-      Uri.parse("https://nahatasports.com/api/student_getpass/$studentId"),
-    );
+      AppLogger.debug(
+        'Gate passes: ${passes.length} — ${passes.map((p) => p['pass_code']).toList()}',
+        name: 'GatePass',
+      );
 
-    final jsonData = jsonDecode(response.body);
-
-    if (response.statusCode == 200 && jsonData['status'] == true) {
-      final pass = jsonData['pass'];
-      final student = jsonData['student'];
-
-      if (pass != null && student != null) {
-        // ✅ MERGE student info into pass
-        pass['name'] = student['name'];
-        pass['phone'] = student['phone'];
-        pass['id_card'] = student['id_card'];
-      }
-
+      if (!mounted) return;
       setState(() {
-        _passes = pass != null ? [pass] : [];
+        _passes = passes;
         _isLoading = false;
       });
-    } else {
+    } catch (e) {
+      AppLogger.error('Could not load gate passes', name: 'GatePass', error: e);
+      if (!mounted) return;
       setState(() {
         _passes = [];
         _isLoading = false;
@@ -1550,32 +1622,101 @@ class _YourPassScreenState extends State<YourPassScreen> {
     }
   }
 
+  // ---------------------- OLD API (commented out) ----------------------
+  // Future<void> _fetchGatePass() async {
+  //   setState(() => _isLoading = true);
+  //
+  //   final studentId = await AuthService.getUserId();
+  //   if (studentId == null) return;
+  //
+  //   final response = await http.get(
+  //     Uri.parse("https://nahatasports.com/api/student_getpass/$studentId"),
+  //   );
+  //
+  //   final jsonData = jsonDecode(response.body);
+  //
+  //   if (response.statusCode == 200 && jsonData['status'] == true) {
+  //     final pass = jsonData['pass'];
+  //     final student = jsonData['student'];
+  //
+  //     if (pass != null && student != null) {
+  //       // ✅ MERGE student info into pass
+  //       pass['name'] = student['name'];
+  //       pass['phone'] = student['phone'];
+  //       pass['id_card'] = student['id_card'];
+  //     }
+  //
+  //     setState(() {
+  //       _passes = pass != null ? [pass] : [];
+  //       _isLoading = false;
+  //     });
+  //   } else {
+  //     setState(() {
+  //       _passes = [];
+  //       _isLoading = false;
+  //     });
+  //   }
+  // }
+
+  /// Event passes now come from `GET /event-passes/bookings/my`, which carries
+  /// the QR code for each booking.
+  ///
+  /// Old API (commented out): `GET nahatasports.com/api/booking-pass/{id}`.
   Future<void> _fetchEventPass() async {
     setState(() => _isLoading = true);
 
-    final studentId = await AuthService.getUserId();
-    if (studentId == null) return;
+    try {
+      final bookings = await EventBookingRepository.instance.fetchMyBookings();
+      final passes = bookings.map((b) => b.toViewPassMap()).toList();
 
-    final response = await http.get(
-      Uri.parse(
-        "https://nahatasports.com/api/booking-pass/$studentId?status=active",
-      ),
-    );
+      AppLogger.debug(
+        'Event passes: ${passes.length} — ${passes.map((p) => p['pass_code']).toList()}',
+        name: 'EventPass',
+      );
 
-    final jsonData = jsonDecode(response.body);
-
-    if (response.statusCode == 200 && jsonData['status'] == true) {
+      if (!mounted) return;
       setState(() {
-        _passes = jsonData['data'];
+        _passes = passes;
         _isLoading = false;
       });
-    } else {
+    } catch (e) {
+      AppLogger.error('Could not load event passes',
+          name: 'EventPass', error: e);
+      if (!mounted) return;
       setState(() {
         _passes = [];
         _isLoading = false;
       });
     }
   }
+
+  // ---------------------- OLD API (commented out) ----------------------
+  // Future<void> _fetchEventPass() async {
+  //   setState(() => _isLoading = true);
+  //
+  //   final studentId = await AuthService.getUserId();
+  //   if (studentId == null) return;
+  //
+  //   final response = await http.get(
+  //     Uri.parse(
+  //       "https://nahatasports.com/api/booking-pass/$studentId?status=active",
+  //     ),
+  //   );
+  //
+  //   final jsonData = jsonDecode(response.body);
+  //
+  //   if (response.statusCode == 200 && jsonData['status'] == true) {
+  //     setState(() {
+  //       _passes = jsonData['data'];
+  //       _isLoading = false;
+  //     });
+  //   } else {
+  //     setState(() {
+  //       _passes = [];
+  //       _isLoading = false;
+  //     });
+  //   }
+  // }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1698,6 +1839,32 @@ class _YourPassScreenState extends State<YourPassScreen> {
   }
   // ================= PASS CARD =================
 
+  /// A booking counts as confirmed once the backend says so — court bookings
+  /// report `Confirmed`/`Paid`, event bookings sit at `Pending` until payment.
+  bool _isConfirmed(Map<String, dynamic> pass) {
+    final status = (pass['status'] ?? '').toString().toLowerCase();
+    final payment = (pass['payment_status'] ?? '').toString().toLowerCase();
+    if (status.isEmpty && payment.isEmpty) return true; // legacy passes
+    return status == 'confirmed' || payment == 'paid';
+  }
+
+  String _statusLabel(Map<String, dynamic> pass) {
+    if (_isConfirmed(pass)) return "ACTIVE PASS";
+    final status = (pass['status'] ?? '').toString();
+    return status.isEmpty ? "PENDING" : status.toUpperCase();
+  }
+
+  /// Pass QRs are absolute URLs (api.qrserver.com); only the legacy gate
+  /// pass sent a path that needs the host stripped.
+  String _qrUrl(String raw) {
+    final url = raw.trim();
+    if (url.isEmpty) return url;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return url
+        .replaceFirst("https://nahatasports.com/", "")
+        .replaceFirst("https:/", "https://");
+  }
+
   Widget _buildPassCard(Map<String, dynamic> pass) {
     final qr = pass['qr_code'] ?? '';
     final repaintKey = GlobalKey();
@@ -1731,7 +1898,9 @@ class _YourPassScreenState extends State<YourPassScreen> {
               ),
               child: Text(
                 _selectedTimeIndex == 0
-                    ? "Gate Pass"
+                    ? (pass['court_name']?.toString().isNotEmpty == true
+                        ? pass['court_name']
+                        : "Gate Pass")
                     : pass['tournament_title'] ?? '',
                 style: const TextStyle(
                   color: Colors.white,
@@ -1745,9 +1914,14 @@ class _YourPassScreenState extends State<YourPassScreen> {
 
             // ================= GATE PASS DETAILS =================
             if (_selectedTimeIndex == 0) ...[
-              _infoRow("Name", pass['name'] ?? "N/A"),
-              _infoRow("Phone", pass['phone'] ?? "N/A"),
-              _infoRow("ID Card", pass['id_card'] ?? "N/A"),
+              _infoRow("Sport", pass['sport_name'] ?? ""),
+              _infoRow("Venue", pass['venue_name'] ?? ""),
+              _infoRow("Date", pass['pass_date'] ?? ""),
+              _infoRow(
+                "Time",
+                "${pass['start_time'] ?? ''} - ${pass['end_time'] ?? ''}",
+              ),
+              _infoRow("Pass Code", pass['pass_code'] ?? ""),
             ],
 
             // ================= EVENT PASS DETAILS =================
@@ -1758,6 +1932,7 @@ class _YourPassScreenState extends State<YourPassScreen> {
                 "Time",
                 "${pass['start_time']} - ${pass['end_time']}",
               ),
+              _infoRow("Pass Code", pass['pass_code'] ?? ""),
             ],
 
             const SizedBox(height: 20),
@@ -1771,30 +1946,34 @@ class _YourPassScreenState extends State<YourPassScreen> {
                 width: 200,
               )
                   : Image.network(
-                qr
-                    .replaceFirst(
-                    "https://nahatasports.com/", "")
-                    .replaceFirst("https:/", "https://"),
+                _qrUrl(qr.toString()),
                 height: 200,
                 width: 200,
+                errorBuilder: (_, __, ___) => const SizedBox(
+                  height: 200,
+                  width: 200,
+                  child: Center(child: Text("QR not available")),
+                ),
               ),
             ),
 
             const SizedBox(height: 16),
 
-            // ================= ACTIVE BADGE =================
+            // ================= STATUS BADGE =================
             Center(
               child: Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 14, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade50,
+                  color: _isConfirmed(pass)
+                      ? Colors.green.shade50
+                      : Colors.orange.shade50,
                   borderRadius: BorderRadius.circular(30),
                 ),
-                child: const Text(
-                  "ACTIVE PASS",
+                child: Text(
+                  _statusLabel(pass),
                   style: TextStyle(
-                    color: Colors.green,
+                    color: _isConfirmed(pass) ? Colors.green : Colors.orange,
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                   ),
@@ -1950,6 +2129,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String? userId;
   bool isLoading = false;
 
+  /// From `GET /students/me` — the student record id and current avatar.
+  int? studentRecordId;
+  String? avatarUrl;
+
   // Simple validation regexes
   final _emailReg = RegExp(r'^[^@]+@[^@]+\.[^@]+');
   final _phoneReg = RegExp(r'^\d{10}$');
@@ -1962,53 +2145,92 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Future<void> _loadUserAndData() async {
     setState(() => isLoading = true);
-    final prefs = await SharedPreferences.getInstance();
-    final u = prefs.getString('user');
-    if (u == null) {
-      // No user — navigate back or show error
-      setState(() => isLoading = false);
-      return;
-    }
 
-    final user = jsonDecode(u);
-    userId = user['id']?.toString();
+    final profile = await AuthRepository.instance.cachedProfile();
+    userId = profile?.id?.toString() ?? await AuthService.getUserId();
 
     if (userId == null) {
       setState(() => isLoading = false);
       return;
     }
 
-    try {
-      final res =
-      await http.get(Uri.parse("https://nahatasports.com/api/$userId/edit"));
-      if (res.statusCode == 200) {
-        final body = jsonDecode(res.body);
-        if (body['status'] == true && body['data'] != null) {
-          final data = body['data'];
-
-          nameController.text = data['name']?.toString() ?? '';
-          idCardController.text = data['id_card']?.toString() ?? '';
-          emailController.text = data['email']?.toString() ?? '';
-          phoneController.text = data['phone']?.toString() ?? '';
-          // parentController.text = data['parent_contact']?.toString() ?? '';
-          dobController.text = data['dob']?.toString() ?? '';
-          selectedGender = data['gender']?.toString();
-          selectedBloodGroup = data['blood_group']?.toString();
-          coachIdController.text = data['coach_id']?.toString() ?? '';
-          statusController.text = data['status']?.toString() ?? '';
-          createdController.text = data['created_at']?.toString() ?? '';
-          updatedController.text = data['updated_at']?.toString() ?? '';
-        } else {
-          _showSnack("Failed to load profile");
-        }
-      } else {
-        _showSnack("Server error: ${res.statusCode}");
-      }
-    } catch (e) {
-      _showSnack("Error fetching profile: $e");
-    } finally {
-      setState(() => isLoading = false);
+    // Seed the form from the live profile so the fields are populated even if
+    // the legacy detail endpoint is slow or unavailable.
+    if (profile != null) {
+      nameController.text = profile.name ?? '';
+      emailController.text = profile.email ?? '';
+      phoneController.text = profile.phoneNumber ?? '';
+      statusController.text = profile.status ?? '';
     }
+
+    try {
+      // `GET /students/me` is the source of truth for the editor; the legacy
+      // `{userId}/edit` call below fills in the fields it does not carry.
+      final student = await UserRepository.instance.fetchMyStudentProfile();
+      if (student != null) _applyStudentProfile(student);
+
+      final data = await UserRepository.instance.fetchUserDetails(userId!);
+
+      if (data == null) {
+        if (student == null) _showSnack("Failed to load profile");
+      } else {
+        // Only fill what /students/me left empty — it wins on shared fields.
+        _fillIfEmpty(nameController, data['name']);
+        _fillIfEmpty(emailController, data['email']);
+        _fillIfEmpty(phoneController, data['phone']);
+        _fillIfEmpty(dobController, data['dob']);
+        _fillIfEmpty(statusController, data['status']);
+        _fillIfEmpty(createdController, data['created_at']);
+        _fillIfEmpty(updatedController, data['updated_at']);
+
+        // Fields the new API does not expose at all.
+        idCardController.text = data['id_card']?.toString() ?? '';
+        coachIdController.text = data['coach_id']?.toString() ?? '';
+
+        selectedGender ??= _clean(data['gender']);
+        selectedBloodGroup ??= _clean(data['blood_group']);
+      }
+    } on ApiException catch (e) {
+      _showSnack(e.message);
+    } catch (e) {
+      debugPrint("Error fetching profile: $e");
+      _showSnack("Could not load your profile. Please try again.");
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  /// Seeds the form from `GET /students/me`.
+  void _applyStudentProfile(StudentProfile student) {
+    final user = student.user;
+
+    if (user != null) {
+      nameController.text = user.name ?? nameController.text;
+      emailController.text = user.email ?? emailController.text;
+      phoneController.text = user.phoneNumber ?? phoneController.text;
+      dobController.text = user.dob ?? dobController.text;
+      selectedGender = user.gender ?? selectedGender;
+      selectedBloodGroup = user.bloodGroup ?? selectedBloodGroup;
+      avatarUrl = user.avatar ?? avatarUrl;
+    }
+
+    statusController.text = student.effectiveStatus ?? statusController.text;
+    createdController.text = student.createdAt ?? createdController.text;
+    updatedController.text = student.updatedAt ?? updatedController.text;
+
+    studentRecordId = student.id;
+  }
+
+  /// Writes [value] into [controller] only when the field is still empty.
+  void _fillIfEmpty(TextEditingController controller, Object? value) {
+    if (controller.text.trim().isNotEmpty) return;
+    final text = _clean(value);
+    if (text != null) controller.text = text;
+  }
+
+  static String? _clean(Object? value) {
+    final text = value?.toString().trim();
+    return (text == null || text.isEmpty || text == 'null') ? null : text;
   }
 
   Future<void> _pickStudentPhoto() async {
@@ -2070,50 +2292,45 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => isLoading = true);
 
     try {
-      final uri = Uri.parse("https://nahatasports.com/api/$userId/update");
-      final request = http.MultipartRequest('POST', uri);
+      await UserRepository.instance.updateUser(
+        userId: userId!,
+        fields: {
+          'name': nameController.text.trim(),
+          'email': emailController.text.trim(),
+          'phone': phoneController.text.trim(),
+          // 'parent_contact': parentController.text.trim(),
+          'dob': dobController.text.trim(),
+          'gender': selectedGender ?? '',
+          'blood_group': selectedBloodGroup ?? '',
+          'coach_id': coachIdController.text.trim(),
+          'status': statusController.text.trim(),
+          // passcode required by backend earlier — keep or remove if not needed
+          'passcode': '123',
+        },
+        files: [
+          if (studentPhotoFile != null)
+            UploadFile(
+              field: 'student_photo',
+              path: studentPhotoFile!.path,
+              contentType: lookupMime(studentPhotoFile!.path) ?? 'image/jpeg',
+            ),
+        ],
+      );
 
-      // Basic fields
-      request.fields['name'] = nameController.text.trim();
-      request.fields['email'] = emailController.text.trim();
-      request.fields['phone'] = phoneController.text.trim();
-      // request.fields['parent_contact'] = parentController.text.trim();
-      request.fields['dob'] = dobController.text.trim();
-      request.fields['gender'] = selectedGender ?? '';
-      request.fields['blood_group'] = selectedBloodGroup ?? '';
-      request.fields['coach_id'] = coachIdController.text.trim();
-      request.fields['status'] = statusController.text.trim();
-
-      // passcode required by backend earlier — keep or remove if not needed
-      request.fields['passcode'] = '123';
-
-      // Attach image if picked
-      if (studentPhotoFile != null) {
-        final mime = lookupMime(studentPhotoFile!.path) ?? 'image/jpeg';
-        request.files.add(await http.MultipartFile.fromPath(
-          'student_photo',
-          studentPhotoFile!.path,
-          contentType: MediaType.parse(mime),
-        ));
+      // Re-read /auth/profile so Home, More and the dashboard all pick up the
+      // new name/photo without any manual refresh.
+      if (mounted) {
+        await context.read<ProfileProvider>().profileUpdated();
       }
 
-      final streamed = await request.send();
-      final responseString = await streamed.stream.bytesToString();
-
-      final resJson = jsonDecode(responseString);
-      if (resJson['status'] == true && resJson['data'] != null) {
-        // Save returned user locally
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('user', jsonEncode(resJson['data']));
-
-        _showDialogAndBack("Profile updated successfully");
-      } else {
-        _showSnack("Update failed: ${resJson['message'] ?? 'Unknown error'}");
-      }
+      _showDialogAndBack("Profile updated successfully");
+    } on ApiException catch (e) {
+      _showSnack(e.message);
     } catch (e) {
-      _showSnack("Error updating profile: $e");
+      debugPrint("Error updating profile: $e");
+      _showSnack("Could not update your profile. Please try again.");
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -2186,10 +2403,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   child: CircleAvatar(
                     radius: 38,
                     backgroundColor: Colors.grey[200],
+                    // A freshly picked photo wins; otherwise show the avatar
+                    // that came back from /students/me.
                     backgroundImage: studentPhotoFile != null
-                        ? FileImage(studentPhotoFile!)
-                        : null,
-                    child: studentPhotoFile == null
+                        ? FileImage(studentPhotoFile!) as ImageProvider
+                        : (avatarUrl != null && avatarUrl!.isNotEmpty
+                            ? NetworkImage(avatarUrl!)
+                            : null),
+                    child: (studentPhotoFile == null &&
+                            (avatarUrl == null || avatarUrl!.isEmpty))
                         ? const Icon(Icons.camera_alt, size: 30, color: Colors.black54)
                         : null,
                   ),

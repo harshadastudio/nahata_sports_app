@@ -1,16 +1,14 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../auth/login.dart';
-import '../services/api_service.dart';
- // Assuming you have this model
-
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:table_calendar/table_calendar.dart';
-import '../services/api_service.dart';
+import '../core/config/api_config.dart';
+import '../core/network/api_client.dart';
+import '../core/network/api_exception.dart';
+import '../models/profile_model.dart';
+import '../providers/profile_provider.dart';
+import '../repositories/auth_repository.dart';
 
 
 class Screen extends StatefulWidget {
@@ -28,6 +26,8 @@ class _ScreenState extends State<Screen> {
   Map<DateTime, String> attendanceData = {};
   late Future<List<StudentData>> studentsFuture;
 
+  ProfileProvider? _profileProvider;
+
   @override
   void initState() {
     super.initState();
@@ -35,22 +35,40 @@ class _ScreenState extends State<Screen> {
     fetchUserInitial();
   }
 
-  /// 🧩 Get user's first initial
+  /// 🧩 Bind the header avatar to the live profile.
   void fetchUserInitial() async {
-    final user = await AuthService.getUser();
-    userInitial = (user?['name'] ?? 'U').toString().substring(0, 1).toUpperCase();
-    setState(() {});
+    final provider = context.read<ProfileProvider>();
+    _profileProvider = provider;
+    provider.addListener(_applyProfile);
+
+    _applyProfile();
+    await provider.refresh();
+  }
+
+  void _applyProfile() {
+    final provider = _profileProvider;
+    if (provider == null || !mounted) return;
+
+    final next = provider.hasProfile ? provider.initial : 'U';
+    if (next != userInitial) setState(() => userInitial = next);
+  }
+
+  @override
+  void dispose() {
+    _profileProvider?.removeListener(_applyProfile);
+    super.dispose();
   }
 
   /// 🔹 Load user data, then fetch student and attendance data
   Future<List<StudentData>> _initAndFetch() async {
-    await ApiService.loadUserFromPrefs();
+    final ProfileModel? profile =
+        await AuthRepository.instance.cachedProfile();
 
     final id = widget.studentId.isNotEmpty
         ? widget.studentId
-        : (ApiService.currentUser?['student_id']?.toString() ??
-        ApiService.currentUser?['id']?.toString() ??
-        '');
+        : (profile?.extras['student_id']?.toString() ??
+            profile?.id?.toString() ??
+            '');
 
     if (id.isEmpty) {
       throw Exception("Student ID is not available");
@@ -62,59 +80,45 @@ class _ScreenState extends State<Screen> {
 
   /// 📡 Fetch student dashboard info
   Future<List<StudentData>> fetchStudents(int studentId) async {
-    final url = Uri.parse(
-      "https://nahatasports.com/api/student_dashboard?student_id=$studentId",
+    final response = await ApiClient.instance.get(
+      ApiEndpoints.studentDashboard,
+      baseUrl: ApiConfig.legacyBaseUrl,
+      query: {'student_id': studentId},
     );
 
-    final response = await http.get(url, headers: {
-      'Content-Type': 'application/json',
-    });
-
-    print("📘 Student Dashboard API → $studentId (${response.statusCode})");
-
-    if (response.statusCode == 200) {
-      final body = jsonDecode(response.body);
-      if (body['status'] == true && body['data'] != null) {
-        return [StudentData.fromJson(body['data'])];
-      } else {
-        throw Exception("API returned false or null data");
-      }
-    } else {
+    if (!response.isOk || response.payload.isEmpty) {
       throw Exception("Failed to fetch student dashboard");
     }
+
+    return [StudentData.fromJson(response.payload)];
   }
 
   /// ✅ Fetch attendance from API
   Future<void> fetchAttendance(String studentId) async {
-    final url = Uri.parse(
-      "https://nahatasports.com/student/attendance?student_id=$studentId",
-    );
-
     try {
-      final response = await http.get(url);
-      print("📗 Attendance API (${response.statusCode}) for $studentId");
+      final response = await ApiClient.instance.get(
+        '/student/attendance',
+        baseUrl: ApiConfig.attendanceBaseUrl,
+        query: {'student_id': studentId},
+      );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['status'] == true && data['data'] != null) {
-          final Map<DateTime, String> temp = {};
-          for (var record in data['data']) {
-            final dateParts = record['date'].split('-');
-            if (dateParts.length == 3) {
-              final date = DateTime(
-                int.parse(dateParts[0]),
-                int.parse(dateParts[1]),
-                int.parse(dateParts[2]),
-              );
-              temp[date] = record['status'];
-            }
-          }
-          setState(() => attendanceData = temp);
-          print("✅ Attendance Loaded (${attendanceData.length}) records");
+      final records = response.data is Map ? response.data['data'] : null;
+      if (!response.isOk || records is! List) return;
+
+      final Map<DateTime, String> temp = {};
+      for (final record in records) {
+        final date = DateTime.tryParse(record['date']?.toString() ?? '');
+        if (date != null) {
+          temp[DateTime(date.year, date.month, date.day)] =
+              record['status']?.toString() ?? '';
         }
       }
+
+      if (mounted) setState(() => attendanceData = temp);
+    } on ApiException catch (e) {
+      debugPrint("Attendance fetch failed: ${e.message}");
     } catch (e) {
-      print("❌ Attendance fetch failed: $e");
+      debugPrint("Attendance fetch failed: $e");
     }
   }
 

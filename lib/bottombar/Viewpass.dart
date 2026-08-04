@@ -1,20 +1,22 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 
 // Import your CustomBottomNav
 // import 'custom_bottom_nav.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 
 import '../auth/login.dart';
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 
 import 'Custombottombar.dart';
+import '../core/network/api_exception.dart';
+import '../repositories/event_booking_repository.dart';
 
 // class Viewpass extends StatefulWidget {
 //   const Viewpass({super.key});
@@ -516,65 +518,76 @@ class _ViewpassState extends State<Viewpass> with TickerProviderStateMixin {
   //   });
   // }
 
+  /// The pass now comes from the signed-in user's own bookings, so the
+  /// passcode round-trip the legacy endpoint needed is no longer required.
   Future<void> _initPasscodeAndFetch() async {
     passcode = ApiService.currentUser?['passcode']?.toString();
-
-    if (passcode == null || passcode!.isEmpty) {
-      passcode = await _askForPasscode();
-      if (passcode == null || passcode!.isEmpty) {
-        _showSnack("Passcode required to continue");
-        setState(() => isLoading = false);
-        return;
-      }
-
-      final updated = await _updatePasscode(passcode!);
-      if (updated == null) {
-        setState(() => isLoading = false);
-        return;
-      }
-      passcode = updated;
-    }
-
     await fetchBooking();
   }
 
+  /// `GET /event-passes/bookings/my` — newest booking first.
+  ///
+  /// Old API (passcode based, commented out below):
+  /// `POST nahatasports.com/api/get_booking_by_passcode`.
   Future<void> fetchBooking() async {
-    const apiUrl = "https://nahatasports.com/api/get_booking_by_passcode";
-
     try {
-      final response = await http.post(
-        Uri.parse(apiUrl),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"passcode": passcode}),
-      );
+      final bookings = await EventBookingRepository.instance.fetchMyBookings();
+      if (!mounted) return;
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final bookings = (data["data"]?["bookings"] ?? []) as List;
-        setState(() {
-          bookingData = bookings.isNotEmpty ? bookings.last : null;
-          isLoading = false;
-        });
-      } else if (response.statusCode == 404) {
-        _showSnack("Invalid passcode. Please try again.");
-        final newPasscode = await _askForPasscode();
-        if (newPasscode != null && newPasscode.isNotEmpty) {
-          final updated = await _updatePasscode(newPasscode);
-          if (updated != null) {
-            passcode = updated;
-            await fetchBooking();
-          }
-        }
-      } else {
-        setState(() => isLoading = false);
-        _showSnack("Error fetching booking: ${response.statusCode}");
-      }
-    } catch (e) {
-      print("Error fetching booking: $e");
+      setState(() {
+        bookingData = bookings.isEmpty ? null : bookings.first.toViewPassMap();
+        isLoading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() => isLoading = false);
-      _showSnack("Error: $e");
+      _showSnack(e.message);
+    } catch (e) {
+      debugPrint("Error fetching booking: $e");
+      if (!mounted) return;
+      setState(() => isLoading = false);
+      _showSnack("Could not load your pass");
     }
   }
+
+  // ---------------------- OLD API (commented out) ----------------------
+  // Future<void> fetchBooking() async {
+  //   const apiUrl = "https://nahatasports.com/api/get_booking_by_passcode";
+  //
+  //   try {
+  //     final response = await http.post(
+  //       Uri.parse(apiUrl),
+  //       headers: {"Content-Type": "application/json"},
+  //       body: jsonEncode({"passcode": passcode}),
+  //     );
+  //
+  //     if (response.statusCode == 200) {
+  //       final data = jsonDecode(response.body);
+  //       final bookings = (data["data"]?["bookings"] ?? []) as List;
+  //       setState(() {
+  //         bookingData = bookings.isNotEmpty ? bookings.last : null;
+  //         isLoading = false;
+  //       });
+  //     } else if (response.statusCode == 404) {
+  //       _showSnack("Invalid passcode. Please try again.");
+  //       final newPasscode = await _askForPasscode();
+  //       if (newPasscode != null && newPasscode.isNotEmpty) {
+  //         final updated = await _updatePasscode(newPasscode);
+  //         if (updated != null) {
+  //           passcode = updated;
+  //           await fetchBooking();
+  //         }
+  //       }
+  //     } else {
+  //       setState(() => isLoading = false);
+  //       _showSnack("Error fetching booking: ${response.statusCode}");
+  //     }
+  //   } catch (e) {
+  //     print("Error fetching booking: $e");
+  //     setState(() => isLoading = false);
+  //     _showSnack("Error: $e");
+  //   }
+  // }
 
   Future<String?> _askForPasscode() async {
     if (ApiService.currentUser == null) {

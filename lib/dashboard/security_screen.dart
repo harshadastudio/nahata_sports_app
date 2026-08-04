@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'dart:convert';
 
 import '../auth/login.dart';
@@ -13,7 +13,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 
 // import your AuthService and LoginScreen as needed
 // import 'auth_service.dart';

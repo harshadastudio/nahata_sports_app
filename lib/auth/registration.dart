@@ -1,14 +1,14 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bottombar/Custombottombar.dart';
+import '../models/sports_complex_model.dart';
+import '../repositories/auth_repository.dart';
+import '../repositories/sports_complex_repository.dart';
 import '../dashboard/admin_screen.dart';
 import '../dashboard/coach_screen.dart';
 import '../dashboard/security_screen.dart';
@@ -36,6 +36,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
   File? selectedFile;
   final ImagePicker _picker = ImagePicker();
 
+  /// Show/hide state for the two password fields.
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+
+  /// Sports complex the student registers at — mandatory.
+  List<SportsComplex> _complexes = const [];
+  SportsComplex? _selectedComplex;
+  bool _loadingComplexes = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadComplexes();
+  }
+
+  Future<void> _loadComplexes() async {
+    final complexes = await SportsComplexRepository.instance.fetchComplexes();
+    if (!mounted) return;
+    setState(() {
+      _complexes = complexes;
+      _loadingComplexes = false;
+    });
+  }
+
   Future<void> pickFile() async {
     final XFile? file = await _picker.pickImage(source: ImageSource.gallery);
     if (file != null) {
@@ -60,10 +84,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  InputDecoration _inputDecoration(String label) {
+  InputDecoration _inputDecoration(String label, {Widget? suffixIcon}) {
     return InputDecoration(
 
       labelText: label,
+      suffixIcon: suffixIcon,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: BorderSide.none,
@@ -73,45 +98,52 @@ class _RegisterScreenState extends State<RegisterScreen> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );
   }
-  Future<bool> _googleLoginToBackend(String idToken) async {
-    try {
-      final response = await http.post(
-        Uri.parse("https://nahatasports.com/api/google_login"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"idToken": idToken}),
-      );
+  /// `POST /auth/google-login` — the same call the login screen makes; signing
+  /// up with Google and signing in with Google are one endpoint.
+  ///
+  /// Old API (commented out below): `POST nahatasports.com/api/google_login`,
+  /// which hit the legacy host, used the wrong body key and — worse — only
+  /// wrote SharedPreferences flags. No access token was ever stored, so every
+  /// authenticated call made after a Google sign-up would have failed with 401.
+  Future<bool> _googleLoginToBackend(String idToken) =>
+      ApiService.googleLogin(idToken);
 
-      print("🔥 Google Login API Response: ${response.body}");
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        if (data["status"] == true && data["data"] != null) {
-          final user = Map<String, dynamic>.from(data["data"]);
-
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('isLoggedIn', true);
-
-          // role may NOT come from API → avoid crash
-          final role = user["role"]?.toString() ?? "user";
-          await prefs.setString('role', role);
-
-          // save full user object
-          await prefs.setString('user', jsonEncode(user));
-
-          ApiService.currentUser = user;
-
-          print("✅ Google Register Success, role = $role");
-          return true;
-        }
-      }
-
-      return false;
-    } catch (e) {
-      print("❌ Google Login Backend Error: $e");
-      return false;
-    }
-  }
+  // ---------------------- OLD API (commented out) ----------------------
+  // Future<bool> _googleLoginToBackend(String idToken) async {
+  //   try {
+  //     final response = await http.post(
+  //       Uri.parse("https://nahatasports.com/api/google_login"),
+  //       headers: {"Content-Type": "application/json"},
+  //       body: jsonEncode({"idToken": idToken}),
+  //     );
+  //
+  //     if (response.statusCode == 200) {
+  //       final data = jsonDecode(response.body);
+  //
+  //       if (data["status"] == true && data["data"] != null) {
+  //         final user = Map<String, dynamic>.from(data["data"]);
+  //
+  //         final prefs = await SharedPreferences.getInstance();
+  //         await prefs.setBool('isLoggedIn', true);
+  //
+  //         // role may NOT come from API → avoid crash
+  //         final role = user["role"]?.toString() ?? "user";
+  //         await prefs.setString('role', role);
+  //
+  //         // save full user object
+  //         await prefs.setString('user', jsonEncode(user));
+  //
+  //         ApiService.currentUser = user;
+  //
+  //         return true;
+  //       }
+  //     }
+  //
+  //     return false;
+  //   } catch (e) {
+  //     return false;
+  //   }
+  // }
   Widget _getScreenForRole(String role) {
     switch (role.toLowerCase()) {
       case 'admin':
@@ -313,6 +345,36 @@ class _RegisterScreenState extends State<RegisterScreen> {
             //       ),
                   const SizedBox(height: 15),
 
+                  // Sports Complex (mandatory)
+                  _loadingComplexes
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          child: SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : DropdownButtonFormField<SportsComplex>(
+                          key: const Key('sports_complex_field'),
+                          decoration: _inputDecoration("Sports Complex"),
+                          value: _selectedComplex,
+                          isExpanded: true,
+                          items: _complexes
+                              .map((complex) => DropdownMenuItem(
+                                    value: complex,
+                                    child: Text(complex.label,
+                                        overflow: TextOverflow.ellipsis),
+                                  ))
+                              .toList(),
+                          onChanged: (value) {
+                            setState(() => _selectedComplex = value);
+                          },
+                          validator: (value) =>
+                              value == null ? "Sports complex is required" : null,
+                        ),
+                  const SizedBox(height: 15),
+
                   // DOB
                   TextFormField(
                     controller: dobController,
@@ -343,8 +405,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   // Password
                   TextFormField(
                     controller: passwordController,
-                    obscureText: true,
-                    decoration: _inputDecoration("Password"),
+                    obscureText: _obscurePassword,
+                    decoration: _inputDecoration(
+                      "Password",
+                      suffixIcon: IconButton(
+                        key: const Key('password_visibility'),
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: Colors.grey,
+                        ),
+                        tooltip:
+                            _obscurePassword ? 'Show password' : 'Hide password',
+                        onPressed: () => setState(
+                            () => _obscurePassword = !_obscurePassword),
+                      ),
+                    ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return "Password is required";
@@ -360,9 +437,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   // Confirm Password
                   TextFormField(
                     controller: confirmPasswordController,
-                    obscureText: true,
-                    decoration: _inputDecoration("Confirm Password"),
+                    obscureText: _obscureConfirmPassword,
+                    decoration: _inputDecoration(
+                      "Confirm Password",
+                      suffixIcon: IconButton(
+                        key: const Key('confirm_password_visibility'),
+                        icon: Icon(
+                          _obscureConfirmPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: Colors.grey,
+                        ),
+                        tooltip: _obscureConfirmPassword
+                            ? 'Show password'
+                            : 'Hide password',
+                        onPressed: () => setState(() =>
+                            _obscureConfirmPassword = !_obscureConfirmPassword),
+                      ),
+                    ),
                     validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return "Confirm your password";
+                      }
                       if (value != passwordController.text) {
                         return "Passwords do not match";
                       }
@@ -389,78 +485,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      onPressed: () async {
-                        if (_formKey.currentState!.validate()) {
-                          // Show loading indicator
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => const Center(child: CircularProgressIndicator()),
-                          );
-
-                          try {
-                            String? base64Image;
-                            if (selectedFile != null) {
-                              List<int> imageBytes = await selectedFile!.readAsBytes();
-                              base64Image = base64Encode(imageBytes);
-                            }
-
-                            Map<String, dynamic> body = {
-                              "name": nameController.text.trim(),
-                              "phone": phoneController.text.trim(),
-                              "parent_contact": parentPhoneController.text.trim(),
-                              "email": emailController.text.trim(),
-                              "password": passwordController.text,
-                              "confirmPassword": confirmPasswordController.text,
-                              "dob": dobController.text.trim(),
-                              "gender": selectedGender ?? "",
-                              "referral_code": referralController.text.trim(), // optional
-                            };
-
-                            if (base64Image != null) {
-                              body["student_photo"] = "data:image/jpeg;base64,$base64Image";
-                            }
-
-                            var response = await http.post(
-                              Uri.parse("https://api.nahatasports.com/api/students/register"),
-                              // Uri.parse("https://nahatasports.com/api/register"),
-                              headers: {"Content-Type": "application/json"},
-                              body: jsonEncode(body),
-                            );
-
-                            Navigator.pop(context); // Close loading indicator
-
-                            var responseData = jsonDecode(response.body);
-
-                            // ScaffoldMessenger.of(context).showSnackBar(
-                            //   SnackBar(content: Text(responseData["message"] ?? "Registration complete!")),
-                            // );
-
-                            if (responseData["status"] == true) {
-                              SharedPreferences prefs = await SharedPreferences.getInstance();
-                              await prefs.setString('userEmail', emailController.text.trim());
-                              _showInfoDialog("Registered Successfully");
-
-                              // ScaffoldMessenger.of(context).showSnackBar(
-                              //   SnackBar(content: Text(responseData["message"] ?? "Registration complete!")),
-                              // );
-                              Future.delayed(const Duration(seconds: 2), () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                                );
-                              });
-                            }
-                          } catch (e) {
-                            Navigator.pop(context); // Close loading indicator
-                            // ScaffoldMessenger.of(context).showSnackBar(
-                            //   SnackBar(content: Text("Error: $e")),
-                            // );
-                            _showInfoDialog("Registration Failed. Please try again.");
-
-                          }
-                        }
-                      },
+                      onPressed: _register,
 
                       child: const Text(
                         "Register",
@@ -498,6 +523,63 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       ),
     );
+  }
+
+  /// `POST /students/register`
+  ///
+  /// Old API (commented out below): `POST nahatasports.com/api/register`,
+  /// which used `phone`/`student_photo` and reported `status: true`.
+  Future<void> _register() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final complex = _selectedComplex;
+    if (complex == null) {
+      _showInfoDialog("Please select a sports complex");
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final result = await AuthRepository.instance.register(
+      name: nameController.text.trim(),
+      phone: phoneController.text.trim(),
+      email: emailController.text.trim(),
+      sportComplexId: complex.id,
+      password: passwordController.text,
+      confirmPassword: confirmPasswordController.text,
+      dob: dobController.text.trim(),
+      gender: selectedGender,
+      referralCode: referralController.text.trim(),
+      avatarPath: selectedFile?.path,
+    );
+
+    if (!mounted) return;
+    Navigator.pop(context); // Close loading indicator
+
+    if (!result.success) {
+      _showInfoDialog(result.firstFieldError ??
+          result.message ??
+          "Registration failed. Please try again.");
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('userEmail', emailController.text.trim());
+
+    if (!mounted) return;
+    _showInfoDialog(result.message ?? "Registered Successfully");
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+    });
   }
 
   void _showInfoDialog(String message) {

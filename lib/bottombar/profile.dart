@@ -866,13 +866,16 @@
 // }
 
 
-import 'dart:convert';
-
+// Networking for this screen goes through the centralised API layer
+// (CoachingRepository), so no direct http / json / prefs usage remains here.
 import 'package:flutter/material.dart';
 import 'package:html/parser.dart' as html_parser;
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nahata_app/auth/login.dart';
+import '../core/network/api_exception.dart';
+import '../core/services/selected_ground.dart';
+import '../models/batch_model.dart';
+import '../repositories/auth_repository.dart';
+import '../repositories/coaching_repository.dart';
 // class Sport {
 //   final String id;
 //   final String sportName;
@@ -1277,61 +1280,168 @@ class Batch {
 
 
 
+/// Adapter between the coaching API and the view models this screen already
+/// uses ([Sport], [Batch], [Coach]).
+///
+/// The method names and return types are unchanged, so `SportsScreen`,
+/// `BatchScreen` and `CoachDetailsScreen` keep working exactly as before —
+/// only the data source moved to `api.nahatasports.com/api/batches`.
 class CoachApiService {
-  static const String baseUrl = "https://nahatasports.com/api/coach";
-  static Future<List<Sport>> fetchSports() async {
+  static final CoachingRepository _repository = CoachingRepository.instance;
+
+  /// Active sports, optionally limited to one ground/venue.
+  ///
+  /// An empty result is a legitimate answer ("this venue offers no sports"),
+  /// so it is returned as an empty list. Only a genuine failure throws.
+  static Future<List<Sport>> fetchSports({String? ground}) async {
     try {
-      final response = await http.get(Uri.parse(baseUrl));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success'] == true && data['sports'] != null) {
-          return (data['sports'] as List)
-              .map((s) => Sport.fromJson(s))
-              .toList();
-        }
-      }
-      throw Exception("Failed to load sports");
-    } catch (e) {
-      print("Error fetching sports: $e");
-      throw Exception("Failed to load sports");
-    }
-  }
-  static Future<List<Batch>> fetchBatches(String sportId) async {
-    try {
-      final response = await http.get(Uri.parse(baseUrl));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success'] == true && data['batches'] != null) {
-          return (data['batches'] as List)
-              .where((b) => b['sport_id'].toString() == sportId)
-              .map((b) => Batch.fromJson(b))
-              .toList();
-        }
-      }
-      return [];
-    } catch (e) {
-      print("Error fetching batches: $e");
-      return [];
+      final sports = await _repository.fetchSports(ground: ground);
+      return sports.map(_toSport).toList(growable: false);
+    } on ApiException catch (e) {
+      debugPrint("Error fetching sports: ${e.message}");
+      throw Exception(e.message);
     }
   }
 
-  static Future<List<Coach>> fetchCoaches(String sportId) async {
+  /// Every active batch for a sport, optionally narrowed to one ground.
+  static Future<List<Batch>> fetchBatches(String sportId, {String? ground}) async {
+    final id = int.tryParse(sportId);
+    if (id == null) return const [];
+
     try {
-      final response = await http.get(Uri.parse(baseUrl));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success'] == true && data['coaches'] != null) {
-          return (data['coaches'] as List)
-              .where((c) => c['sport_id'].toString() == sportId)
-              .map((c) => Coach.fromJson(c))
-              .toList();
-        }
-      }
-      return [];
-    } catch (e) {
-      print("Error fetching coaches: $e");
-      return [];
+      final batches = await _repository.fetchBatchesBySport(id, ground: ground);
+      return batches
+          .where((b) => b.isActive)
+          .map(_toBatch)
+          .toList(growable: false);
+    } on ApiException catch (e) {
+      debugPrint("Error fetching batches: ${e.message}");
+      return const [];
     }
+  }
+
+  /// Coaches teaching a sport, de-duplicated by coach id.
+  ///
+  /// Prefer [fetchCoachesByBatch] when you need the coach *for a specific
+  /// batch*: a coach usually runs several batches at different times and
+  /// prices, and this list can only carry one of them.
+  static Future<List<Coach>> fetchCoaches(String sportId, {String? ground}) async {
+    final byBatch = await fetchCoachesByBatch(sportId, ground: ground);
+
+    final byCoachId = <String, Coach>{};
+    for (final coach in byBatch.values) {
+      if (coach.id.isEmpty) continue;
+      byCoachId.putIfAbsent(coach.id, () => coach);
+    }
+    return byCoachId.values.toList(growable: false);
+  }
+
+  /// Coach for each batch, keyed by **batch id**.
+  ///
+  /// A coach's batch-dependent fields (timing, price, days, age group) only
+  /// make sense relative to one batch, so the details screen must look the
+  /// coach up by the batch the user tapped — not by coach id.
+  static Future<Map<String, Coach>> fetchCoachesByBatch(
+    String sportId, {
+    String? ground,
+  }) async {
+    final id = int.tryParse(sportId);
+    if (id == null) return const {};
+
+    try {
+      // Shares one round trip with fetchBatches — the repository de-duplicates
+      // concurrent requests for the same sport+ground.
+      final batches = await _repository.fetchBatchesBySport(id, ground: ground);
+
+      final byBatchId = <String, Coach>{};
+      for (final batch in batches) {
+        final batchId = batch.id?.toString();
+        if (batchId == null || batchId.isEmpty) continue;
+
+        final coachId = batch.coach?.id?.toString() ?? batch.coachId?.toString();
+        if (coachId == null || coachId.isEmpty) continue;
+
+        byBatchId[batchId] = _toCoach(batch);
+      }
+      return byBatchId;
+    } on ApiException catch (e) {
+      debugPrint("Error fetching coaches: ${e.message}");
+      return const {};
+    }
+  }
+
+  /// Distinct grounds offering a sport.
+  static Future<List<String>> fetchGrounds(String sportId) async {
+    final id = int.tryParse(sportId);
+    if (id == null) return const [];
+    try {
+      return await _repository.fetchGroundsForSport(id);
+    } on ApiException catch (e) {
+      debugPrint("Error fetching grounds: ${e.message}");
+      return const [];
+    }
+  }
+
+  /// Every venue the user can filter by, for the venue picker.
+  static Future<List<String>> fetchVenues() async {
+    try {
+      return await _repository.fetchGrounds();
+    } on ApiException catch (e) {
+      debugPrint("Error fetching venues: ${e.message}");
+      return const [];
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mappers
+  // ---------------------------------------------------------------------------
+
+  static Sport _toSport(SportRef sport) => Sport(
+        id: sport.id?.toString() ?? '',
+        sportName: sport.displayName,
+        // The grid's subtitle. Shows the venue when the list is filtered to
+        // one ground, otherwise the sport's category ("Indoor"/"Outdoor").
+        ground: (sport.ground?.trim().isNotEmpty ?? false)
+            ? sport.ground!.trim()
+            : (sport.category ?? ''),
+        image: sport.image ?? '',
+      );
+
+  static Batch _toBatch(BatchModel batch) => Batch(
+        id: batch.id?.toString() ?? '',
+        sportId: batch.sportId?.toString() ?? '',
+        coachId: batch.coach?.id?.toString() ?? batch.coachId?.toString() ?? '',
+        name: batch.displayName,
+        month: batch.startMonthLabel,
+        ageGroup: batch.ageGroup ?? '',
+        days: batch.daysLabel,
+        startTime: batch.sessionStart,
+        endTime: batch.sessionEnd,
+        price: batch.feesLabel,
+      );
+
+  static Coach _toCoach(BatchModel batch) {
+    final coach = batch.coach;
+    return Coach(
+      id: coach?.id?.toString() ?? batch.coachId?.toString() ?? '',
+      sportId: batch.sportId?.toString() ?? '',
+      name: coach?.displayName ?? '',
+      sport: batch.sport?.displayName ?? '',
+      ground: coach?.ground ?? '',
+      // No coach photo in the coaching API — the screen falls back to its
+      // placeholder avatar.
+      image: '',
+      availability: batch.schedule ?? '',
+      price: batch.feesLabel,
+      // No coach biography in the coaching API.
+      coachBio: '',
+      days: batch.daysLabel,
+      ageGroup: batch.ageGroup ?? '',
+      achievements: const <String>[],
+      developmentPath: '',
+      startTime: batch.sessionStart,
+      endTime: batch.sessionEnd,
+    );
   }
 }
 
@@ -1399,19 +1509,70 @@ class CoachApiService {
 //8888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
 // Sports Screen
 class SportsScreen extends StatefulWidget {
-  const SportsScreen({super.key});
+  /// Venue to show sports for. When null the screen uses the ground the user
+  /// last opened ([SelectedGround]); if that is unset too, every ground is
+  /// listed.
+  final String? ground;
+
+  const SportsScreen({super.key, this.ground});
 
   @override
   State<SportsScreen> createState() => _SportsScreenState();
 }
 
 class _SportsScreenState extends State<SportsScreen> {
+  /// Sentinel for the "All venues" entry — PopupMenuButton needs a non-null
+  /// value, but "no filter" is represented as a null ground everywhere else.
+  static const String _allVenues = '__all_venues__';
+
   late Future<List<Sport>> futureSports;
+
+  /// Ground actually used for the current request — passed on to BatchScreen
+  /// so the batch list stays scoped to the same venue.
+  String? _ground;
+  bool _groundResolved = false;
+
+  List<String> _venues = const [];
+  bool _loadingVenues = true;
 
   @override
   void initState() {
     super.initState();
-    futureSports = CoachApiService.fetchSports();
+    futureSports = _loadSports();
+    _loadVenues();
+  }
+
+  /// Resolves the ground once, then fetches that venue's sports.
+  Future<List<Sport>> _loadSports() async {
+    if (!_groundResolved) {
+      _ground = widget.ground ?? await SelectedGround.instance.read();
+      _groundResolved = true;
+    }
+    return CoachApiService.fetchSports(ground: _ground);
+  }
+
+  Future<void> _loadVenues() async {
+    final venues = await CoachApiService.fetchVenues();
+    if (!mounted) return;
+    setState(() {
+      _venues = venues;
+      _loadingVenues = false;
+    });
+  }
+
+  /// Switches venue: remembers the choice, then reloads the grid.
+  Future<void> _onVenueSelected(String value) async {
+    final ground = value == _allVenues ? null : value;
+    if (ground == _ground) return;
+
+    await SelectedGround.instance.save(ground);
+    if (!mounted) return;
+
+    setState(() {
+      _ground = ground;
+      _groundResolved = true;
+      futureSports = CoachApiService.fetchSports(ground: ground);
+    });
   }
 
   Color getSportColor(String sportName) {
@@ -1480,14 +1641,20 @@ class _SportsScreenState extends State<SportsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: EdgeInsets.all(20),
-            child: Text(
-              'Available coaches',
-              // "Coach available in ${widget.coach.ground.isNotEmpty ? widget.coach.ground : 'Location'}",
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 14,
-              ),
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Available coaches',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                _buildVenuePicker(),
+              ],
             ),
           ),
           Expanded(
@@ -1506,7 +1673,7 @@ class _SportsScreenState extends State<SportsScreen> {
                         ElevatedButton(
                           onPressed: () {
                             setState(() {
-                              futureSports = CoachApiService.fetchSports();
+                              futureSports = _loadSports();
                             });
                           },
                           child: const Text("Retry"),
@@ -1549,6 +1716,9 @@ class _SportsScreenState extends State<SportsScreen> {
                             builder: (context) => BatchScreen(
                               sportId: sport.id,
                               sportName: sport.sportName,
+                              // Keep the venue context: sport ids are scoped
+                              // to a ground.
+                              ground: _ground,
                             ),
                           ),
                         );
@@ -1638,6 +1808,104 @@ class _SportsScreenState extends State<SportsScreen> {
     );
   }
 
+  /// Venue filter shown beside the "Available coaches" label.
+  ///
+  /// Sport ids are scoped to a ground, so switching venue reloads the grid and
+  /// the choice is remembered for the batch screens.
+  Widget _buildVenuePicker() {
+    const brandBlue = Color(0xFF1A237E);
+
+    if (_loadingVenues) {
+      return const SizedBox(
+        height: 16,
+        width: 16,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+
+    // Nothing to choose between — keep the row exactly as it was.
+    if (_venues.isEmpty) return const SizedBox.shrink();
+
+    final label = _ground ?? 'All venues';
+
+    return PopupMenuButton<String>(
+      key: const Key('venue_picker'),
+      tooltip: 'Select venue',
+      offset: const Offset(0, 36),
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: _onVenueSelected,
+      itemBuilder: (context) => [
+        _venueMenuItem(_allVenues, 'All venues', _ground == null),
+        ..._venues.map(
+          (venue) => _venueMenuItem(venue, venue, _ground == venue),
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.location_on_outlined,
+                size: 16, color: brandBlue),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 130),
+              child: Text(
+                label,
+                key: const Key('venue_picker_label'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            const Icon(Icons.keyboard_arrow_down,
+                size: 18, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _venueMenuItem(
+    String value,
+    String label,
+    bool selected,
+  ) {
+    const brandBlue = Color(0xFF1A237E);
+
+    return PopupMenuItem<String>(
+      key: ValueKey('venue_option_$value'),
+      value: value,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                color: selected ? brandBlue : Colors.black87,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+          if (selected)
+            const Icon(Icons.check, size: 18, color: brandBlue),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBottomNav() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1693,7 +1961,16 @@ class BatchScreen extends StatefulWidget {
   final String sportId;
   final String sportName;
 
-  const BatchScreen({super.key, required this.sportId, required this.sportName});
+  /// Optional ground/venue filter, passed to
+  /// `GET /batches/sport/{sportId}?ground=`. Null shows every ground.
+  final String? ground;
+
+  const BatchScreen({
+    super.key,
+    required this.sportId,
+    required this.sportName,
+    this.ground,
+  });
 
   @override
   State<BatchScreen> createState() => _BatchScreenState();
@@ -1701,8 +1978,12 @@ class BatchScreen extends StatefulWidget {
 
 class _BatchScreenState extends State<BatchScreen> {
   late Future<List<Batch>> futureBatches;
-  late Future<List<Coach>> futureCoaches;
   List<Coach> allCoaches = [];
+
+  /// Coach for each batch, keyed by batch id. A coach can run several batches
+  /// at different times and prices, so "View Details" must resolve the coach
+  /// through the batch that was tapped.
+  Map<String, Coach> coachByBatchId = const {};
 
   @override
   void initState() {
@@ -1712,13 +1993,27 @@ class _BatchScreenState extends State<BatchScreen> {
 
   void fetchBatchesAndCoaches() {
     setState(() {
-      futureBatches = CoachApiService.fetchBatches(widget.sportId);
-      futureCoaches = CoachApiService.fetchCoaches(widget.sportId);
+      futureBatches = _loadBatchesAndCoaches();
     });
+  }
 
-    futureCoaches.then((coaches) {
-      allCoaches = coaches;
-    });
+  /// Loads the batches and their coaches together, so the list is never on
+  /// screen before the coach lookup is ready.
+  Future<List<Batch>> _loadBatchesAndCoaches() async {
+    // Both calls hit the same cached request — one round trip.
+    final coaches = await CoachApiService.fetchCoachesByBatch(
+      widget.sportId,
+      ground: widget.ground,
+    );
+    final batches = await CoachApiService.fetchBatches(
+      widget.sportId,
+      ground: widget.ground,
+    );
+
+    coachByBatchId = coaches;
+    allCoaches = coaches.values.toList(growable: false);
+
+    return batches;
   }
 
   @override
@@ -1786,26 +2081,31 @@ class _BatchScreenState extends State<BatchScreen> {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
                   onTap: () {
-                    final coach = allCoaches.firstWhere(
-                          (c) => c.id == batch.coachId, // ✅ now matches correctly
-                      orElse: () => Coach(
-                        id: '',
-                        sportId: '',
-                        name: 'Unknown',
-                        sport: '',
-                        ground: '',
-                        image: '',
-                        availability: '',
-                        price: '',
-                        coachBio: '',
-                        days: '',
-                        ageGroup: '',
-                        achievements: [],
-                        developmentPath: '',
-                        startTime: '',
-                        endTime: '',
-                      ),
-                    );
+                    // Look the coach up by THIS batch, so the timing, price
+                    // and age group on the details page belong to the batch
+                    // that was tapped rather than to another of the coach's
+                    // batches.
+                    final coach = coachByBatchId[batch.id] ??
+                        allCoaches.firstWhere(
+                          (c) => c.id == batch.coachId,
+                          orElse: () => Coach(
+                            id: '',
+                            sportId: '',
+                            name: 'Unknown',
+                            sport: '',
+                            ground: '',
+                            image: '',
+                            availability: '',
+                            price: '',
+                            coachBio: '',
+                            days: '',
+                            ageGroup: '',
+                            achievements: [],
+                            developmentPath: '',
+                            startTime: '',
+                            endTime: '',
+                          ),
+                        );
 
                     if (coach.id.isNotEmpty) {
                       Navigator.push(
@@ -2203,11 +2503,14 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            const Padding(
-              padding: EdgeInsets.all(20),
+            Padding(
+              padding: const EdgeInsets.all(20),
               child: Text(
-                "Coach Available in Sinhagad Road",
-                style: TextStyle(
+                // Ground comes from the coach on /batches/sport/{id}.
+                widget.coach.ground.trim().isNotEmpty
+                    ? "Coach Available in ${widget.coach.ground.trim()}"
+                    : "Coach Availability",
+                style: const TextStyle(
                   color: Colors.grey,
                   fontSize: 14,
                 ),
@@ -2365,7 +2668,9 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
                               ),
                             ),
                             Text(
-                              "₹${widget.coach.price}",
+                              // Fee of the batch the user tapped — a coach can
+                              // run several batches at different prices.
+                              "₹${widget.batch.price.isNotEmpty ? widget.batch.price : widget.coach.price}",
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 16,
@@ -2556,51 +2861,60 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
       ),
     );
   }
+  /// `POST /coaching-enquiries`
+  ///
+  /// Contact details come from the signed-in profile, so the button stays a
+  /// single tap exactly as before.
   Future<void> _sendInquiry(BuildContext context) async {
-    final userId = await AuthService.getUserId();
+    final profile = await AuthRepository.instance.cachedProfile();
 
-    if (userId == null) {
+    if (profile?.id == null) {
       _showNotLoggedInPopup();
       return;
     }
 
-    final url = Uri.parse("https://nahatasports.com/api/instant-enquiry");
-    try {
-      final response = await http.post(
-        url,
-        headers: {"Content-Type": "application/json"},
-        body: json.encode({
-          "user_id": int.parse(userId),
-          "coach_id": int.parse(widget.coach.id),
-        }),
-      );
+    final result = await CoachingRepository.instance.submitEnquiry(
+      batchId: int.tryParse(widget.batch.id),
+      sportId: int.tryParse(widget.batch.sportId),
+      coachId: int.tryParse(widget.coach.id),
+      name: profile!.displayName,
+      email: profile.email ?? '',
+      phone: profile.phoneNumber ?? '',
+      message: _enquiryMessage(),
+    );
 
-      final data = json.decode(response.body);
+    if (!mounted) return;
 
-      if (data['success'] == true) {
-        _showPopup(
-          context,
-          title: "Success",
-          message: data['message'] ?? "Your enquiry has been sent!",
-          isSuccess: true,
-        );
-        print(data);
-      } else {
-        _showPopup(
-          context,
-          title: "Failed",
-          message: "Failed to send enquiry",
-          isSuccess: false,
-        );
-      }
-    } catch (e) {
-      _showPopup(
-        context,
-        title: "Error",
-        message: "Error: $e",
-        isSuccess: false,
-      );
+    _showPopup(
+      context,
+      title: result.success ? "Success" : "Failed",
+      message: result.success && result.referenceNumber != null
+          ? "${result.message}\nReference: ${result.referenceNumber}"
+          : result.message,
+      isSuccess: result.success,
+    );
+  }
+
+  /// Default enquiry text, built from the batch the user is looking at.
+  String _enquiryMessage() {
+    final batchName = widget.batch.name.trim();
+    final sport = widget.coach.sport.trim();
+
+    final buffer = StringBuffer('I am interested in ');
+    buffer.write(batchName.isEmpty ? 'this batch' : 'the "$batchName" batch');
+    if (sport.isNotEmpty) buffer.write(' for $sport');
+    buffer.write('.');
+
+    final schedule = widget.batch.startTime.isNotEmpty
+        ? ' ${widget.batch.days} ${widget.batch.startTime}'
+            '${widget.batch.endTime.isNotEmpty ? " - ${widget.batch.endTime}" : ""}'
+        : '';
+    if (schedule.trim().isNotEmpty) {
+      buffer.write(' Preferred schedule:$schedule.');
     }
+
+    buffer.write(' Please contact me with the details.');
+    return buffer.toString();
   }
 
   /// Reusable popup function

@@ -635,11 +635,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'auth/login.dart';
 import 'bottombar/Custombottombar.dart';
 import 'bottombar/morescreen.dart';
+import 'core/services/app_navigator.dart';
+import 'core/services/permission_service.dart';
+import 'core/services/session_manager.dart';
 import 'dashboard/admin_screen.dart';
 import 'dashboard/coach_screen.dart';
 import 'dashboard/security_screen.dart';
 import 'network.dart';
 import 'notification.dart';
+import 'providers/profile_provider.dart';
+import 'repositories/auth_repository.dart';
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:async';
@@ -654,8 +659,10 @@ import 'package:connectivity_plus/connectivity_plus.dart';
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
   FlutterLocalNotificationsPlugin();
 
-  // 🔹 Global navigator key for navigation from notification taps
-  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  // 🔹 Global navigator key for navigation from notification taps.
+  // Shared with AppNavigator so the auth interceptor can route to Login when a
+  // session expires.
+  final GlobalKey<NavigatorState> navigatorKey = AppNavigator.key;
 
   // 🔹 Background message handler (must be top-level)
   Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -711,6 +718,11 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 🔐 Auth plumbing: let the API layer sign the user out when a refresh fails,
+  // and warm up cached permissions so the first frame can already gate on them.
+  SessionManager.instance.attach();
+  await PermissionService.instance.loadFromCache();
+
   // Ensure Firebase initialized first
   await Firebase.initializeApp();
   // 🌐 Initialize connectivity
@@ -741,19 +753,14 @@ Future<void> main() async {
 
 
   FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
-    final userId = await AuthService.getUserId();
+    final userId = int.tryParse(await AuthService.getUserId() ?? '');
 
     if (userId != null) {
-      await http.post(
-        Uri.parse("https://nahatasports.com/api/save-fcm-token"),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          "user_id": int.parse(userId),
-          "fcm_token": newToken,
-          "platform": "android",
-        }),
+      await AuthRepository.instance.registerFcmToken(
+        userId: userId,
+        fcmToken: newToken,
+        platform: Platform.isIOS ? 'ios' : 'android',
       );
-      print("🔔 New FCM token: $newToken");
     }
   });
 
@@ -810,6 +817,13 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ConnectivityProvider()),
+        // Single source of truth for the signed-in user. `bootstrap()` shows the
+        // cached profile immediately, then reconciles with /auth/profile.
+        // Eager (`lazy: false`) so the splash screen can await it before routing.
+        ChangeNotifierProvider(
+          lazy: false,
+          create: (_) => ProfileProvider()..bootstrap(),
+        ),
       ],
       child: MyApp(initialMessage: initialMessage),
     ),
@@ -837,6 +851,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
+      scaffoldMessengerKey: AppNavigator.messengerKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF1A237E),
@@ -1362,44 +1377,64 @@ class _SplashStep3State extends State<SplashStep3> {
   }
 
   Future<void> _redirectAfterSplash() async {
+    // Restore the session while the splash animation plays, so routing by role
+    // uses live data instead of a stale preference.
+    final sessionReady = _restoreSession();
+
     await Future.delayed(const Duration(seconds: 3));
     if (!mounted) return; // prevent work after widget removed
 
+    await sessionReady;
+    if (!mounted) return;
+
     final prefs = await SharedPreferences.getInstance();
-    final bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
     final bool isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
-    String? savedRole = prefs.getString('role');
-
-    await ApiService.loadUserFromPrefs();
-    final roleFromUser = ApiService.currentUser?['role']?.toString().toLowerCase();
-
-    if (savedRole == null && roleFromUser != null) {
-      print("🧩 Fixing missing role → $roleFromUser");
-      await prefs.setString('role', roleFromUser);
-      savedRole = roleFromUser;
-    }
-
     if (isFirstLaunch) await prefs.setBool('isFirstLaunch', false);
 
-    print("🔹 Splash redirect check:");
-    print("   isLoggedIn: $isLoggedIn");
-    print("   savedRole: $savedRole");
+    final bool hasSession = await AuthRepository.instance.hasSession;
 
-    Widget screen;
-    if (isLoggedIn && savedRole != null) {
-      screen = _getScreenForRole(savedRole);
-    } else if (savedRole != null) {
-      screen = _getScreenForRole(savedRole);
+    // Prefer the role from the freshly loaded profile; fall back to the
+    // persisted one when we are offline.
+    String? savedRole = ApiService.currentProfile?.normalisedRole;
+    if (savedRole == null || savedRole.isEmpty) {
+      savedRole = prefs.getString('role')?.toLowerCase();
     } else {
-      screen = const CustomBottomNav();
+      await prefs.setString('role', savedRole);
     }
+
+    final role = savedRole;
+    final routeToRole = hasSession && role != null && role.isNotEmpty;
 
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (_) => screen),
-          (route) => false,
+      MaterialPageRoute(
+        builder: (_) =>
+            routeToRole ? _getScreenForRole(role) : const CustomBottomNav(),
+      ),
+      (route) => false,
     );
+  }
+
+  /// App start-up: cached profile first (instant), then `/auth/profile` to
+  /// pick up any server-side changes. A failure here is non-fatal — the cached
+  /// profile keeps the app usable offline.
+  Future<void> _restoreSession() async {
+    try {
+      await ApiService.loadUserFromPrefs();
+
+      if (!await AuthRepository.instance.hasSession) return;
+
+      final provider = ProfileProvider.maybeInstance;
+      if (provider != null) {
+        await provider.refresh(force: true);
+      }
+
+      // Re-sync the legacy `currentUser` map from whatever the refresh produced.
+      await ApiService.loadUserFromPrefs();
+    } catch (e) {
+      debugPrint('Session restore failed: $e');
+    }
   }
 
   /// Cancel all pending timers on dispose

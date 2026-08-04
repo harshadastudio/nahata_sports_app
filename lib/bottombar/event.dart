@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'dart:ui' as ui;
@@ -9,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:html_unescape/html_unescape.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -22,6 +21,16 @@ import 'package:nahata_app/bottombar/Custombottombar.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../auth/login.dart';
+import '../core/network/api_exception.dart';
+import '../core/services/selected_ground.dart';
+import '../models/coupon_model.dart';
+import '../models/event_booking_model.dart';
+import '../models/event_pass_model.dart';
+import '../models/sports_complex_model.dart';
+import '../repositories/coupon_repository.dart';
+import '../repositories/event_booking_repository.dart';
+import '../repositories/event_repository.dart';
+import '../repositories/payment_repository.dart';
 
 class EventModel {
   final String id;
@@ -34,6 +43,16 @@ class EventModel {
   final String location;
   final String description;
 
+  /// Slots come embedded in `/event-passes`, so the details page no longer
+  /// needs a second request. Shape matches what the booking UI reads.
+  final List<Map<String, dynamic>> slots;
+
+  /// Question/answer pairs from the API.
+  final List<EventFaq> faqs;
+
+  /// Venue id, needed by venue-scoped coupons.
+  final int? sportComplexId;
+
   EventModel({
     required this.id,
     required this.title,
@@ -44,7 +63,27 @@ class EventModel {
     // required this.bookedSlots,
     required this.location,
     required this.description,
+    this.slots = const <Map<String, dynamic>>[],
+    this.faqs = const <EventFaq>[],
+    this.sportComplexId,
   });
+
+  /// Builds the view model from an `/event-passes` record.
+  factory EventModel.fromEventPass(EventPassModel pass) {
+    return EventModel(
+      id: pass.id?.toString() ?? '',
+      title: pass.title ?? '',
+      // The API returns absolute URLs already.
+      image: pass.image ?? '',
+      location: pass.venueName ?? 'Nahata Sports Complex',
+      description: pass.description ?? '',
+      slots: pass.activeSlots
+          .map((s) => s.toBookingMap())
+          .toList(growable: false),
+      faqs: pass.faqs,
+      sportComplexId: pass.sportComplexId,
+    );
+  }
   //
   // bool get isFull => bookedSlots >= totalSlots;
   // int get availableSlots => (totalSlots - bookedSlots).clamp(0, totalSlots);
@@ -125,7 +164,11 @@ class EventModel {
     if (language.isNotEmpty) buffer.writeln("🗣️ Language: $language\n");
     if (venue.isNotEmpty) buffer.writeln("📍 Venue: $venue");
 
-    return buffer.toString().trim();
+    final formatted = buffer.toString().trim();
+
+    // Descriptions that use none of the labelled sections (the new API sends
+    // plain prose) would otherwise render as an empty block.
+    return formatted.isEmpty ? content.trim() : formatted;
   }
 
 
@@ -143,32 +186,77 @@ class EventModel {
 //   final List data = body['data'] ?? [];
 //   return data.map((e) => EventModel.fromJson(e)).toList();
 // }
-Future<List<EventModel>> fetchEvents({required String status}) async {
-  final url = "https://nahatasports.com/api/events_api?status=$status";
-  final res = await http.get(Uri.parse(url));
+/// Loads events from `GET /event-passes`.
+///
+/// [status] keeps the screen's two tabs working:
+/// * `"active"`   — every active event pass,
+/// * `"upcoming"` — active passes that still have a slot dated today or later,
+///   ordered by their earliest slot. The API exposes only an Active/Inactive
+///   status, so "upcoming" is derived from the embedded slot dates.
+///
+/// Results are limited to the venue the user selected, when there is one.
+Future<List<EventModel>> fetchEvents({
+  required String status,
+  int? sportComplexId,
+  bool filterBySelectedVenue = true,
+}) async {
+  final repository = EventRepository.instance;
 
-  if (res.statusCode != 200) throw Exception("Failed to load $status events");
+  final complexId = sportComplexId ??
+      (filterBySelectedVenue ? await repository.resolveSelectedComplexId() : null);
 
-  final body = jsonDecode(res.body);
-  final List data = body['data'] ?? [];
-  return data.map((e) => EventModel.fromJson(e)).toList();
+  final passes = await repository.fetchEventPasses(
+    status: 'Active',
+    sportComplexId: complexId,
+  );
+
+  final upcomingOnly = status.toLowerCase() == 'upcoming';
+
+  final selected =
+      upcomingOnly ? passes.where((p) => p.hasUpcomingSlot).toList() : passes;
+
+  if (upcomingOnly) {
+    selected.sort((a, b) {
+      final left = a.earliestSlotDate;
+      final right = b.earliestSlotDate;
+      if (left == null && right == null) return 0;
+      if (left == null) return 1;
+      if (right == null) return -1;
+      return left.compareTo(right);
+    });
+  }
+
+  return selected.map(EventModel.fromEventPass).toList(growable: false);
 }
 
 /* -------------------------------------------
 
  */
-class EventsScreen extends StatefulWidget {
+class EventsScreen    extends StatefulWidget {
   @override
   _EventsScreenState createState() => _EventsScreenState();
 }
 
 class _EventsScreenState extends State<EventsScreen>
     with SingleTickerProviderStateMixin {
+
+
+
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   int selectedTab = 0;
 
   late Future<List<EventModel>> _futureEvents;
+
+  /// Sentinel for the "All complexes" entry — PopupMenuButton needs a non-null
+  /// value, while "no filter" is a null venue everywhere else.
+  static const int _allVenues = -1;
+
+  List<SportsComplex> _venues = const [];
+  bool _loadingVenues = true;
+
+  /// Sports-complex id the list is currently scoped to; null means all.
+  int? _venueId;
 
   @override
   void initState() {
@@ -186,6 +274,50 @@ class _EventsScreenState extends State<EventsScreen>
     _animationController.forward();
 
     _futureEvents = fetchEvents(status: "active");
+    _loadVenues();
+  }
+
+  /// Venue list for the picker, plus the venue the app is already scoped to.
+  Future<void> _loadVenues() async {
+    final repository = EventRepository.instance;
+    final venues = await repository.fetchVenues();
+    final selectedId = await repository.resolveSelectedComplexId();
+    if (!mounted) return;
+
+    setState(() {
+      _venues = venues;
+      _venueId = selectedId;
+      _loadingVenues = false;
+    });
+  }
+
+  /// Events for [status], scoped to the venue the picker is showing.
+  Future<List<EventModel>> _loadEvents(String status) {
+    if (_loadingVenues) return fetchEvents(status: status);
+    return fetchEvents(
+      status: status,
+      sportComplexId: _venueId,
+      filterBySelectedVenue: false,
+    );
+  }
+
+  /// Switches venue: remembers the choice, then reloads the list.
+  Future<void> _onVenueSelected(int value) async {
+    final id = value == _allVenues ? null : value;
+    if (id == _venueId) return;
+
+    final venue = _venues.where((v) => v.id == id).firstOrNull;
+    await SelectedGround.instance.save(venue?.name, id: venue?.id);
+    if (!mounted) return;
+
+    setState(() {
+      _venueId = id;
+      _futureEvents = fetchEvents(
+        status: selectedTab == 0 ? "active" : "upcoming",
+        sportComplexId: id,
+        filterBySelectedVenue: false,
+      );
+    });
   }
 
   @override
@@ -230,6 +362,100 @@ class _EventsScreenState extends State<EventsScreen>
               textAlign: TextAlign.center,
             ),
           ),
+          _buildVenuePicker(),
+        ],
+      ),
+    );
+  }
+
+  /// Venue filter — `/event-passes` is scoped by `sportComplexId`, so the
+  /// choice decides whether the screen shows every complex or just one.
+  Widget _buildVenuePicker() {
+    const brandBlue = Color(0xFF1A237E);
+
+    if (_loadingVenues) {
+      return const SizedBox(
+        height: 16,
+        width: 16,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+
+    // Nothing to choose between — leave the header exactly as it was.
+    if (_venues.isEmpty) return const SizedBox.shrink();
+
+    final label = _venues
+            .where((v) => v.id == _venueId)
+            .firstOrNull
+            ?.name ??
+        'All complexes';
+
+    return PopupMenuButton<int>(
+      key: const Key('event_venue_picker'),
+      tooltip: 'Select venue',
+      offset: const Offset(0, 36),
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: _onVenueSelected,
+      itemBuilder: (context) => [
+        _venueMenuItem(_allVenues, 'All complexes', _venueId == null),
+        ..._venues.map(
+          (venue) => _venueMenuItem(venue.id, venue.name, _venueId == venue.id),
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.location_on_outlined, size: 16, color: brandBlue),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 130),
+              child: Text(
+                label,
+                key: const Key('event_venue_picker_label'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            const Icon(Icons.keyboard_arrow_down, size: 18, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<int> _venueMenuItem(int value, String label, bool selected) {
+    const brandBlue = Color(0xFF1A237E);
+
+    return PopupMenuItem<int>(
+      key: ValueKey('event_venue_option_$value'),
+      value: value,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                color: selected ? brandBlue : Colors.black87,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+          if (selected) const Icon(Icons.check, size: 18, color: brandBlue),
         ],
       ),
     );
@@ -333,7 +559,7 @@ class _EventsScreenState extends State<EventsScreen>
               onTap: () {
                 setState(() {
                   selectedTab = 0;
-                  _futureEvents = fetchEvents(status: "active");
+                  _futureEvents = _loadEvents("active");
                 });
               },
               child: AnimatedContainer(
@@ -362,7 +588,7 @@ class _EventsScreenState extends State<EventsScreen>
             onTap: () {
               setState(() {
                 selectedTab = 1;
-                _futureEvents = fetchEvents(status: "upcoming");
+                _futureEvents = _loadEvents("upcoming");
               });
             },
             child: AnimatedContainer(
@@ -514,12 +740,42 @@ class EventDetailsPage extends StatefulWidget {
 
 class _EventDetailsPageState extends State<EventDetailsPage>
     with SingleTickerProviderStateMixin {
-  String? _selectedSlot;
+  /// Id of the chosen slot. `/event-passes` returns numeric slot ids (the old
+  /// API sent them as strings), so ids are normalised through [_slotIdOf].
+  int? _selectedSlot;
   bool _bookingInProgress = false;
   List<Map<String, dynamic>> _slots = [];
   int _membersCount = 1;
+
+  /// Slot price × passes, before any coupon.
+  double _subtotal = 0.0;
+  double _discount = 0.0;
+
+  /// What the user actually pays: [_subtotal] less [_discount].
   double _totalPrice = 0.0;
   Razorpay? _razorpay;
+
+  /// Pending booking created before checkout, and the order raised for it.
+  int? _bookingId;
+  Map<String, dynamic>? _bookingPayload;
+  PaymentOrder? _order;
+
+  /// `GET /coupons/active?appliesTo=Event`.
+  List<CouponModel> _coupons = const [];
+  bool _loadingCoupons = true;
+  CouponModel? _appliedCoupon;
+
+  /// Server's verdict for [_appliedCoupon] — it carries the authoritative
+  /// discount and final amount.
+  CouponValidation? _validation;
+  bool _applyingCoupon = false;
+
+  /// Guards against a stale `/coupons/validate` response overwriting a newer
+  /// one.
+  int _couponRequest = 0;
+
+  String? _couponError;
+  final TextEditingController _couponController = TextEditingController();
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -545,6 +801,7 @@ class _EventDetailsPageState extends State<EventDetailsPage>
     _animationController.forward();
 
     _fetchSlots();
+    _loadCoupons();
 
     _razorpay = Razorpay();
     _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onPaymentSuccess);
@@ -555,45 +812,131 @@ class _EventDetailsPageState extends State<EventDetailsPage>
   @override
   void dispose() {
     _animationController.dispose();
+    _couponController.dispose();
     _razorpay?.clear();
     super.dispose();
   }
 
+  /// Offers for event bookings. A failure here just means no offers strip.
+  Future<void> _loadCoupons() async {
+    final coupons =
+        await CouponRepository.instance.fetchActiveCoupons(appliesTo: 'Event');
+    if (!mounted) return;
+    setState(() {
+      _coupons = coupons;
+      _loadingCoupons = false;
+    });
+  }
+
+  /// Applies [code] by asking the server: `POST /coupons/validate` decides
+  /// whether it is usable for this amount and returns the exact discount.
+  Future<void> _applyCouponCode(String code) async {
+    final trimmed = code.trim();
+    if (trimmed.isEmpty) {
+      setState(() => _couponError = 'Enter a coupon code');
+      return;
+    }
+    if (_subtotal <= 0) {
+      setState(() => _couponError = 'Select a pass first');
+      return;
+    }
+
+    // Only the newest request may write back — the amount can change while a
+    // validation is in flight.
+    final request = ++_couponRequest;
+    setState(() {
+      _applyingCoupon = true;
+      _couponError = null;
+    });
+
+    final result = await CouponRepository.instance.validateCoupon(
+      code: trimmed,
+      amount: _subtotal,
+      appliesTo: 'Event',
+      sportComplexId: widget.event.sportComplexId,
+    );
+
+    if (!mounted || request != _couponRequest) return;
+
+    setState(() {
+      _applyingCoupon = false;
+      if (result.isValid) {
+        _appliedCoupon = result.coupon;
+        _validation = result;
+        _couponError = null;
+        _couponController.text = result.coupon?.code ?? trimmed;
+      } else {
+        _appliedCoupon = null;
+        _validation = null;
+        _couponError = result.message ?? 'Invalid coupon code';
+      }
+    });
+
+    _calculatePrice();
+  }
+
+  /// Re-prices the applied coupon after the amount changes.
+  void _revalidateCoupon() {
+    final code = _appliedCoupon?.code;
+    if (code == null) return;
+    _applyCouponCode(code);
+  }
+
+  void _removeCoupon() {
+    _couponRequest++; // discard any validation still in flight
+    setState(() {
+      _appliedCoupon = null;
+      _validation = null;
+      _applyingCoupon = false;
+      _couponError = null;
+      _couponController.clear();
+    });
+    _calculatePrice();
+  }
+
+  /// Slot ids off the wire, whichever shape they arrive in.
+  static int? _slotIdOf(Object? raw) =>
+      raw is int ? raw : int.tryParse(raw?.toString() ?? '');
+
   /// Fetch slots from API
+  /// Slots arrive embedded in `/event-passes`, so they are already in hand.
+  /// Only re-read them from the API when the list did not come through.
   Future<void> _fetchSlots() async {
-    final url = Uri.parse("https://nahatasports.com/api/tournaments/${widget.event.id}/slots");
+    if (widget.event.slots.isNotEmpty) {
+      setState(() {
+        _slots = List<Map<String, dynamic>>.from(widget.event.slots);
+        _selectedSlot = _slotIdOf(_slots.first['id']);
+      });
+      _calculatePrice();
+      return;
+    }
+
+    final eventId = int.tryParse(widget.event.id);
+    if (eventId == null) {
+      if (mounted) _showSnack("No slots available");
+      return;
+    }
+
     try {
-      final response = await http.get(url, headers: {"Content-Type": "application/json"});
+      final passes = await EventRepository.instance.fetchEventPasses();
       if (!mounted) return;
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map && decoded['slots'] is List) {
-          final List slots = decoded['slots'];
-          setState(() {
-            _slots = slots.map((s) {
-              return {
-                "id": s['id'],
-                "name": s['slot_name'] ?? '',
-                "date": s['pass_date'] ?? '',
-                "price": s['pass_price'] ?? '0',
-                "pass_type": s['pass_type'] ?? '',
-                "start": s['start_time'] ?? '',
-                "end": s['end_time'] ?? '',
-              };
-            }).toList();
+      final pass = passes.where((p) => p.id == eventId).firstOrNull;
+      final slots = pass?.activeSlots ?? const <EventPassSlot>[];
 
-            if (_slots.isNotEmpty) {
-              _selectedSlot = _slots.first['id'];
-              _calculatePrice();
-            }
-          });
-        } else {
-          if (mounted) _showSnack("No slots available");
-        }
-      } else {
-        if (mounted) _showSnack("Failed to fetch slots");
+      if (slots.isEmpty) {
+        _showSnack("No slots available");
+        return;
       }
+
+      setState(() {
+        _slots = slots.map((s) => s.toBookingMap()).toList();
+        _selectedSlot = _slotIdOf(_slots.first['id']);
+      });
+      _calculatePrice();
+    } on ApiException catch (e) {
+      debugPrint("Error fetching slots: ${e.message}");
+      if (mounted) _showSnack(e.message);
     } catch (e, st) {
       debugPrint("Error fetching slots: $e\n$st");
       if (mounted) _showSnack("Error loading slots");
@@ -601,15 +944,13 @@ class _EventDetailsPageState extends State<EventDetailsPage>
   }
 
   /// Razorpay payment start
-  void _startPaymentFlow() {
+  ///
+  /// New API chain: reserve the booking → `POST /payments/create-order` →
+  /// Razorpay, opened with the `keyId` and `orderId` the server returned. No
+  /// Razorpay key lives in the app.
+  Future<void> _startPaymentFlow() async {
     if (ApiService.currentUser == null) {
-      // Navigator.pushAndRemoveUntil(
-      //   context,
-      //   MaterialPageRoute(builder: (_) => LoginScreen()),
-      //       (route) => false,
-      // );
       _showNotLoggedInPopup();
-
       return;
     }
     if (_selectedSlot == null) {
@@ -620,26 +961,73 @@ class _EventDetailsPageState extends State<EventDetailsPage>
       _showSnack('Invalid amount');
       return;
     }
+    if (_bookingInProgress) return;
 
-    final options = {
-      // replace with your key (test/live) appropriately
-      'key': 'rzp_live_R7b5MMCgg9AlWn',
-      //  'key': 'rzp_test_YwYUHvAMatnKBY',
-      // 'key': 'rzp_live_R7b5MMCgg9AlWn',
-      'amount': (_totalPrice * 100).toInt(), // amount in paise
-      'name': widget.event.title,
-      'description': 'Tournament Booking',
-      'prefill': {
-        'contact': ApiService.currentUser?['phone'] ?? '',
-        'email': ApiService.currentUser?['email'] ?? '',
-      }
-    };
+    final eventPassId = int.tryParse(widget.event.id);
+    if (eventPassId == null) {
+      _showSnack('This event cannot be booked right now');
+      return;
+    }
+
+    setState(() => _bookingInProgress = true);
 
     try {
-      _razorpay!.open(options);
-    } catch (e) {
-      debugPrint("Error opening Razorpay: $e");
-      _showSnack("Payment initialization failed");
+      final user = ApiService.currentUser;
+
+      // 1) Reserve the booking — its id is what the payment is raised against.
+      final booking = await EventBookingRepository.instance.createBooking(
+        eventPassId: eventPassId,
+        slotId: _selectedSlot!,
+        passes: _membersCount,
+        amount: _totalPrice,
+        name: user?['name']?.toString(),
+        email: user?['email']?.toString(),
+        couponCode: _appliedCoupon?.code,
+        sportComplexId: widget.event.sportComplexId,
+      );
+
+      if (!mounted) return;
+      if (!booking.isOk) {
+        _showSnack(booking.message ?? 'Could not create the booking');
+        return;
+      }
+
+      _bookingId = booking.bookingId;
+      _bookingPayload = booking.data;
+
+      // 2) Razorpay order for that booking.
+      final order = await PaymentRepository.instance.createOrder(
+        bookingType: BookingType.event,
+        bookingId: _bookingId!,
+        amount: _totalPrice,
+      );
+
+      if (!mounted) return;
+      if (order == null) {
+        _showSnack('Could not start the payment. Please try again.');
+        return;
+      }
+
+      _order = order;
+
+      // 3) Checkout, with the key and order the server issued.
+      _razorpay!.open({
+        'key': order.keyId,
+        'order_id': order.orderId,
+        'amount': order.amountPaise,
+        'currency': order.currency,
+        'name': widget.event.title,
+        'description': 'Event pass booking',
+        'prefill': {
+          'contact': user?['phone'] ?? '',
+          'email': user?['email'] ?? '',
+        },
+      });
+    } catch (e, st) {
+      debugPrint("Error starting payment: $e\n$st");
+      if (mounted) _showSnack("Payment initialization failed");
+    } finally {
+      if (mounted) setState(() => _bookingInProgress = false);
     }
   }
   void _showNotLoggedInPopup() {
@@ -716,8 +1104,7 @@ class _EventDetailsPageState extends State<EventDetailsPage>
   }
 
   void _onPaymentSuccess(PaymentSuccessResponse response) {
-    // response contains paymentId, orderId, signature
-    _confirmBooking(response.paymentId);
+    _confirmBooking(response);
   }
 
   void _onPaymentError(PaymentFailureResponse response) {
@@ -728,91 +1115,50 @@ class _EventDetailsPageState extends State<EventDetailsPage>
     _showSnack("External wallet selected: ${response.walletName}");
   }
 
-  /// Confirm booking after successful payment
-  Future<void> _confirmBooking(String? razorpayPaymentId) async {
-    if (_selectedSlot == null) {
-      _showSnack("Please select a slot");
+  /// Confirm the booking once Razorpay reports success.
+  ///
+  /// `POST /payments/verify` is what actually confirms it — the legacy
+  /// `tournaments/verify-payment` + `booking/confirm` pair is gone.
+  Future<void> _confirmBooking(PaymentSuccessResponse response) async {
+    final bookingId = _bookingId;
+    if (bookingId == null) {
+      _showSnack("Payment received, but the booking reference is missing");
       return;
     }
 
     setState(() => _bookingInProgress = true);
 
     try {
-      final user = ApiService.currentUser;
-      if (user == null) {
-        if (mounted) _showSnack("User not logged in");
-        return;
-      }
-
-      // 1) Verify payment (optional, depends on your backend)
-      try {
-        final verifyUrl = Uri.parse("https://nahatasports.com/api/tournaments/verify-payment");
-        final verifyRes = await http.post(
-          verifyUrl,
-          headers: {"Content-Type": "application/json"},
-          body: jsonEncode({"razorpay_payment_id": razorpayPaymentId ?? ""}),
-        );
-        debugPrint("Verify API response: ${verifyRes.body}");
-      } catch (ve) {
-        debugPrint("Payment verify call failed: $ve");
-        // Don't block booking confirm if verify endpoint fails — up to your server logic.
-      }
-
-      // 2) Confirm booking
-      final confirmUrl = Uri.parse("https://nahatasports.com/api/booking/confirm");
-      final selected = _slots.firstWhere(
-            (s) => s['id'] == _selectedSlot,
-        orElse: () => {},
+      final verified = await PaymentRepository.instance.verifyPayment(
+        bookingType: BookingType.event,
+        bookingId: bookingId,
+        orderId: response.orderId ?? _order?.orderId ?? '',
+        paymentId: response.paymentId ?? '',
+        signature: response.signature ?? '',
       );
-      final confirmRes = await http.post(
-        confirmUrl,
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "user_id": user['id'],
-          "tournament_id": widget.event.id,
-          "slot_id": _selectedSlot,
-          "name": user['name'] ?? "",
-          "email": user['email'] ?? "",
-          "members_count": _membersCount,
-          'pass_type': selected['pass_type'] ?? '',
-          'pass_date': selected['date'] ?? '',
-          'start_time': selected['start'] ?? '',
-          'end_time': selected['end'] ?? '',
-          "razorpay_payment_id": razorpayPaymentId ?? "",
-          // you could optionally send razorpay_payment_id here
-        }),
-      );
-
-      debugPrint("Confirm API response: ${confirmRes.body}");
 
       if (!mounted) return;
 
-      Map<String, dynamic>? data;
-      try {
-        data = jsonDecode(confirmRes.body);
-      } catch (e) {
-        debugPrint("Failed to parse confirm response JSON: $e");
-        if (mounted) _showSnack("Unexpected server response");
+      if (!verified) {
+        _showSnack("We could not confirm the payment. Please contact support.");
         return;
       }
 
-      if (data?['status'] == 'success' && data?['data'] != null) {
-        final bookingData = BookingData.fromJson(data?['data']);
-        if (!mounted) return;
+      // Read the confirmed booking back so the pass shows the real QR code and
+      // pass code; fall back to what is on screen if it cannot be fetched.
+      final confirmed =
+          await EventBookingRepository.instance.fetchMyBooking(bookingId);
+      if (!mounted) return;
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => EventPassPage(
-              booking: bookingData,
-              eventImage: widget.event.image,
-            ),
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EventPassPage(
+            booking: _passFor(bookingId, confirmed),
+            eventImage: confirmed?.event?.image ?? widget.event.image,
           ),
-        );
-      } else {
-        final msg = data?['message'] ?? 'Booking failed';
-        if (mounted) _showSnack(msg);
-      }
+        ),
+      );
     } catch (e, st) {
       debugPrint("Booking error: $e\n$st");
       if (mounted) _showSnack("Payment or booking failed. Try again.");
@@ -821,15 +1167,83 @@ class _EventDetailsPageState extends State<EventDetailsPage>
     }
   }
 
+  /// The pass to show after a verified payment.
+  ///
+  /// Prefers the confirmed booking from `/event-passes/bookings/my` — it is
+  /// the only source of the QR code and pass code — and falls back to the
+  /// details already on screen.
+  BookingData _passFor(int bookingId, EventPassBooking? booking) {
+    final user = ApiService.currentUser;
+    final payload = _bookingPayload ?? const <String, dynamic>{};
+    final selected = _slots.firstWhere(
+          (s) => _slotIdOf(s['id']) == _selectedSlot,
+      orElse: () => const <String, dynamic>{},
+    );
+
+    String pick(String? preferred, Object? fromCreate, String fallback) {
+      if (preferred != null && preferred.isNotEmpty) return preferred;
+      final created = fromCreate?.toString() ?? '';
+      return created.isEmpty ? fallback : created;
+    }
+
+    return BookingData(
+      userid: user?['id']?.toString(),
+      bookingId: pick(booking?.passCode, payload['bookingReference'],
+          '$bookingId'),
+      name: pick(booking?.name, payload['name'],
+          user?['name']?.toString() ?? ''),
+      email: pick(booking?.email, payload['email'],
+          user?['email']?.toString() ?? ''),
+      membersCount: booking?.numberOfPasses ?? _membersCount,
+      tournament: pick(booking?.event?.title, null, widget.event.title),
+      slotName: pick(booking?.slot?.name, payload['slotName'],
+          selected['name']?.toString() ?? ''),
+      startTime: pick(booking?.slot?.startTime, payload['startTime'],
+          selected['start']?.toString() ?? ''),
+      endTime: pick(booking?.slot?.endTime, payload['endTime'],
+          selected['end']?.toString() ?? ''),
+      qrCode: pick(booking?.displayQrCode, payload['qrCode'], ''),
+      passType: pick(booking?.slot?.passType, payload['passType'],
+          selected['pass_type']?.toString() ?? ''),
+      eventImage: widget.event.image,
+      members: const <Map<String, String>>[],
+    );
+  }
+
   /// Calculate total price
+  ///
+  /// Any applied coupon is re-evaluated here, because changing the slot or the
+  /// number of passes can move the amount past (or below) its minimum.
   void _calculatePrice() {
     if (!mounted) return;
     final selected = _slots.firstWhere(
-          (s) => s['id'] == _selectedSlot,
+          (s) => _slotIdOf(s['id']) == _selectedSlot,
       orElse: () => {"price": "0"},
     );
     final slotPrice = double.tryParse(selected['price'].toString()) ?? 0.0;
-    setState(() => _totalPrice = slotPrice * _membersCount);
+    final subtotal = slotPrice * _membersCount;
+
+    setState(() {
+      _subtotal = subtotal;
+      _discount = _discountFor(subtotal);
+      _totalPrice = subtotal - _discount;
+    });
+  }
+
+  /// The server's discount when it priced this exact amount, otherwise the
+  /// coupon's own rule as a provisional figure until [_revalidateCoupon]
+  /// comes back.
+  double _discountFor(double subtotal) {
+    final validation = _validation;
+    if (validation == null || !validation.isValid) return 0;
+
+    final priced = validation.originalAmount;
+    final discount = validation.discountAmount;
+    if (priced != null && discount != null && (priced - subtotal).abs() < 0.01) {
+      return discount;
+    }
+
+    return _appliedCoupon?.discountFor(subtotal) ?? 0;
   }
 
   /// Format time from "HH:mm[:ss]" → "h:mm a" (safe)
@@ -991,6 +1405,8 @@ class _EventDetailsPageState extends State<EventDetailsPage>
                         const SizedBox(height: 24),
                         _buildDescriptionCard(),
                         const SizedBox(height: 24),
+                        _buildCouponsCard(),
+                        const SizedBox(height: 24),
                         _buildPriceSummaryCard(),
                       ],
                     ),
@@ -1098,13 +1514,14 @@ class _EventDetailsPageState extends State<EventDetailsPage>
           else
             Column(
               children: _slots.map((s) {
-                final selected = s['id'] == _selectedSlot;
+                final selected = _slotIdOf(s['id']) == _selectedSlot;
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   child: InkWell(
                     onTap: () {
-                      setState(() => _selectedSlot = s['id']);
+                      setState(() => _selectedSlot = _slotIdOf(s['id']));
                       _calculatePrice();
+                      _revalidateCoupon();
                     },
                     borderRadius: BorderRadius.circular(15),
                     child: AnimatedContainer(
@@ -1192,6 +1609,7 @@ class _EventDetailsPageState extends State<EventDetailsPage>
                       _membersCount--;
                       _calculatePrice();
                     });
+                    _revalidateCoupon();
                   }
                       : null,
                 ),
@@ -1214,6 +1632,7 @@ class _EventDetailsPageState extends State<EventDetailsPage>
                       _membersCount++;
                       _calculatePrice();
                     });
+                    _revalidateCoupon();
                   },
                 ),
               ),
@@ -1248,6 +1667,192 @@ class _EventDetailsPageState extends State<EventDetailsPage>
     );
   }
 
+  /// Offers & Coupons — active event coupons, plus a code field.
+  Widget _buildCouponsCard() {
+    const brand = Color(0xFF0A198D);
+    final applied = _appliedCoupon;
+
+    return Container(
+      key: const Key('event_coupons_card'),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 8))]),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.local_offer_outlined, color: brand, size: 24),
+              SizedBox(width: 12),
+              Text('Offers & Coupons', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          if (_loadingCoupons)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+            )
+          else if (_coupons.isEmpty)
+            const Text(
+              'No active offers right now',
+              key: Key('no_active_offers'),
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            )
+          else
+            Column(children: _coupons.map(_buildCouponTile).toList()),
+
+          const SizedBox(height: 16),
+          const Text('or enter code', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const Key('coupon_code_field'),
+                  controller: _couponController,
+                  enabled: applied == null,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: InputDecoration(
+                    hintText: 'COUPON CODE',
+                    hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13, letterSpacing: 1),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.withOpacity(0.2))),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.withOpacity(0.2))),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: brand)),
+                    disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.withOpacity(0.2))),
+                  ),
+                  onSubmitted: _applyCouponCode,
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                key: const Key('coupon_apply_button'),
+                onPressed: _applyingCoupon
+                    ? null
+                    : (applied == null
+                        ? () => _applyCouponCode(_couponController.text)
+                        : _removeCoupon),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: applied == null ? brand : Colors.grey[200],
+                  foregroundColor: applied == null ? Colors.white : Colors.black87,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _applyingCoupon
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(applied == null ? 'Apply' : 'Remove', style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+
+          if (_couponError != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _couponError!,
+              key: const Key('coupon_error'),
+              style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626)),
+            ),
+          ],
+
+          if (applied != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: const Color(0xFF16A34A).withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _discount > 0
+                          ? '${applied.code ?? 'Coupon'} applied — ₹${_discount.toStringAsFixed(0)} off'
+                          : '${applied.code ?? 'Coupon'} applied',
+                      key: const Key('coupon_applied_note'),
+                      style: const TextStyle(fontSize: 13, color: Color(0xFF166534), fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCouponTile(CouponModel coupon) {
+    const brand = Color(0xFF0A198D);
+    final isApplied = _appliedCoupon?.code == coupon.code && coupon.code != null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isApplied ? brand.withOpacity(0.05) : Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isApplied ? brand : Colors.grey.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      coupon.code ?? coupon.title ?? 'Offer',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87, letterSpacing: 0.5),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(color: brand.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+                      child: Text(coupon.shortLabel, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: brand)),
+                    ),
+                  ],
+                ),
+                if ((coupon.description ?? coupon.title) != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    coupon.description ?? coupon.title!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          TextButton(
+            key: ValueKey('coupon_tile_${coupon.code ?? coupon.id}'),
+            onPressed: _applyingCoupon
+                ? null
+                : (isApplied
+                    ? _removeCoupon
+                    : () => _applyCouponCode(coupon.code ?? '')),
+            child: Text(
+              isApplied ? 'Remove' : 'Apply',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: brand),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPriceSummaryCard() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1258,13 +1863,29 @@ class _EventDetailsPageState extends State<EventDetailsPage>
             const Text('Total Amount', style: TextStyle(color: Colors.white70, fontSize: 16)),
             Text('₹${_totalPrice.toStringAsFixed(0)}', style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
           ]),
+          if (_discount > 0) ...[
+            const SizedBox(height: 8),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text(
+                _appliedCoupon?.code == null
+                    ? 'Coupon discount'
+                    : 'Coupon ${_appliedCoupon!.code}',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              Text(
+                '− ₹${_discount.toStringAsFixed(0)}',
+                key: const Key('price_summary_discount'),
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ]),
+          ],
           if (_selectedSlot != null) ...[
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
               child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text('₹${_slots.firstWhere((s) => s['id'] == _selectedSlot)['price']} × $_membersCount members', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                Text('₹${_slots.firstWhere((s) => _slotIdOf(s['id']) == _selectedSlot, orElse: () => const {'price': '0'})['price']} × $_membersCount members', style: const TextStyle(color: Colors.white70, fontSize: 12)),
               ]),
             ),
           ],

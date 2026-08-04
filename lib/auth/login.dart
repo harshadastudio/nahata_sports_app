@@ -4,11 +4,18 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nahata_app/auth/registration.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../bottombar/Custombottombar.dart';
+import '../core/services/permission_service.dart';
+import '../core/services/session_manager.dart';
+import '../core/storage/profile_cache.dart';
+import '../core/storage/token_storage.dart';
+import '../models/profile_model.dart';
+import '../providers/profile_provider.dart';
+import '../repositories/auth_repository.dart';
 
 // // 88888888888888888888888888888888888888888888888888888888
 // class LoginScreen extends StatefulWidget {
@@ -1096,11 +1103,14 @@ class _LoginScreenState extends State<LoginScreen> {
   void _openResetPasswordDialog(String email) {
     final pass = TextEditingController();
     final confirm = TextEditingController();
+    var obscureNew = true;
+    var obscureConfirm = true;
 
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           title: Row(
             children: const [
@@ -1119,20 +1129,34 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 16),
               TextField(
                 controller: pass,
-                obscureText: true,
+                obscureText: obscureNew,
                 decoration: InputDecoration(
                   labelText: "New Password",
                   prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(obscureNew
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined),
+                    onPressed: () =>
+                        setDialogState(() => obscureNew = !obscureNew),
+                  ),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: confirm,
-                obscureText: true,
+                obscureText: obscureConfirm,
                 decoration: InputDecoration(
                   labelText: "Confirm Password",
                   prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(obscureConfirm
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined),
+                    onPressed: () =>
+                        setDialogState(() => obscureConfirm = !obscureConfirm),
+                  ),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
@@ -1165,6 +1189,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: const Text("Reset",style: TextStyle(color: Colors.white),),
             ),
           ],
+          ),
         );
       },
     );
@@ -1231,51 +1256,46 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) Navigator.pop(context);
     });
   }
-  Future<bool> _googleLoginToBackend(String idToken) async {
-    try {
-      final response = await http.post(
-        Uri.parse("https://nahatasports.com/api/google_login"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"idToken": idToken}),
-      );
+  /// `POST /auth/google-login` — stores the tokens, caches the profile, syncs
+  /// permissions and registers the FCM token, exactly like a password login.
+  ///
+  /// Old API (commented out below): `POST /google_login` with `{idToken}`,
+  /// which was the wrong path (the route is `/auth/google-login`), the wrong
+  /// body key (`credential`, plus a `portal`) and was checked against
+  /// `status` instead of `success` — so it could never have succeeded.
+  Future<bool> _googleLoginToBackend(String idToken) =>
+      ApiService.googleLogin(idToken);
 
-      print("🔥 "
-          "Google Login API Response: ${response.body}");
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        if (data["status"] == true && data["data"] != null) {
-          final user = Map<String, dynamic>.from(data["data"]);
-
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('isLoggedIn', true);
-
-          // role may NOT come from API → avoid crash
-          final role = user["role"]?.toString() ?? "user";
-          await prefs.setString('role', role);
-
-          // save full user object
-          await prefs.setString('user', jsonEncode(user));
-
-          ApiService.currentUser = user;
-
-          // 🔥 SAVE FCM TOKEN — same as regular login
-          final int userId = int.parse(user['id'].toString());
-          await ApiService._saveFcmTokenToServer(userId);
-
-
-          print("✅ Google Login Success, role = $role");
-          return true;
-        }
-      }
-
-      return false;
-    } catch (e) {
-      print("❌ Google Login Backend Error: $e");
-      return false;
-    }
-  }
+  // ---------------------- OLD API (commented out) ----------------------
+  // Future<bool> _googleLoginToBackend(String idToken) async {
+  //   try {
+  //     final response = await http.post(
+  //       Uri.parse("https://api.nahatasports.com/api/google_login"),
+  //       headers: {"Content-Type": "application/json"},
+  //       body: jsonEncode({"idToken": idToken}),
+  //     );
+  //
+  //     if (response.statusCode == 200) {
+  //       final data = jsonDecode(response.body);
+  //
+  //       if (data["status"] == true && data["data"] != null) {
+  //         final payload = Map<String, dynamic>.from(data["data"]);
+  //
+  //         // Stores tokens, caches the profile and syncs every screen.
+  //         final profile = await ApiService.adoptSession(payload);
+  //
+  //         final userId = profile.id;
+  //         if (userId != null) await ApiService._saveFcmTokenToServer(userId);
+  //
+  //         return true;
+  //       }
+  //     }
+  //
+  //     return false;
+  //   } catch (e) {
+  //     return false;
+  //   }
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -1489,17 +1509,18 @@ class _LoginScreenState extends State<LoginScreen> {
                                 print("🍎 Apple Login Backend Response: $data");
 
                                 if (response.statusCode == 200 && data["status"] == true) {
-                                  final user = Map<String, dynamic>.from(data["data"]);
+                                  final payload =
+                                      Map<String, dynamic>.from(data["data"]);
 
-                                  final prefs = await SharedPreferences.getInstance();
-                                  await prefs.setBool('isLoggedIn', true);
-                                  await prefs.setString('user', jsonEncode(user));
-                                  await prefs.setString('role', user["role"] ?? "user");
-
-                                  ApiService.currentUser = user;
+                                  // Stores tokens, caches the profile and syncs
+                                  // every screen bound to it.
+                                  final profile =
+                                      await ApiService.adoptSession(payload);
 
                                   // Redirect by role
-                                  final role = user["role"]?.toString() ?? "user";
+                                  final role = profile.roleLabel.isEmpty
+                                      ? "user"
+                                      : profile.roleLabel;
                                   final screen = _getScreenForRole(role);
 
                                   Future.delayed(const Duration(seconds: 2), () {
@@ -1867,30 +1888,31 @@ class _LoginScreenState extends State<LoginScreen> {
 // }
 
 
+/// Thin facade over [AuthRepository] kept at its original name and shape so
+/// every existing screen keeps compiling. All networking, token handling and
+/// caching now happen in the core layer.
 class ApiService {
+  /// Raw user map, for screens that have not moved to [ProfileModel] yet.
   static Map<String, dynamic>? currentUser;
+
   static String? lastErrorMessage; // populated when login fails for UI to show
 
-  /// Load user from local storage
-  static Future<void> loadUserFromPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+  /// Strongly typed view of the same user.
+  static ProfileModel? currentProfile;
 
-    if (!isLoggedIn) {
+  /// Load user from local (cached) storage
+  static Future<void> loadUserFromPrefs() async {
+    final profile = await AuthRepository.instance.cachedProfile();
+
+    if (profile == null || !await AuthRepository.instance.hasSession) {
+      currentProfile = null;
       currentUser = null;
       return;
     }
 
-    final userJson = prefs.getString('user');
-    if (userJson != null) {
-      try {
-        currentUser = jsonDecode(userJson);
-      } catch (e) {
-        print("❌ Failed to decode stored user: $e");
-        await prefs.clear();
-        currentUser = null;
-      }
-    }
+    currentProfile = profile;
+    currentUser = profile.toLegacyUserMap();
+    PermissionService.instance.sync(profile);
   }
 
   /// Get role (default = user)
@@ -1898,172 +1920,177 @@ class ApiService {
     return currentUser?['role']?.toString().toLowerCase() ?? 'user';
   }
 
-  /// Login API
+  /// Permission check backed by `/auth/profile`.
+  static bool hasPermission(String permission) =>
+      PermissionService.instance.hasPermission(permission);
+
+  /// Login API — `POST /auth/login`.
+  ///
+  /// Tokens go straight into encrypted storage; the profile is cached and
+  /// broadcast to every listening screen.
   static Future<bool> login(String email, String password) async {
-    // Use the provided base URL for auth
-    final baseUrl = "https://api.nahatasports.com/api";
-    final url = Uri.parse("$baseUrl/auth/login");
+    final result = await AuthRepository.instance.login(
+      email: email,
+      password: password,
+    );
 
-    // Prepare headers and body
-    final headers = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    };
-    final bodyMap = {'email': email, 'password': password};
-    final body = jsonEncode(bodyMap);
-
-    // Log request for debugging
-    print('➡️ POST $url');
-    print('➡️ Request headers: $headers');
-    print('➡️ Request body: $body');
-
-    try {
-      final response = await http.post(
-        url,
-        headers: headers,
-        body: body,
-      );
-
-      print("🟢 Login API Status: ${response.statusCode}");
-      print("🟢 Raw Response: ${response.body}");
-
-      // Attempt to parse JSON body if available
-      Map<String, dynamic>? data;
-      try {
-        data = jsonDecode(response.body);
-      } catch (_) {
-        data = null;
-      }
-
-      if (response.statusCode == 200 && data != null) {
-        // Support both older 'status' and new 'success' responses
-        final bool ok = (data['success'] == true) || (data['status'] == true);
-
-        if (ok && data['data'] != null) {
-          final payload = data['data'];
-
-          // New API nests user under 'user'
-          final Map<String, dynamic> user = Map<String, dynamic>.from(payload['user'] ?? payload);
-          currentUser = user;
-
-          final prefs = await SharedPreferences.getInstance();
-
-          // Save essential info
-          await prefs.setBool('isLoggedIn', true);
-          await prefs.setString('user', jsonEncode(currentUser));
-
-          final userRole = currentUser?['role']?.toString() ?? 'user';
-          await prefs.setString('role', userRole);
-
-          // Save access & refresh tokens if provided
-          if (payload.containsKey('accessToken')) {
-            await prefs.setString('authToken', payload['accessToken']);
-          } else if (payload.containsKey('token')) {
-            await prefs.setString('authToken', payload['token']);
-          }
-
-          if (payload.containsKey('refreshToken')) {
-            await prefs.setString('refreshToken', payload['refreshToken']);
-          }
-
-          // 🔥 SAVE FCM TOKEN HERE
-          final int userId = int.parse(currentUser!['id'].toString());
-          await _saveFcmTokenToServer(userId);
-
-          lastErrorMessage = null;
-          print("💾 Saved Role: $userRole");
-          print("✅ Login successful for $userRole");
-
-          return true;
-        }
-      }
-
-      // Non-200 or unexpected body
-      final msg = (data != null && (data['message'] != null)) ? data['message'].toString() : 'Server error: ${response.statusCode}';
-      lastErrorMessage = msg;
-      print("❌ Login failed: $msg");
-      return false;
-    } catch (e) {
-      lastErrorMessage = e.toString();
-      print("❌ Error during login: $e");
+    if (!result.success || result.profile == null) {
+      lastErrorMessage =
+          result.message ?? 'Login failed. Please check your credentials.';
+      currentUser = null;
+      currentProfile = null;
       return false;
     }
+
+    final profile = result.profile!;
+    currentProfile = profile;
+    currentUser = profile.toLegacyUserMap();
+
+    // Fan the new profile out to Home / More / Profile / Dashboard at once.
+    ProfileProvider.maybeInstance?.adopt(profile);
+
+    final userId = profile.id;
+    if (userId != null) await _saveFcmTokenToServer(userId);
+
+    lastErrorMessage = null;
+    return true;
   }
+
+  /// Google sign-in — `POST /auth/google-login`.
+  ///
+  /// [credential] is the Google ID token. Everything after the network call is
+  /// identical to [login]: tokens stored, profile cached and broadcast, FCM
+  /// token registered.
+  static Future<bool> googleLogin(String credential) async {
+    final result =
+        await AuthRepository.instance.googleLogin(credential: credential);
+
+    if (!result.success || result.profile == null) {
+      lastErrorMessage =
+          result.message ?? 'Google login failed. Please try again.';
+      currentUser = null;
+      currentProfile = null;
+      return false;
+    }
+
+    final profile = result.profile!;
+    currentProfile = profile;
+    currentUser = profile.toLegacyUserMap();
+
+    ProfileProvider.maybeInstance?.adopt(profile);
+
+    final userId = profile.id;
+    if (userId != null) await _saveFcmTokenToServer(userId);
+
+    lastErrorMessage = null;
+    return true;
+  }
+
   static Future<void> _saveFcmTokenToServer(int userId) async {
     try {
-      String? token = await FirebaseMessaging.instance.getToken();
-
+      final token = await FirebaseMessaging.instance.getToken();
       if (token == null) return;
 
-      await http.post(
-        Uri.parse("https://nahatasports.com/api/save-fcm-token"),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          "user_id": userId,
-          "fcm_token": token,
-          "platform": "android",
-        }),
+      await AuthRepository.instance.registerFcmToken(
+        userId: userId,
+        fcmToken: token,
+        platform: Platform.isIOS ? 'ios' : 'android',
       );
-
-      print("🔥 FCM Token saved successfully");
     } catch (e) {
-      print("❌ FCM Save Error: $e");
+      debugPrint("FCM Save Error: $e");
     }
   }
-  /// Check login state
+
+  /// Check login state.
   static Future<bool> isLoggedIn() async {
+    if (await AuthRepository.instance.hasSession) return true;
+    // Social sign-ins that predate JWT still mark the flag directly.
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('isLoggedIn') ?? false;
   }
-// Add this method in ApiService
+
+  /// Adopts a session established by a social provider (Google / Apple).
+  ///
+  /// Stores any tokens the backend returned, caches the profile and pushes it
+  /// to every screen — the same path a password login takes.
+  static Future<ProfileModel> adoptSession(Map<String, dynamic> payload) async {
+    await TokenStorage.instance.saveTokens(
+      accessToken:
+          (payload['accessToken'] ?? payload['token'])?.toString(),
+      refreshToken: payload['refreshToken']?.toString(),
+    );
+
+    final rawUser = payload['user'] is Map
+        ? Map<String, dynamic>.from(payload['user'] as Map)
+        : payload;
+
+    final profile = ProfileModel.fromJson(rawUser);
+
+    await ProfileCache.instance.save(profile);
+    PermissionService.instance.sync(profile);
+
+    currentProfile = profile;
+    currentUser = profile.toLegacyUserMap();
+    ProfileProvider.maybeInstance?.adopt(profile);
+
+    return profile;
+  }
   static Future<void> _removeFcmTokenFromServer(int userId) async {
     try {
       final fcmToken = await FirebaseMessaging.instance.getToken();
       if (fcmToken == null) return;
 
-      final response = await http.post(
-        Uri.parse("https://nahatasports.com/api/delete-fcm-token"),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          "user_id": userId,
-          "fcm_token": fcmToken,
-        }),
+      await AuthRepository.instance.unregisterFcmToken(
+        userId: userId,
+        fcmToken: fcmToken,
       );
-
-      print("🗑️ FCM token deleted: ${response.body}");
     } catch (e) {
-      print("❌ FCM Delete Error: $e");
+      debugPrint("FCM Delete Error: $e");
     }
   }
 
-// Update your logout method
+  /// Full sign-out: de-registers push, then wipes tokens, cached profile and
+  /// permissions.
   static Future<void> logout() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final userJson = prefs.getString('user');
+      final userId = currentProfile?.id ??
+          int.tryParse(currentUser?['id']?.toString() ?? '') ??
+          int.tryParse(await AuthService.getUserId() ?? '');
 
-      if (userJson != null) {
-        final user = jsonDecode(userJson);
-        final int userId = int.parse(user['id'].toString());
-        await _removeFcmTokenFromServer(userId); // 🔥 delete FCM token
+      if (userId != null) {
+        await _removeFcmTokenFromServer(userId);
       }
 
       await FirebaseMessaging.instance.deleteToken(); // invalidate on device too
     } catch (e) {
-      print("⚠️ Error during FCM cleanup: $e");
+      debugPrint("Error during FCM cleanup: $e");
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    print("🚪 User logged out, prefs cleared.");
+    currentUser = null;
+    currentProfile = null;
+    lastErrorMessage = null;
+
+    // Clears tokens + cached profile + permissions and notifies every screen
+    // bound to the profile. Navigation stays with the calling screen.
+    await SessionManager.instance.signOut(navigateToLogin: false);
   }
 
 }
 class AuthService {
   static Future<Map<String, dynamic>?> getUser() async {
+    final profile = await AuthRepository.instance.cachedProfile();
+    if (profile != null) return profile.toLegacyUserMap();
+
+    // Fallback for sessions written before the profile cache existed.
     final prefs = await SharedPreferences.getInstance();
     final userJson = prefs.getString('user');
-    return userJson != null ? jsonDecode(userJson) : null;
+    if (userJson == null) return null;
+    try {
+      final decoded = jsonDecode(userJson);
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   static Future<String?> getUserId() async {
@@ -2073,73 +2100,40 @@ class AuthService {
 
   static Future<String?> getUserEmail() async {
     final user = await getUser();
-    return user?['email'];
+    return user?['email']?.toString();
   }
   static Future<String?> getUserName() async {
     final user = await getUser();
-    return user?['name'];
+    return user?['name']?.toString();
 
   }
 
   static Future<String?> getUserRole() async {
+    final profile = await AuthRepository.instance.cachedProfile();
+    if (profile?.role != null) return profile!.role;
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('role');
   }
 
-  static Future<String?> getAuthToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('authToken');
+  /// Access token, read from encrypted storage.
+  static Future<String?> getAuthToken() => TokenStorage.instance.accessToken;
+
+  /// Sign out. Delegates to [ApiService.logout] so there is exactly one
+  /// implementation of "end the session".
+  static Future<void> logout() => ApiService.logout();
+
+  /// Permissions granted by `/auth/profile`.
+  static Future<List<String>> getPermissions() async {
+    final profile = await AuthRepository.instance.cachedProfile();
+    return profile?.permissions ?? const <String>[];
   }
 
-// Add this method in ApiService
-  static Future<void> _removeFcmTokenFromServer(int userId) async {
-    try {
-      final fcmToken = await FirebaseMessaging.instance.getToken();
-      if (fcmToken == null) return;
-
-      final response = await http.post(
-        Uri.parse("https://nahatasports.com/api/delete-fcm-token"),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          "user_id": userId,
-          "fcm_token": fcmToken,
-        }),
-      );
-
-      print("🗑️ FCM token deleted: ${response.body}");
-    } catch (e) {
-      print("❌ FCM Delete Error: $e");
+  static Future<bool> hasPermission(String permission) async {
+    if (PermissionService.instance.isLoaded) {
+      return PermissionService.instance.hasPermission(permission);
     }
+    return (await getPermissions()).contains(permission);
   }
-
-// Update your logout method
-  static Future<void> logout() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userJson = prefs.getString('user');
-
-      if (userJson != null) {
-        final user = jsonDecode(userJson);
-        final int userId = int.parse(user['id'].toString());
-        await _removeFcmTokenFromServer(userId); // 🔥 delete FCM token
-      }
-
-      await FirebaseMessaging.instance.deleteToken(); // invalidate on device too
-    } catch (e) {
-      print("⚠️ Error during FCM cleanup: $e");
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    print("🚪 User logged out, prefs cleared.");
-  }
-
-  void debugPrintRawPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userJson = prefs.getString('user');
-    print("🧪 RAW user JSON: $userJson");
-  }
-
 }
 
 

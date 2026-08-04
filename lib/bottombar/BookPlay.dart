@@ -11,6 +11,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:nahata_app/bottombar/Custombottombar.dart';
+import '../core/services/selected_ground.dart';
 import 'package:nahata_app/bottombar/viewgame.dart' hide Viewgame;
 
 import 'package:flutter/material.dart';
@@ -295,7 +296,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'dart:convert';
 import 'Viewgame.dart';
 
@@ -664,6 +665,10 @@ class VenueCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
+        // Remember the venue the user opened. The coaching screens use it as
+        // the `ground` filter for /sports and /batches, since sport ids are
+        // scoped to a ground.
+        SelectedGround.instance.save(name);
         Navigator.push(
           context,
           MaterialPageRoute(

@@ -909,7 +909,7 @@ import 'package:carousel_slider/carousel_slider.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:nahata_app/bottombar/profile.dart';
 import 'package:nahata_app/bottombar/screen.dart';
 import 'package:nahata_app/bottombar/slotbook.dart';
@@ -917,9 +917,14 @@ import 'package:nahata_app/bottombar/event.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
 import '../auth/login.dart';
+import '../core/config/api_config.dart';
+import '../core/network/api_client.dart';
+import '../core/network/api_exception.dart';
 import '../main.dart';
 import '../notification.dart';
+import '../providers/profile_provider.dart';
 import 'BookPlay.dart';
 import 'Custombottombar.dart';
 import 'Viewgame.dart';
@@ -928,13 +933,13 @@ import 'event.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:timeago/timeago.dart' as timeago;
 
 class UserOptionsPage extends StatefulWidget {
@@ -1157,37 +1162,38 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loadingVenues = true;
 
   Future<void> _fetchVenues() async {
-    final baseUrl = 'https://api.nahatasports.com/api';
-    final url = Uri.parse('$baseUrl/sports-complexes?status=Active&showOnFrontend=true&limit=50');
     try {
-      final res = await http.get(url, headers: {'Accept': 'application/json'});
-      if (res.statusCode == 200) {
-        final body = jsonDecode(res.body);
-        if ((body['success'] == true || body['status'] == true) && body['data'] != null) {
-          final List complexes = body['data']['sportsComplexes'] ?? [];
-          _venues = complexes.map<Map<String, dynamic>>((c) {
-            return {
-              'id': c['id'],
-              'name': c['name'] ?? '',
-              'image': c['image'] ?? '',
-              'address': c['address'] ?? '',
-              'raw': c,
-            };
-          }).toList();
-        } else {
-          _venues = [];
-        }
-      } else {
-        print('❌ Fetch venues failed HTTP ${res.statusCode}');
-        _venues = [];
-      }
+      final response = await ApiClient.instance.get(
+        ApiEndpoints.sportsComplexes,
+        query: {
+          'status': 'Active',
+          'showOnFrontend': 'true',
+          'limit': 50,
+        },
+      );
+
+      final List complexes = response.payload['sportsComplexes'] as List? ?? [];
+      _venues = complexes.map<Map<String, dynamic>>((c) {
+        return {
+          'id': c['id'],
+          'name': c['name'] ?? '',
+          'image': c['image'] ?? '',
+          'address': c['address'] ?? '',
+          'raw': c,
+        };
+      }).toList();
+    } on ApiException catch (e) {
+      debugPrint('Fetch venues failed: ${e.message}');
+      _venues = [];
     } catch (e) {
-      print('❌ _fetchVenues error: $e');
+      debugPrint('_fetchVenues error: $e');
       _venues = [];
     }
 
     if (mounted) setState(() { _loadingVenues = false; });
   }
+
+  ProfileProvider? _profileProvider;
 
   @override
   void initState() {
@@ -1201,26 +1207,39 @@ class _HomeScreenState extends State<HomeScreen> {
     Future.delayed(const Duration(seconds: 2), _autoSlide);
   }
 
+  /// Binds the header avatar to the live profile.
+  ///
+  /// The cached profile renders on the first frame; `/auth/profile` then
+  /// reconciles in the background. Because the provider is shared, an update
+  /// made anywhere (login, profile edit) reaches this header with no manual
+  /// refresh.
   void _fetchUserInitial() async {
-    final user = await AuthService.getUser();
-    print(
-      "👤 AuthService.getUser() result: $user",
-    ); // 👈 add this for debugging
+    final provider = context.read<ProfileProvider>();
+    _profileProvider = provider;
+    provider.addListener(_applyProfile);
 
-    if (user != null &&
-        user['name'] != null &&
-        user['name'].toString().isNotEmpty) {
-      userInitial = user['name'].toString().substring(0, 1).toUpperCase();
-      isLoggedIn = true;
-      print("✅ Logged in as: ${user['name']} | Initial: $userInitial");
-    } else {
-      userInitial = '?';
-      isLoggedIn = false;
-      print("⚠️ No user found, showing default '?'");
-    }
-
-    setState(() {});
+    _applyProfile();
+    await provider.refresh();
   }
+
+  void _applyProfile() {
+    final provider = _profileProvider;
+    if (provider == null || !mounted) return;
+
+    final loggedIn = provider.hasProfile;
+    final initial = loggedIn ? provider.initial : '?';
+    final image = loggedIn ? provider.imageUrl : null;
+
+    if (initial != userInitial || loggedIn != isLoggedIn || image != _avatarUrl) {
+      setState(() {
+        userInitial = initial;
+        isLoggedIn = loggedIn;
+        _avatarUrl = image;
+      });
+    }
+  }
+
+  String? _avatarUrl;
 
   Future<void> _getCurrentLocation() async {
     try {
@@ -1397,6 +1416,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _profileProvider?.removeListener(_applyProfile);
     _pageController.dispose();
     super.dispose();
   }
@@ -1598,15 +1618,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       print("🟢 Avatar tapped | isLoggedIn = $isLoggedIn");
 
                       if (isLoggedIn) {
-                        // ✅ Load user from local storage
-                        await ApiService.loadUserFromPrefs();
+                        // ✅ Live profile (cached instantly, refreshed if stale)
+                        final provider = context.read<ProfileProvider>();
+                        await provider.refresh();
 
-                        final role = ApiService.getRole();
-                        final userData = ApiService.currentUser;
-                        print("👤 Current user: $userData");
-
-                        // ✅ Extract ID based on backend structure
-                        final userId = userData?['id']?.toString() ?? '';
+                        final userId = provider.userId ?? '';
 
                         if (userId.isEmpty) {
                           print("⚠️ No user ID found in stored user data");
@@ -1620,26 +1636,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           return;
                         }
 
-                        print("✅ Loaded User ID: $userId | Role: $role");
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => Screen(studentId: userId),
+                          ),
+                        );
 
-                        {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => Screen(studentId: userId),
-                            ),
-                          );
-                        }
-
-                        // 🔁 After returning, refresh name initial
-                        setState(() {
-                          final name = userData?['name'] ?? '';
-                          userInitial = name.isNotEmpty
-                              ? name[0].toUpperCase()
-                              : '?';
-                        });
-
-                        print("🔁 Updated userInitial to: $userInitial");
+                        // 🔁 After returning, pick up any profile edits.
+                        await provider.refresh(force: true);
+                        _applyProfile();
                       } else {
                         // 🚪 Not logged in — redirect to LoginScreen
                         // Navigator.pushAndRemoveUntil(
@@ -1659,14 +1665,21 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: CircleAvatar(
                       radius: 18,
                       backgroundColor: Colors.blueAccent,
-                      child: Text(
-                        userInitial,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
+                      // Photo when the profile has one, otherwise the initial —
+                      // same circle, same size, same style either way.
+                      backgroundImage: (_avatarUrl != null && _avatarUrl!.isNotEmpty)
+                          ? CachedNetworkImageProvider(_avatarUrl!)
+                          : null,
+                      child: (_avatarUrl != null && _avatarUrl!.isNotEmpty)
+                          ? null
+                          : Text(
+                              userInitial,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
                     ),
                   ),
                 ],

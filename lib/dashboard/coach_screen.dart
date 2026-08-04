@@ -2,7 +2,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:nahata_app/coach/coach_dash.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1210,7 +1210,9 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
         Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendanceScreen()));
         break;
       case '/enquiry':
-        Navigator.push(context, MaterialPageRoute(builder: (_) =>  CoachingEnquiryScreen(userId: studentId!,)));
+        // The bearer token identifies the coach — no id is passed any more,
+        // so this no longer crashes when `studentId` has not loaded yet.
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const CoachingEnquiryScreen()));
         break;
 
       case '/logout':

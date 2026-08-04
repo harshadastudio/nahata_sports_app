@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,11 +9,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 // import '../services/api_service.dart';
 
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/config/api_config.dart';
+import '../core/storage/token_storage.dart';
 import '../main.dart';
 import 'Custombottombar.dart';
 import 'morescreen.dart';
@@ -38,16 +40,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool _isVerifyingPayment = false;
 
   // 🔄 NEW API: base url + booking/order state carried across the Razorpay flow
-  static const String _apiBase = "https://api.nahatasports.com/api";
+  static const String _apiBase = ApiConfig.baseUrl;
   static const String _bookingType = "facility";
   List<int> _bookingIds = [];
   String? _rzpOrderId;
   String? _rzpKeyId;
 
-  Future<String?> _getAuthToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('authToken');
-  }
+
+
+  /// Access token from encrypted storage (refreshed automatically when stale).
+  Future<String?> _getAuthToken() => TokenStorage.instance.accessToken;
   @override
   void initState() {
     super.initState();

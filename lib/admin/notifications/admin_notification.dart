@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 class AdminNotificationService {
   static const baseUrl = "https://nahatasports.com/api/admin";
 

@@ -1,7 +1,12 @@
-import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+
+import '../core/utils/app_logger.dart';
+
+/// Google sign-in, client side only.
+///
+/// The ID token this returns is handed to `POST /auth/google-login`
+/// (`AuthRepository.googleLogin`) as `credential` — the backend verifies it
+/// against Google. The app never trusts it on its own.
 class GoogleAuthService {
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
@@ -24,15 +29,16 @@ class GoogleAuthService {
       final GoogleSignInAuthentication auth =
       await account.authentication;
 
-      // 🚨 Critical check
+      // 🚨 Critical check — without this the backend has nothing to verify.
+      // A null id token almost always means `serverClientId` above does not
+      // match the Web client id registered for this project.
       if (auth.idToken == null) {
-        print("❌ ID TOKEN IS NULL");
+        AppLogger.error('Google sign-in returned no ID token', name: 'Auth');
         return null;
       }
 
-      // Debug (you can remove later)
-      print("🪪 ID Token: ${auth.idToken}");
-      print("🔑 Access Token: ${auth.accessToken}");
+      // The id token is a credential — log that one arrived, never its value.
+      AppLogger.debug('Google sign-in ok for ${account.email}', name: 'Auth');
 
       // ✅ JUST RETURN DATA → BACKEND WILL VERIFY
       return {
@@ -42,7 +48,7 @@ class GoogleAuthService {
         "photo": account.photoUrl,
       };
     } catch (e) {
-      print("❌ Google Sign-In Error: $e");
+      AppLogger.error('Google sign-in failed', name: 'Auth', error: e);
       return null;
     }
   }

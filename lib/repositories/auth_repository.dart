@@ -1,0 +1,375 @@
+import '../core/config/api_config.dart';
+import '../core/network/api_client.dart';
+import '../core/network/api_exception.dart';
+import '../core/services/permission_service.dart';
+import '../core/storage/profile_cache.dart';
+import '../core/storage/token_storage.dart';
+import '../core/utils/app_logger.dart';
+import '../models/profile_model.dart';
+
+/// Result of a login attempt. Carries the parsed profile on success and a
+/// user-presentable message on failure.
+class AuthResult {
+  const AuthResult._({
+    required this.success,
+    this.profile,
+    this.message,
+    this.exception,
+  });
+
+  const AuthResult.success(ProfileModel profile)
+      : this._(success: true, profile: profile);
+
+  const AuthResult.failure(String message, {ApiException? exception})
+      : this._(success: false, message: message, exception: exception);
+
+  final bool success;
+  final ProfileModel? profile;
+  final String? message;
+  final ApiException? exception;
+}
+
+/// Result of `POST /students/register`.
+class RegistrationResult {
+  const RegistrationResult({
+    required this.success,
+    this.message,
+    this.user,
+    this.student,
+    this.errors,
+  });
+
+  final bool success;
+
+  /// Server message — "Student registered successfully." or the reason.
+  final String? message;
+
+  /// `data.user` — id, name, email, phone_number, role, status, avatar…
+  final Map<String, dynamic>? user;
+
+  /// `data.student` — the student record created alongside the user.
+  final Map<String, dynamic>? student;
+
+  /// Field-level validation errors, when the server sends them.
+  final Map<String, dynamic>? errors;
+
+  /// First field error, for showing under the offending input.
+  String? get firstFieldError {
+    final map = errors;
+    if (map == null || map.isEmpty) return null;
+    final value = map.values.first;
+    if (value is List && value.isNotEmpty) return value.first.toString();
+    return value?.toString();
+  }
+}
+
+/// All authentication + profile network access lives here. Screens and
+/// providers talk to this class, never to [ApiClient] directly.
+class AuthRepository {
+  AuthRepository._();
+
+  static final AuthRepository instance = AuthRepository._();
+
+  final ApiClient _api = ApiClient.instance;
+  final TokenStorage _tokens = TokenStorage.instance;
+  final ProfileCache _cache = ProfileCache.instance;
+
+  // ---------------------------------------------------------------------------
+  // Session
+  // ---------------------------------------------------------------------------
+
+  Future<bool> get hasSession => _tokens.hasSession;
+
+  /// `POST /auth/login`
+  Future<AuthResult> login({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final response = await _api.post(
+        ApiEndpoints.login,
+        requiresAuth: false,
+        body: {'email': email, 'password': password},
+      );
+
+      if (!response.isOk) {
+        return AuthResult.failure(
+            response.message ?? 'Login failed. Please try again.');
+      }
+
+      final payload = response.payload;
+
+      await _tokens.saveTokens(
+        accessToken: _text(payload['accessToken'] ?? payload['token']),
+        refreshToken: _text(payload['refreshToken']),
+      );
+
+      final userJson = response.objectAt('user') ?? payload;
+      final profile = ProfileModel.fromJson(Map<String, dynamic>.from(userJson));
+
+      await _cache.save(profile);
+      PermissionService.instance.sync(profile);
+
+      AppLogger.debug('Login succeeded for role ${profile.roleLabel}',
+          name: 'Auth');
+      return AuthResult.success(profile);
+    } on ApiException catch (e) {
+      AppLogger.error('Login failed', name: 'Auth', error: e.message);
+      return AuthResult.failure(e.message, exception: e);
+    } catch (e, s) {
+      AppLogger.error('Login error', name: 'Auth', error: e, stackTrace: s);
+      return AuthResult.failure(AuthMessages.unknown);
+    }
+  }
+
+  /// `POST /auth/google-login`
+  ///
+  /// [credential] is the Google **ID token** (`GoogleSignInAuthentication
+  /// .idToken`), which the backend verifies — the app never trusts it itself.
+  /// [portal] tells the backend which front-end the sign-in came from; the web
+  /// app sends `"main"`.
+  ///
+  /// Returns the same [AuthResult] as [login], so the session it establishes is
+  /// indistinguishable from a password login: tokens in secure storage, profile
+  /// cached, permissions synced.
+  Future<AuthResult> googleLogin({
+    required String credential,
+    String portal = 'main',
+  }) async {
+    try {
+      final response = await _api.post(
+        ApiEndpoints.googleLogin,
+        requiresAuth: false,
+        body: {'credential': credential, 'portal': portal},
+      );
+
+      if (!response.isOk) {
+        return AuthResult.failure(
+            response.message ?? 'Google login failed. Please try again.');
+      }
+
+      final payload = response.payload;
+
+      await _tokens.saveTokens(
+        accessToken: _text(payload['accessToken'] ?? payload['token']),
+        refreshToken: _text(payload['refreshToken']),
+      );
+
+      final userJson = response.objectAt('user') ?? payload;
+      final profile = ProfileModel.fromJson(Map<String, dynamic>.from(userJson));
+
+      await _cache.save(profile);
+      PermissionService.instance.sync(profile);
+
+      AppLogger.debug(
+        'Google login succeeded for role ${profile.roleLabel}'
+        '${profile.needsPhone ? ' (phone number still needed)' : ''}',
+        name: 'Auth',
+      );
+      return AuthResult.success(profile);
+    } on ApiException catch (e) {
+      AppLogger.error('Google login failed', name: 'Auth', error: e.message);
+      return AuthResult.failure(e.message, exception: e);
+    } catch (e, s) {
+      AppLogger.error('Google login error', name: 'Auth', error: e, stackTrace: s);
+      return AuthResult.failure(AuthMessages.unknown);
+    }
+  }
+
+  /// `POST /students/register`
+  ///
+  /// Mandatory: [name], [phone], [email], [sportComplexId], [password] and
+  /// [confirmPassword]. Everything else is optional.
+  ///
+  /// When [avatarPath] is set the request goes out as multipart so the photo
+  /// is uploaded with the form; otherwise it is plain JSON.
+  Future<RegistrationResult> register({
+    required String name,
+    required String phone,
+    required String email,
+    required int sportComplexId,
+    required String password,
+    required String confirmPassword,
+    String? dob,
+    String? gender,
+    String? bloodGroup,
+    String? referralCode,
+    String? avatarPath,
+  }) async {
+    // Keys mirror the `data.user` object the endpoint returns.
+    final fields = <String, String>{
+      'name': name.trim(),
+      'email': email.trim(),
+      'phone_number': phone.trim(),
+      'password': password,
+      'confirmPassword': confirmPassword,
+      'sportComplexId': sportComplexId.toString(),
+      if (dob != null && dob.isNotEmpty) 'dob': dob,
+      if (gender != null && gender.isNotEmpty) 'gender': gender,
+      if (bloodGroup != null && bloodGroup.isNotEmpty) 'blood_group': bloodGroup,
+      if (referralCode != null && referralCode.isNotEmpty)
+        'referral_code': referralCode,
+    };
+
+    try {
+      final response = avatarPath == null || avatarPath.isEmpty
+          ? await _api.post(
+              ApiEndpoints.registerStudent,
+              requiresAuth: false,
+              body: <String, dynamic>{
+                ...fields,
+                'sportComplexId': sportComplexId,
+              },
+            )
+          : await _api.multipart(
+              ApiEndpoints.registerStudent,
+              requiresAuth: false,
+              fields: fields,
+              files: [UploadFile(field: 'avatar', path: avatarPath)],
+            );
+
+      if (!response.isOk) {
+        return RegistrationResult(
+          success: false,
+          message: response.message ?? 'Registration failed. Please try again.',
+        );
+      }
+
+      final payload = response.payload;
+      final user = payload['user'];
+      final student = payload['student'];
+
+      AppLogger.debug('Registered ${_text(email)}', name: 'Auth');
+
+      return RegistrationResult(
+        success: true,
+        message: response.message ?? 'Registered successfully',
+        user: user is Map ? Map<String, dynamic>.from(user) : null,
+        student: student is Map ? Map<String, dynamic>.from(student) : null,
+      );
+    } on ApiException catch (e) {
+      AppLogger.error('Registration failed', name: 'Auth', error: e.message);
+      return RegistrationResult(
+        success: false,
+        message: e.message,
+        errors: e.errors,
+      );
+    } catch (e, s) {
+      AppLogger.error('Registration error', name: 'Auth', error: e, stackTrace: s);
+      return const RegistrationResult(
+        success: false,
+        message: AuthMessages.unknown,
+      );
+    }
+  }
+
+  /// `GET /auth/profile`
+  ///
+  /// Throws an [ApiException] on failure so callers can decide between
+  /// "show cached data" and "surface the error".
+  Future<ProfileModel> fetchProfile() async {
+    final response = await _api.get(ApiEndpoints.profile);
+
+    final userJson = response.objectAt('user') ?? response.payload;
+    if (userJson.isEmpty) {
+      throw const ParseException('Profile response did not contain a user.');
+    }
+
+    final profile = ProfileModel.fromJson(Map<String, dynamic>.from(userJson));
+    await _cache.save(profile);
+    PermissionService.instance.sync(profile);
+    return profile;
+  }
+
+  /// Profile from disk/memory — instant, no network.
+  Future<ProfileModel?> cachedProfile() => _cache.read();
+
+  /// `POST /auth/logout`, then [clearSession].
+  ///
+  /// The call goes out first, while the access token is still available, and a
+  /// failure never blocks the local sign-out — the user must end up signed out
+  /// either way.
+  Future<bool> logout() async {
+    var acknowledged = false;
+
+    try {
+      if (await _tokens.hasSession) {
+        final response = await _api.post(ApiEndpoints.logout);
+        acknowledged = response.isOk;
+        AppLogger.debug(
+          acknowledged
+              ? 'Server logout: ${response.message ?? 'ok'}'
+              : 'Server logout returned not-ok: ${response.message}',
+          name: 'Auth',
+        );
+      }
+    } on ApiException catch (e) {
+      // An expired token is a perfectly good reason for this to fail.
+      AppLogger.debug('Server logout failed: ${e.message}', name: 'Auth');
+    } catch (e) {
+      AppLogger.error('Server logout error', name: 'Auth', error: e);
+    }
+
+    await clearSession();
+    return acknowledged;
+  }
+
+  /// Clears every trace of the session: tokens, cached profile, permissions
+  /// and the legacy preference keys the older screens wrote.
+  Future<void> clearSession() async {
+    await _tokens.clear();
+    await _cache.clear();
+    PermissionService.instance.clear();
+    AppLogger.debug('Session cleared', name: 'Auth');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Push tokens (legacy backend)
+  // ---------------------------------------------------------------------------
+
+  Future<void> registerFcmToken({
+    required int userId,
+    required String fcmToken,
+    required String platform,
+  }) async {
+    try {
+      await _api.post(
+        ApiEndpoints.saveFcmToken,
+        baseUrl: ApiConfig.legacyBaseUrl,
+        requiresAuth: false,
+        body: {
+          'user_id': userId,
+          'fcm_token': fcmToken,
+          'platform': platform,
+        },
+      );
+      AppLogger.debug('FCM token registered', name: 'Push');
+    } catch (e) {
+      // Push registration must never block sign-in.
+      AppLogger.error('FCM register failed', name: 'Push', error: e);
+    }
+  }
+
+  Future<void> unregisterFcmToken({
+    required int userId,
+    required String fcmToken,
+  }) async {
+    try {
+      await _api.post(
+        ApiEndpoints.deleteFcmToken,
+        baseUrl: ApiConfig.legacyBaseUrl,
+        requiresAuth: false,
+        body: {'user_id': userId, 'fcm_token': fcmToken},
+      );
+      AppLogger.debug('FCM token removed', name: 'Push');
+    } catch (e) {
+      AppLogger.error('FCM unregister failed', name: 'Push', error: e);
+    }
+  }
+
+  static String? _text(Object? value) {
+    if (value == null) return null;
+    final text = value.toString();
+    return text.isEmpty ? null : text;
+  }
+}

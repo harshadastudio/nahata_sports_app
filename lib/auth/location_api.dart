@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:nahata_app/core/network/http_logged.dart' as http;
 
 class ApiService {
   static Future<List<Sport>> fetchSportsByLocation(String location) async {
