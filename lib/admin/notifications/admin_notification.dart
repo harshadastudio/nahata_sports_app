@@ -421,13 +421,18 @@ class _AdminNotificationsScreenState
           )
         ],
       ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-        onRefresh: _refresh,
-        child: notifications.isEmpty
-            ? _emptyState()
-            : _notificationList(),
+      // Bottom only: the AppBar already handles the status bar, and on SDK 35
+      // the list would otherwise run under the gesture bar.
+      body: SafeArea(
+        top: false,
+        child: loading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _refresh,
+                child: notifications.isEmpty
+                    ? _emptyState()
+                    : _notificationList(),
+              ),
       ),
     );
   }
@@ -531,11 +536,17 @@ class _NotificationDetailScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Notification Details")),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : booking != null
-          ? _bookingCard()
-          : _searchingView(),
+      // The app targets SDK 35, where Android renders edge-to-edge — without
+      // this the content runs under the gesture bar. Bottom only: the AppBar
+      // already handles the status bar.
+      body: SafeArea(
+        top: false,
+        child: loading
+            ? const Center(child: CircularProgressIndicator())
+            : booking != null
+            ? _bookingCard()
+            : _searchingView(),
+      ),
     );
   }
 

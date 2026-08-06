@@ -126,13 +126,16 @@ class AdminSidebar extends StatelessWidget {
     AdminDestination.sports,
     AdminDestination.coaches,
     AdminDestination.batches,
+    AdminDestination.coachingEnquiries,
     AdminDestination.courts,
     AdminDestination.bookings,
     AdminDestination.events,
+    AdminDestination.visitorPasses,
   ];
 
   static const List<AdminDestination> _business = [
     AdminDestination.memberships,
+    AdminDestination.coupons,
     AdminDestination.payments,
     AdminDestination.reports,
     AdminDestination.settings,

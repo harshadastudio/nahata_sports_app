@@ -70,6 +70,14 @@ enum AdminDestination {
     subtitle: 'Programmes, schedules and enrolment',
     ready: true,
   ),
+  coachingEnquiries(
+    label: 'Coaching Enquiries',
+    shortLabel: 'Enquiries',
+    icon: Icons.support_agent_outlined,
+    activeIcon: Icons.support_agent_rounded,
+    subtitle: 'Prospects, follow-up and coach assignment',
+    ready: true,
+  ),
   courts(
     label: 'Courts',
     icon: Icons.grid_view_outlined,
@@ -85,6 +93,14 @@ enum AdminDestination {
     subtitle: 'Events, their slots and their passes',
     ready: true,
   ),
+  visitorPasses(
+    label: 'Visitor Passes',
+    shortLabel: 'Visitors',
+    icon: Icons.badge_outlined,
+    activeIcon: Icons.badge_rounded,
+    subtitle: 'Gate passes, QR scanning and visitor entry',
+    ready: true,
+  ),
   memberships(
     label: 'Memberships',
     icon: Icons.card_membership_outlined,
@@ -97,6 +113,13 @@ enum AdminDestination {
     icon: Icons.event_available_outlined,
     activeIcon: Icons.event_available_rounded,
     subtitle: 'Court and event reservations',
+    ready: true,
+  ),
+  coupons(
+    label: 'Coupons',
+    icon: Icons.local_offer_outlined,
+    activeIcon: Icons.local_offer_rounded,
+    subtitle: 'Discount codes for courts and events',
     ready: true,
   ),
   payments(

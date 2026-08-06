@@ -151,7 +151,7 @@ void main() {
     test('parses the live NAHATA10 payload', () {
       // Verbatim from /coupons/active?appliesTo=Event — note the decimal
       // strings and `validUntil`.
-      final coupon = CouponModel.fromJson(const {
+      const json = <String, dynamic>{
         'id': 3,
         'code': 'NAHATA10',
         'discountType': 'Percentage',
@@ -163,7 +163,9 @@ void main() {
         'usedCount': 1,
         'appliesTo': 'Event',
         'sportComplexId': null,
-      });
+      };
+
+      final coupon = CouponModel.fromJson(json);
 
       expect(coupon.id, 3);
       expect(coupon.code, 'NAHATA10');
@@ -178,8 +180,23 @@ void main() {
       expect(coupon.isExhausted, isFalse);
       expect(coupon.shortLabel, '10% OFF');
 
+      // The captured coupon expired on 2026-07-31, so `discountFor` on it
+      // correctly returns nothing once that date has passed. The arithmetic is
+      // therefore asserted on the same coupon with a validity that has not run
+      // out — otherwise this test would start failing on 2026-08-01 for a
+      // reason that has nothing to do with parsing.
+      expect(coupon.isWithinValidity, isFalse);
+      expect(coupon.discountFor(200), 0);
+
+      final live = CouponModel.fromJson({
+        ...json,
+        'validUntil': DateTime.now()
+            .add(const Duration(days: 30))
+            .toIso8601String(),
+      });
+
       // 10% of 200, well under the ₹150 cap — matches the server's answer.
-      expect(coupon.discountFor(200), 20);
+      expect(live.discountFor(200), 20);
     });
 
     test('drops a coupon whose usage limit is spent', () async {
@@ -252,12 +269,45 @@ void main() {
       );
 
       expect(requests.single.url.path, '/api/coupons/validate');
+      // Every documented key travels, nulls included — an absent key is not
+      // the same as a null one to a validator that reads the scope.
       expect(lastBody(), {
         'code': 'NAHATA10',
         'amount': 200,
         'appliesTo': 'Event',
         'sportComplexId': null,
+        'sportId': null,
+        'eventPassId': null,
       });
+    });
+
+    test('carries the platform header the backend enforces coupons with',
+        () async {
+      serve(validResponse);
+
+      await CouponRepository.instance.validateCoupon(
+        code: 'NAHATA10',
+        amount: 200,
+      );
+
+      // Without this the backend cannot tell app traffic from web traffic,
+      // and App-only coupons would be withheld from the app itself.
+      expect(requests.single.headers['x-client-platform'], 'android');
+    });
+
+    test('passes the sport and the event through when the checkout knows them',
+        () async {
+      serve(validResponse);
+
+      await CouponRepository.instance.validateCoupon(
+        code: 'NAHATA10',
+        amount: 200,
+        sportId: 7,
+        eventPassId: 31,
+      );
+
+      expect(lastBody()['sportId'], 7);
+      expect(lastBody()['eventPassId'], 31);
     });
 
     test('passes the venue through when the event has one', () async {

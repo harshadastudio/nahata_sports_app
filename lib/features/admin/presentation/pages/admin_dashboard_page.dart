@@ -10,7 +10,9 @@ import '../../data/repositories/admin_repository_impl.dart';
 import '../../data/repositories/batch_repository_impl.dart';
 import '../../data/repositories/booking_repository_impl.dart';
 import '../../data/repositories/coach_repository_impl.dart';
+import '../../data/repositories/coaching_enquiry_repository_impl.dart';
 import '../../data/repositories/complex_admin_repository_impl.dart';
+import '../../data/repositories/coupons_repository_impl.dart';
 import '../../data/repositories/court_repository_impl.dart';
 import '../../data/repositories/court_slot_repository_impl.dart';
 import '../../data/repositories/dashboard_repository_impl.dart';
@@ -21,11 +23,14 @@ import '../../data/repositories/report_repository_impl.dart';
 import '../../data/repositories/security_guard_repository_impl.dart';
 import '../../data/repositories/sport_repository_impl.dart';
 import '../../data/repositories/sports_complex_admin_repository_impl.dart';
+import '../../data/repositories/visitor_pass_repository_impl.dart';
 import '../../domain/repositories/admin_repository.dart';
 import '../../domain/repositories/batch_repository.dart';
 import '../../domain/repositories/booking_repository.dart';
 import '../../domain/repositories/coach_repository.dart';
+import '../../domain/repositories/coaching_enquiry_repository.dart';
 import '../../domain/repositories/complex_admin_repository.dart';
+import '../../domain/repositories/coupons_repository.dart';
 import '../../domain/repositories/court_repository.dart';
 import '../../domain/repositories/court_slot_repository.dart';
 import '../../domain/repositories/dashboard_repository.dart';
@@ -36,6 +41,7 @@ import '../../domain/repositories/report_repository.dart';
 import '../../domain/repositories/security_guard_repository.dart';
 import '../../domain/repositories/sport_repository.dart';
 import '../../domain/repositories/sports_complex_admin_repository.dart';
+import '../../domain/repositories/visitor_pass_repository.dart';
 import '../navigation/admin_destination.dart';
 import '../state/admin_roles_controller.dart';
 import '../state/admin_shell_controller.dart';
@@ -43,7 +49,9 @@ import '../state/admin_users_controller.dart';
 import '../state/batches_controller.dart';
 import '../state/bookings_controller.dart';
 import '../state/coaches_controller.dart';
+import '../state/coaching_enquiries_controller.dart';
 import '../state/complex_admins_controller.dart';
+import '../state/coupons_controller.dart';
 import '../state/courts_controller.dart';
 import '../state/dashboard_controller.dart';
 import '../state/employees_controller.dart';
@@ -53,6 +61,7 @@ import '../state/reports_controller.dart';
 import '../state/security_guards_controller.dart';
 import '../state/sports_complexes_controller.dart';
 import '../state/sports_controller.dart';
+import '../state/visitor_passes_controller.dart';
 import '../theme/admin_theme.dart';
 import '../widgets/admin_dialogs.dart';
 import '../widgets/admin_sidebar.dart';
@@ -60,7 +69,9 @@ import '../widgets/admin_top_bar.dart';
 import 'batches_page.dart';
 import 'bookings_page.dart';
 import 'coaches_page.dart';
+import 'coaching_enquiries_page.dart';
 import 'complex_admins_page.dart';
+import 'coupons_page.dart';
 import 'courts_page.dart';
 import 'dashboard_home_page.dart';
 import 'employees_page.dart';
@@ -72,6 +83,7 @@ import 'security_guards_page.dart';
 import 'sports_complexes_page.dart';
 import 'sports_page.dart';
 import 'users_module_page.dart';
+import 'visitor_passes_page.dart';
 
 /// Entry point for the whole admin console.
 ///
@@ -99,6 +111,9 @@ class AdminDashboardScreen extends StatefulWidget {
     this.eventPassRepository,
     this.membershipRepository,
     this.reportRepository,
+    this.visitorPassRepository,
+    this.couponsRepository,
+    this.coachingEnquiryRepository,
   });
 
   /// Injectable for tests; production builds use the `*Impl` classes.
@@ -117,6 +132,9 @@ class AdminDashboardScreen extends StatefulWidget {
   final EventPassRepository? eventPassRepository;
   final MembershipRepository? membershipRepository;
   final ReportRepository? reportRepository;
+  final VisitorPassRepository? visitorPassRepository;
+  final CouponsRepository? couponsRepository;
+  final CoachingEnquiryRepository? coachingEnquiryRepository;
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -138,6 +156,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   late final EventPassRepository _eventPassRepository;
   late final MembershipRepository _membershipRepository;
   late final ReportRepository _reportRepository;
+  late final VisitorPassRepository _visitorPassRepository;
+  late final CouponsRepository _couponsRepository;
+  late final CoachingEnquiryRepository _coachingEnquiryRepository;
 
   late final AdminShellController _shell;
   late final DashboardController _dashboard;
@@ -155,6 +176,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   late final EventPassesController _events;
   late final MembershipsController _memberships;
   late final ReportsController _reports;
+  late final VisitorPassesController _visitorPasses;
+  late final CouponsController _coupons;
+  late final CoachingEnquiriesController _coachingEnquiries;
 
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _searchController = TextEditingController();
@@ -190,6 +214,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _membershipRepository =
         widget.membershipRepository ?? MembershipRepositoryImpl();
     _reportRepository = widget.reportRepository ?? ReportRepositoryImpl();
+    _visitorPassRepository =
+        widget.visitorPassRepository ?? VisitorPassRepositoryImpl();
+    _couponsRepository = widget.couponsRepository ?? CouponsRepositoryImpl();
+    _coachingEnquiryRepository =
+        widget.coachingEnquiryRepository ?? CoachingEnquiryRepositoryImpl();
 
     _shell = AdminShellController();
     _dashboard = DashboardController(_dashboardRepository);
@@ -207,6 +236,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _events = EventPassesController(_eventPassRepository);
     _memberships = MembershipsController(_membershipRepository);
     _reports = ReportsController(_reportRepository);
+    _visitorPasses = VisitorPassesController(_visitorPassRepository);
+    _coupons = CouponsController(_couponsRepository);
+    _coachingEnquiries = CoachingEnquiriesController(
+      _coachingEnquiryRepository,
+    );
 
     _loadNotifications();
     _notificationTimer = Timer.periodic(
@@ -219,6 +253,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void dispose() {
     _notificationTimer?.cancel();
     _searchController.dispose();
+    _coachingEnquiries.dispose();
+    _coupons.dispose();
+    _visitorPasses.dispose();
     _reports.dispose();
     _memberships.dispose();
     _events.dispose();
@@ -309,6 +346,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         Provider<EventPassRepository>.value(value: _eventPassRepository),
         Provider<MembershipRepository>.value(value: _membershipRepository),
         Provider<ReportRepository>.value(value: _reportRepository),
+        Provider<VisitorPassRepository>.value(value: _visitorPassRepository),
+        Provider<CouponsRepository>.value(value: _couponsRepository),
+        Provider<CoachingEnquiryRepository>.value(
+          value: _coachingEnquiryRepository,
+        ),
         ChangeNotifierProvider<AdminShellController>.value(value: _shell),
         ChangeNotifierProvider<DashboardController>.value(value: _dashboard),
         ChangeNotifierProvider<AdminUsersController>.value(value: _users),
@@ -333,6 +375,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           value: _memberships,
         ),
         ChangeNotifierProvider<ReportsController>.value(value: _reports),
+        ChangeNotifierProvider<VisitorPassesController>.value(
+          value: _visitorPasses,
+        ),
+        ChangeNotifierProvider<CouponsController>.value(value: _coupons),
+        ChangeNotifierProvider<CoachingEnquiriesController>.value(
+          value: _coachingEnquiries,
+        ),
       ],
       child: Consumer<AdminShellController>(
         builder: (context, shell, _) {
@@ -494,16 +543,22 @@ class _Shell extends StatelessWidget {
         return const CoachesPage();
       case AdminDestination.batches:
         return const BatchesPage();
+      case AdminDestination.coachingEnquiries:
+        return const CoachingEnquiriesPage();
       case AdminDestination.courts:
         return const CourtsPage();
       case AdminDestination.events:
         return const EventPassesPage();
+      case AdminDestination.visitorPasses:
+        return const VisitorPassesPage();
       case AdminDestination.memberships:
         return const MembershipsPage();
       case AdminDestination.bookings:
         return const BookingsPage();
       case AdminDestination.reports:
         return const ReportsPage();
+      case AdminDestination.coupons:
+        return const CouponsPage();
       case AdminDestination.payments:
       case AdminDestination.settings:
         return ModulePlaceholderPage(destination: destination);

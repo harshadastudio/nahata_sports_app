@@ -37,6 +37,25 @@ class ApiConfig {
     defaultValue: 'https://nahatasports.com',
   );
 
+  /// Value of the `x-client-platform` header the coupon endpoints require.
+  ///
+  /// The backend decides App-only vs Web-only coupons from this header, and the
+  /// coupon module specifies `android` for the mobile app — so it is sent on
+  /// iOS too, because what the header actually distinguishes is *app* traffic
+  /// from *web* traffic, and an iOS build claiming `ios` would fall outside the
+  /// vocabulary the backend matches on. Override without touching code if the
+  /// backend gains a separate iOS value:
+  /// `--dart-define=CLIENT_PLATFORM=ios`.
+  static const String clientPlatform = String.fromEnvironment(
+    'CLIENT_PLATFORM',
+    defaultValue: 'android',
+  );
+
+  /// The header itself, ready to spread into a request.
+  static const Map<String, String> platformHeader = {
+    'x-client-platform': clientPlatform,
+  };
+
   static const Duration connectTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
   static const Duration uploadTimeout = Duration(seconds: 60);
@@ -143,7 +162,29 @@ class ApiEndpoints {
   static const String coachUploadImage = '/coaches/upload-image';
 
   static const String batches = '/batches';
+
+  /// `GET /coaching-enquiries?page=&limit=` and `POST /coaching-enquiries`.
+  ///
+  /// The POST is the one public route in this family — a prospect submits it
+  /// before they have an account.
   static const String coachingEnquiries = '/coaching-enquiries';
+
+  /// `GET | PUT | DELETE /coaching-enquiries/{enquiryId}`
+  static String coachingEnquiry(Object id) => '/coaching-enquiries/$id';
+
+  /// `PATCH /coaching-enquiries/{enquiryId}/assign-coach`
+  static String coachingEnquiryAssignCoach(Object id) =>
+      '/coaching-enquiries/$id/assign-coach';
+
+  /// `PATCH /coaching-enquiries/{enquiryId}/status`
+  static String coachingEnquiryStatus(Object id) =>
+      '/coaching-enquiries/$id/status';
+
+  /// `GET /coaching-enquiries/stats` — the counters for the dashboard cards.
+  ///
+  /// Declared before [coachingEnquiry] would match it: `/stats` is a fixed
+  /// segment, not an id, so it must never be built through that helper.
+  static const String coachingEnquiryStats = '/coaching-enquiries/stats';
 
   // Coach dashboard.
   static const String coachStats = '/coach/dashboard/stats';
@@ -253,9 +294,50 @@ class ApiEndpoints {
   static const String myEventBookings = '/event-passes/bookings/my';
   static const String myCourtBookings = '/courts/bookings/my';
 
-  // Offers.
+  // Visitor passes. The lifecycle is IN → OUT: `/verify` advances it, and
+  // `/lookup` reads it without ever advancing it.
+
+  /// `GET /visitor-passes?page=&limit=` and `POST /visitor-passes`.
+  static const String visitorPasses = '/visitor-passes';
+
+  /// `GET | DELETE /visitor-passes/{visitorPassId}`
+  ///
+  /// The route accepts either the numeric id or the pass code, so the segment
+  /// is encoded — a code is free text and must not be able to open a path.
+  static String visitorPass(Object idOrCode) =>
+      '/visitor-passes/${Uri.encodeComponent(idOrCode.toString())}';
+
+  /// `POST /visitor-passes/verify` — `{passCode, scanType: In|Out}`. **Changes
+  /// the pass status.**
+  static const String visitorPassVerify = '/visitor-passes/verify';
+
+  /// `POST /visitor-passes/lookup` — `{passCode}`. Read-only: it must never
+  /// mark a pass in or out.
+  static const String visitorPassLookup = '/visitor-passes/lookup';
+
+  /// `POST /visitor-passes/{visitorPassId}/send-email`
+  static String visitorPassSendEmail(Object id) =>
+      '/visitor-passes/$id/send-email';
+
+  // Offers (customer side). Both require `x-client-platform` so the backend
+  // can enforce App-only and Web-only coupons — see [ApiConfig.platformHeader].
   static const String activeCoupons = '/coupons/active';
   static const String validateCoupon = '/coupons/validate';
+
+  // Coupon administration. Note the `/admin` prefix: these are a different
+  // route family from the two customer endpoints above, not a variant of them.
+
+  /// `GET | POST /admin/coupons` — the list takes `page`, `limit` and `search`.
+  static const String adminCoupons = '/admin/coupons';
+
+  /// `GET | PUT | DELETE /admin/coupons/{couponId}`
+  static String adminCoupon(Object id) => '/admin/coupons/$id';
+
+  /// `GET /admin/coupons/code/{couponCode}` — the lookup the create form uses
+  /// to refuse a code that already exists. The segment is encoded because a
+  /// code is free text.
+  static String adminCouponByCode(String code) =>
+      '/admin/coupons/code/${Uri.encodeComponent(code.trim())}';
 
   // Payments (shared by facility and event bookings).
   static const String createOrder = '/payments/create-order';
@@ -432,6 +514,43 @@ class ApiEndpoints {
   /// offer the image field the batch form specifies. A failure here is
   /// surfaced in the field and never blocks saving the batch itself.
   static const String batchUploadImage = '/batches/upload-image';
+
+  // Application settings. `GET /settings` answers with every group at once;
+  // each group is written back through its own route.
+
+  /// `GET /settings`
+  static const String settings = '/settings';
+
+  /// `GET /settings/{key}` — one configuration value.
+  ///
+  /// The segment is encoded: a key is free text and must not be able to open a
+  /// path of its own.
+  static String setting(String key) =>
+      '/settings/${Uri.encodeComponent(key.trim())}';
+
+  /// `PUT /settings/general`
+  static const String settingsGeneral = '/settings/general';
+
+  /// `PUT /settings/booking`
+  static const String settingsBooking = '/settings/booking';
+
+  /// `PUT /settings/payment`
+  static const String settingsPayment = '/settings/payment';
+
+  /// `PUT /settings/notifications`
+  static const String settingsNotifications = '/settings/notifications';
+
+  /// `PUT /settings/branding`
+  static const String settingsBranding = '/settings/branding';
+
+  /// `POST /settings/upload-logo` — multipart, field `logo`.
+  static const String settingsUploadLogo = '/settings/upload-logo';
+
+  /// `POST /settings/upload-favicon` — multipart, field `favicon`.
+  static const String settingsUploadFavicon = '/settings/upload-favicon';
+
+  /// `POST /settings/reset` — restores the defaults. Destructive.
+  static const String settingsReset = '/settings/reset';
 
   // Legacy backend (relative to [ApiConfig.legacyBaseUrl]).
   static const String studentDashboard = '/student_dashboard';

@@ -854,6 +854,9 @@ class _EventDetailsPageState extends State<EventDetailsPage>
       amount: _subtotal,
       appliesTo: 'Event',
       sportComplexId: widget.event.sportComplexId,
+      // A coupon issued for one event can only be checked against the event
+      // being booked, so the id goes with the request.
+      eventPassId: int.tryParse(widget.event.id),
     );
 
     if (!mounted || request != _couponRequest) return;

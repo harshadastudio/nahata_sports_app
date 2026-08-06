@@ -599,6 +599,20 @@ void main() {
   ) async {
     await pumpConsole(tester, _FakeRepository());
 
+    // The sidebar is a lazy ListView: each module added to it pushes the ones
+    // below further down, and once an entry is off-screen it is not built at
+    // all. So it is scrolled into existence rather than tapped at whatever
+    // coordinate it happened to sit at when this was written.
+    await tester.scrollUntilVisible(
+      find.text('Payments'),
+      120,
+      scrollable: find.descendant(
+        of: find.byType(AdminSidebar),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('Payments'));
     await tester.pumpAndSettle();
 

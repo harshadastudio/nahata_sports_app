@@ -32,6 +32,10 @@
     <string>We need your location to show nearby sports venues</string>
     <key>NSLocationAlwaysUsageDescription</key>
     <string>We need your location to show nearby sports venues</string>
+    <key>NSCameraUsageDescription</key>
+    <string>The camera is used to scan visitor pass and entry QR codes at the gate</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Saves a visitor pass QR code to your photos so it can be shared</string>
     <key>UISupportedInterfaceOrientations</key>
     <array>
        <string>UIInterfaceOrientationPortrait</string>

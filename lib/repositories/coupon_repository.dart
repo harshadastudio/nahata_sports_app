@@ -23,6 +23,9 @@ class CouponRepository {
       final response = await _api.get(
         ApiEndpoints.activeCoupons,
         query: {'appliesTo': appliesTo},
+        // Without this the backend cannot tell app traffic from web traffic,
+        // and App-only coupons would be withheld from the app itself.
+        headers: ApiConfig.platformHeader,
       );
 
       if (!response.isOk) return const <CouponModel>[];
@@ -45,20 +48,32 @@ class CouponRepository {
   ///
   /// [sportComplexId] scopes venue-specific coupons; null means "any venue",
   /// which is what the site sends for events that are not venue-bound.
+  /// [sportId] and [eventPassId] scope it further where the checkout knows
+  /// them — a coupon issued for one sport or one event must not come off a
+  /// booking for another.
+  ///
+  /// The nulls are sent explicitly rather than omitted: the documented body
+  /// carries all five keys, and an absent key is not the same as a null one to
+  /// a validator that reads them positionally.
   Future<CouponValidation> validateCoupon({
     required String code,
     required num amount,
     String appliesTo = 'Event',
     int? sportComplexId,
+    int? sportId,
+    int? eventPassId,
   }) async {
     try {
       final response = await _api.post(
         ApiEndpoints.validateCoupon,
+        headers: ApiConfig.platformHeader,
         body: {
           'code': code,
           'amount': amount is int ? amount : amount.round(),
           'appliesTo': appliesTo,
           'sportComplexId': sportComplexId,
+          'sportId': sportId,
+          'eventPassId': eventPassId,
         },
       );
 
