@@ -8,7 +8,7 @@ import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nahata_app/auth/registration.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-import '../bottombar/Custombottombar.dart';
+import '../core/navigation/role_router.dart';
 import '../core/services/permission_service.dart';
 import '../core/services/session_manager.dart';
 import '../core/storage/profile_cache.dart';
@@ -330,9 +330,8 @@ import '../repositories/auth_repository.dart';
 // }
 // //8888888888888888888888888888888888888888888888888888888888
 
-import '../dashboard/admin_screen.dart';
-import '../dashboard/coach_screen.dart';
-import '../dashboard/security_screen.dart';
+// Role → screen routing now lives in `core/navigation/role_router.dart`, so the
+// individual dashboards are no longer imported here.
 import 'google_auth.dart';
 // import 'package:google_sign_in/google_sign_in.dart';
 //
@@ -891,20 +890,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
 
   }
-  Widget _getScreenForRole(String role) {
-    switch (role.toLowerCase()) {
-      case 'admin':
-        return AdminDashboardScreen();
-      case 'coach':
-        return CoachHomeScreen();
-      case 'security':
-        return SecurityGateScannerScreen();
-      case 'student':
-      case 'USER':
-      default:
-        return CustomBottomNav();
-    }
-  }
+  /// Where a role lands after a successful sign-in.
+  ///
+  /// Delegates to [RoleRouter] so the login button, Google, Apple and the
+  /// splash-screen session restore all route identically — the fix for
+  /// `COMPLEX_ADMIN` opening the student dashboard lives in that one place.
+  Widget _getScreenForRole(String role) => RoleRouter.screenFor(role);
 
 // ========================================================
 //  FORGOT PASSWORD FLOW (Complete Working Code)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/admin_role.dart';
 import '../navigation/admin_destination.dart';
+import '../navigation/admin_shell_config.dart';
 import '../theme/admin_theme.dart';
 
 /// The left rail.
@@ -9,6 +10,9 @@ import '../theme/admin_theme.dart';
 /// One widget serves three layouts: the full 268px sidebar, the 76px collapsed
 /// rail, and the same thing inside a Drawer on mobile. [collapsed] is forced
 /// false in the drawer, where there is room for labels.
+///
+/// What it lists comes from [config]: the estate-wide ADMIN grouping by
+/// default, or a permission-filtered venue-scoped one for a complex admin.
 class AdminSidebar extends StatelessWidget {
   const AdminSidebar({
     super.key,
@@ -17,6 +21,7 @@ class AdminSidebar extends StatelessWidget {
     required this.collapsed,
     this.onToggleCollapse,
     this.showToggle = true,
+    this.config = AdminShellConfig.admin,
   });
 
   final AdminDestination current;
@@ -24,10 +29,12 @@ class AdminSidebar extends StatelessWidget {
   final bool collapsed;
   final VoidCallback? onToggleCollapse;
   final bool showToggle;
+  final AdminShellConfig config;
 
   @override
   Widget build(BuildContext context) {
     final tokens = AdminTheme.of(context);
+    final sections = config.visibleSections;
 
     return AnimatedContainer(
       duration: AdminTokens.normal,
@@ -42,7 +49,11 @@ class AdminSidebar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _Brand(collapsed: collapsed),
+          _Brand(
+            collapsed: collapsed,
+            title: config.title,
+            subtitle: config.subtitle,
+          ),
           Divider(height: 1, color: tokens.border),
           Expanded(
             child: ListView(
@@ -51,65 +62,18 @@ class AdminSidebar extends StatelessWidget {
                 vertical: AdminTokens.space4,
               ),
               children: [
-                if (!collapsed) const _SectionLabel('Overview'),
-                _NavItem(
-                  destination: AdminDestination.dashboard,
-                  selected: current == AdminDestination.dashboard,
-                  collapsed: collapsed,
-                  onTap: onSelect,
-                ),
-                const SizedBox(height: AdminTokens.space4),
-                if (!collapsed) const _SectionLabel('Access control'),
-                _NavItem(
-                  destination: AdminDestination.users,
-                  selected: current == AdminDestination.users,
-                  collapsed: collapsed,
-                  onTap: onSelect,
-                ),
-                _NavItem(
-                  destination: AdminDestination.complexAdmins,
-                  selected: current == AdminDestination.complexAdmins,
-                  collapsed: collapsed,
-                  onTap: onSelect,
-                ),
-                _NavItem(
-                  destination: AdminDestination.employees,
-                  selected: current == AdminDestination.employees,
-                  collapsed: collapsed,
-                  onTap: onSelect,
-                ),
-                _NavItem(
-                  destination: AdminDestination.securityGuards,
-                  selected: current == AdminDestination.securityGuards,
-                  collapsed: collapsed,
-                  onTap: onSelect,
-                ),
-                _NavItem(
-                  destination: AdminDestination.sportsComplexes,
-                  selected: current == AdminDestination.sportsComplexes,
-                  collapsed: collapsed,
-                  onTap: onSelect,
-                ),
-                const SizedBox(height: AdminTokens.space4),
-                if (!collapsed) const _SectionLabel('Operations'),
-                ..._operations.map(
-                  (destination) => _NavItem(
-                    destination: destination,
-                    selected: current == destination,
-                    collapsed: collapsed,
-                    onTap: onSelect,
-                  ),
-                ),
-                const SizedBox(height: AdminTokens.space4),
-                if (!collapsed) const _SectionLabel('Business'),
-                ..._business.map(
-                  (destination) => _NavItem(
-                    destination: destination,
-                    selected: current == destination,
-                    collapsed: collapsed,
-                    onTap: onSelect,
-                  ),
-                ),
+                for (var i = 0; i < sections.length; i++) ...[
+                  if (i > 0) const SizedBox(height: AdminTokens.space4),
+                  if (!collapsed) _SectionLabel(sections[i].title),
+                  ...sections[i].destinations.map(
+                        (destination) => _NavItem(
+                          destination: destination,
+                          selected: current == destination,
+                          collapsed: collapsed,
+                          onTap: onSelect,
+                        ),
+                      ),
+                ],
               ],
             ),
           ),
@@ -122,30 +86,18 @@ class AdminSidebar extends StatelessWidget {
     );
   }
 
-  static const List<AdminDestination> _operations = [
-    AdminDestination.sports,
-    AdminDestination.coaches,
-    AdminDestination.batches,
-    AdminDestination.coachingEnquiries,
-    AdminDestination.courts,
-    AdminDestination.bookings,
-    AdminDestination.events,
-    AdminDestination.visitorPasses,
-  ];
-
-  static const List<AdminDestination> _business = [
-    AdminDestination.memberships,
-    AdminDestination.coupons,
-    AdminDestination.payments,
-    AdminDestination.reports,
-    AdminDestination.settings,
-  ];
 }
 
 class _Brand extends StatelessWidget {
-  const _Brand({required this.collapsed});
+  const _Brand({
+    required this.collapsed,
+    required this.title,
+    required this.subtitle,
+  });
 
   final bool collapsed;
+  final String title;
+  final String subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -185,7 +137,7 @@ class _Brand extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Nahata Sports',
+                    title,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: tokens.textPrimary,
@@ -196,7 +148,8 @@ class _Brand extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'Admin Console',
+                    subtitle,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: tokens.textMuted,
                       fontSize: 11,

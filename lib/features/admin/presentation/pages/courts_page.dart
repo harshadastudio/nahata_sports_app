@@ -8,6 +8,7 @@ import '../../domain/entities/admin_role.dart';
 import '../../domain/entities/court.dart';
 import '../../domain/entities/court_slot.dart';
 import '../../domain/repositories/court_slot_repository.dart';
+import '../navigation/admin_module.dart';
 import '../state/courts_controller.dart';
 import '../state/view_state.dart';
 import '../theme/admin_theme.dart';
@@ -93,7 +94,9 @@ class _CourtsPageState extends State<CourtsPage> {
             // On a phone the page scrolls as one piece, so the row list must
             // lay itself out inline rather than claim a viewport of its own.
             shrinkWrap: isMobile,
-            onAdd: () => _openForm(context, controller),
+            onAdd: AdminAccess.canCreate(AdminModules.courts)
+                ? () => _openForm(context, controller)
+                : null,
             onAction: (action, court) =>
                 _handleAction(context, controller, action, court),
             onToggleVisibility: (court, value) =>
@@ -135,7 +138,9 @@ class _CourtsPageState extends State<CourtsPage> {
         controller: controller,
         searchController: _search,
         showAvailability: _showAvailability,
-        onAdd: () => _openForm(context, controller),
+        onAdd: AdminAccess.canCreate(AdminModules.courts)
+            ? () => _openForm(context, controller)
+            : null,
       ),
       const SizedBox(height: AdminTokens.space4),
       _ViewSwitcher(
@@ -789,7 +794,7 @@ class _Header extends StatelessWidget {
   final CourtsController controller;
   final TextEditingController searchController;
   final bool showAvailability;
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -863,11 +868,15 @@ class _Header extends StatelessWidget {
       label: const Text('Refresh'),
     );
 
-    final add = FilledButton.icon(
-      onPressed: onAdd,
-      icon: const Icon(Icons.add_rounded, size: 19),
-      label: const Text('Add Court'),
-    );
+    // Hidden rather than disabled: an action the account may not perform
+    // should not be advertised.
+    final add = onAdd == null
+        ? const SizedBox.shrink()
+        : FilledButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add_rounded, size: 19),
+            label: const Text('Add Court'),
+          );
 
     if (narrow) {
       return Column(
@@ -1098,7 +1107,7 @@ class _Body extends StatelessWidget {
   /// itself rather than expand into a viewport it does not have.
   final bool shrinkWrap;
 
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
   final void Function(CourtAction action, Court court) onAction;
   final void Function(Court court, bool showOnFrontend) onToggleVisibility;
 

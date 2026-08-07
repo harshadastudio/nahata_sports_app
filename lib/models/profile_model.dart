@@ -1,5 +1,63 @@
 import 'dart:convert';
 
+/// The sports complex a `COMPLEX_ADMIN` is scoped to.
+///
+/// `POST /auth/login` returns it beside `sportComplexId` for that role only;
+/// every other role gets `null` for both. Kept deliberately small — it is
+/// identity, not the full venue record served by `/sports-complexes`.
+class SportComplexRef {
+  const SportComplexRef({required this.id, required this.name, this.city});
+
+  final int id;
+  final String name;
+  final String? city;
+
+  /// "Sinhagad Road, Pune" when the city is known, otherwise just the name.
+  String get label =>
+      (city == null || city!.trim().isEmpty) ? name : '$name, ${city!.trim()}';
+
+  /// Null when the payload is absent or has no usable id/name, so callers can
+  /// treat "not a complex admin" and "malformed" the same way.
+  static SportComplexRef? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final json = Map<String, dynamic>.from(value);
+
+    final rawId = json['id'];
+    final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final name = json['name']?.toString().trim();
+    if (id == null || name == null || name.isEmpty || name == 'null') {
+      return null;
+    }
+
+    final city = json['city']?.toString().trim();
+    return SportComplexRef(
+      id: id,
+      name: name,
+      city: (city == null || city.isEmpty || city == 'null') ? null : city,
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'name': name,
+        'city': city,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SportComplexRef &&
+          other.id == id &&
+          other.name == name &&
+          other.city == city);
+
+  @override
+  int get hashCode => Object.hash(id, name, city);
+
+  @override
+  String toString() => 'SportComplexRef(id: $id, name: $name)';
+}
+
 /// Strongly typed representation of `GET /auth/profile`.
 ///
 /// Every field the API documents is mapped, all of them null-safe. Legacy
@@ -15,6 +73,7 @@ class ProfileModel {
     this.isGoogleUser = false,
     this.role,
     this.sportComplexId,
+    this.sportComplex,
     this.totalBookings,
     this.membershipType,
     this.status,
@@ -26,6 +85,7 @@ class ProfileModel {
     this.assignedSports = const <String>[],
     this.assignedLocation,
     this.permissions = const <String>[],
+    this.permissionMatrix = const <String, Map<String, bool>>{},
     this.profilePicture,
     this.extras = const <String, dynamic>{},
   });
@@ -38,6 +98,11 @@ class ProfileModel {
   final bool isGoogleUser;
   final String? role;
   final int? sportComplexId;
+
+  /// Set for `COMPLEX_ADMIN` only — the venue every one of their APIs is
+  /// scoped to. Null for every other role.
+  final SportComplexRef? sportComplex;
+
   final int? totalBookings;
   final String? membershipType;
   final String? status;
@@ -48,7 +113,21 @@ class ProfileModel {
   final String? department;
   final List<String> assignedSports;
   final String? assignedLocation;
+  /// Flat permission slugs. Two shapes reach this list:
+  ///
+  ///  * the legacy `/auth/profile` form — `["user_dashboard", …]`, used
+  ///    verbatim;
+  ///  * the object form returned by `/auth/login` — `{"students": {"view":
+  ///    true}}`, flattened here to `students.view` so a single
+  ///    `hasPermission(...)` call works for both.
   final List<String> permissions;
+
+  /// The object form, kept structured: `{"students": {"view": true, …}}`.
+  ///
+  /// Empty when the backend sent the legacy slug list. Read it through
+  /// [can] rather than indexing it directly.
+  final Map<String, Map<String, bool>> permissionMatrix;
+
   final String? profilePicture;
 
   /// Fields the API returned that this model does not type explicitly
@@ -101,6 +180,14 @@ class ProfileModel {
 
   bool get isActive => (status ?? '').toLowerCase() == 'active';
 
+  /// Role comparison that ignores case and the `_`/`-`/space spellings the
+  /// backend has used for `COMPLEX_ADMIN` over time.
+  String get roleKey => roleLabel.toLowerCase().replaceAll(RegExp(r'[-\s]'), '_');
+
+  bool get isAdmin => roleKey == 'admin' || roleKey == 'super_admin';
+
+  bool get isComplexAdmin => roleKey == 'complex_admin';
+
   /// True when `/auth/google-login` signed the user in but the account still
   /// has no phone number — the backend flags this as `needsPhone`. Only that
   /// endpoint sends it, so it is read out of [extras].
@@ -109,11 +196,23 @@ class ProfileModel {
   bool hasPermission(String permission) =>
       permissions.contains(permission);
 
+  /// `can('students', 'view')` — the object-form check.
+  ///
+  /// Falls back to the flat slug list so a profile restored from a legacy
+  /// cache answers the same question the same way. Unknown module or action
+  /// means "no", never a crash.
+  bool can(String module, String action) {
+    final actions = permissionMatrix[module];
+    if (actions != null) return actions[action] ?? false;
+    return permissions.contains('$module.$action');
+  }
+
   // ---------------------------------------------------------------------------
   // Serialisation
   // ---------------------------------------------------------------------------
 
   factory ProfileModel.fromJson(Map<String, dynamic> json) {
+    final matrix = _asPermissionMatrix(json['permissions']);
     return ProfileModel(
       id: _asInt(json['id']),
       name: _asString(json['name']),
@@ -125,6 +224,9 @@ class ProfileModel {
       role: _asString(json['role']),
       sportComplexId:
           _asInt(json['sportComplexId'] ?? json['sport_complex_id']),
+      sportComplex: SportComplexRef.fromJson(
+        json['sportComplex'] ?? json['sport_complex'],
+      ),
       totalBookings: _asInt(json['total_bookings'] ?? json['totalBookings']),
       membershipType:
           _asString(json['membership_type'] ?? json['membershipType']),
@@ -138,7 +240,10 @@ class ProfileModel {
           _asStringList(json['assigned_sports'] ?? json['assignedSports']),
       assignedLocation:
           _asString(json['assigned_location'] ?? json['assignedLocation']),
-      permissions: _asStringList(json['permissions']),
+      permissions: matrix.isEmpty
+          ? _asStringList(json['permissions'])
+          : _flattenPermissions(matrix),
+      permissionMatrix: matrix,
       profilePicture:
           _asString(json['profile_picture'] ?? json['profilePicture']),
       extras: Map<String, dynamic>.fromEntries(
@@ -158,6 +263,7 @@ class ProfileModel {
     'isGoogleUser', 'is_google_user',
     'role',
     'sportComplexId', 'sport_complex_id',
+    'sportComplex', 'sport_complex',
     'total_bookings', 'totalBookings',
     'membership_type', 'membershipType',
     'status',
@@ -182,6 +288,7 @@ class ProfileModel {
         'isGoogleUser': isGoogleUser,
         'role': role,
         'sportComplexId': sportComplexId,
+        'sportComplex': sportComplex?.toJson(),
         'total_bookings': totalBookings,
         'membership_type': membershipType,
         'status': status,
@@ -192,7 +299,9 @@ class ProfileModel {
         'department': department,
         'assigned_sports': assignedSports,
         'assigned_location': assignedLocation,
-        'permissions': permissions,
+        // Written back in whichever shape it arrived, so a cached profile
+        // re-parses into exactly the same object.
+        'permissions': permissionMatrix.isEmpty ? permissions : permissionMatrix,
         'profile_picture': profilePicture,
         ...extras,
       };
@@ -233,6 +342,7 @@ class ProfileModel {
     bool? isGoogleUser,
     String? role,
     int? sportComplexId,
+    SportComplexRef? sportComplex,
     int? totalBookings,
     String? membershipType,
     String? status,
@@ -244,6 +354,7 @@ class ProfileModel {
     List<String>? assignedSports,
     String? assignedLocation,
     List<String>? permissions,
+    Map<String, Map<String, bool>>? permissionMatrix,
     String? profilePicture,
     Map<String, dynamic>? extras,
   }) {
@@ -256,6 +367,7 @@ class ProfileModel {
       isGoogleUser: isGoogleUser ?? this.isGoogleUser,
       role: role ?? this.role,
       sportComplexId: sportComplexId ?? this.sportComplexId,
+      sportComplex: sportComplex ?? this.sportComplex,
       totalBookings: totalBookings ?? this.totalBookings,
       membershipType: membershipType ?? this.membershipType,
       status: status ?? this.status,
@@ -267,6 +379,7 @@ class ProfileModel {
       assignedSports: assignedSports ?? this.assignedSports,
       assignedLocation: assignedLocation ?? this.assignedLocation,
       permissions: permissions ?? this.permissions,
+      permissionMatrix: permissionMatrix ?? this.permissionMatrix,
       profilePicture: profilePicture ?? this.profilePicture,
       extras: extras ?? this.extras,
     );
@@ -281,6 +394,8 @@ class ProfileModel {
           other.email == email &&
           other.phoneNumber == phoneNumber &&
           other.role == role &&
+          other.sportComplexId == sportComplexId &&
+          other.sportComplex == sportComplex &&
           other.status == status &&
           other.membershipType == membershipType &&
           other.profilePicture == profilePicture &&
@@ -295,6 +410,8 @@ class ProfileModel {
         email,
         phoneNumber,
         role,
+        sportComplexId,
+        sportComplex,
         status,
         membershipType,
         profilePicture,
@@ -329,6 +446,48 @@ class ProfileModel {
     if (value is num) return value != 0;
     final text = value?.toString().toLowerCase();
     return text == 'true' || text == '1';
+  }
+
+  /// Reads the object form of `permissions`.
+  ///
+  /// `{"students": {"view": true, "create": false}}` becomes
+  /// `{students: {view: true, create: false}}`. Anything that is not a map of
+  /// maps (the legacy slug list, a null, a malformed entry) yields an empty
+  /// matrix, which callers read as "fall back to the flat list".
+  static Map<String, Map<String, bool>> _asPermissionMatrix(Object? value) {
+    if (value is! Map) return const <String, Map<String, bool>>{};
+
+    final matrix = <String, Map<String, bool>>{};
+    value.forEach((module, actions) {
+      if (actions is! Map) return;
+      final key = module?.toString().trim();
+      if (key == null || key.isEmpty) return;
+
+      final entries = <String, bool>{};
+      actions.forEach((action, allowed) {
+        final name = action?.toString().trim();
+        if (name == null || name.isEmpty) return;
+        entries[name] = _asBool(allowed);
+      });
+
+      if (entries.isNotEmpty) matrix[key] = entries;
+    });
+
+    return matrix;
+  }
+
+  /// `{students: {view: true, create: false}}` → `["students.view"]`.
+  /// Only granted actions are listed, so `contains` is a positive check.
+  static List<String> _flattenPermissions(
+    Map<String, Map<String, bool>> matrix,
+  ) {
+    final slugs = <String>[];
+    matrix.forEach((module, actions) {
+      actions.forEach((action, allowed) {
+        if (allowed) slugs.add('$module.$action');
+      });
+    });
+    return List<String>.unmodifiable(slugs);
   }
 
   static List<String> _asStringList(Object? value) {

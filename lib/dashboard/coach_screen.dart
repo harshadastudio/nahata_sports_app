@@ -1,3 +1,15 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// `CoachHomeScreen` now resolves to the rebuilt coach menu under
+// `lib/features/coach/`. Re-exporting it from here means every existing call
+// site — `auth/login.dart`, `auth/registration.dart`, `main.dart` — keeps
+// working without a single import change.
+//
+// The superseded implementation is still in this file as
+// `LegacyCoachHomeScreen` (see the banner further down); it is unreachable and
+// kept only for reference.
+// ─────────────────────────────────────────────────────────────────────────────
+export 'package:nahata_app/features/coach/presentation/pages/coach_home_page.dart'
+    show CoachHomeScreen;
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -1096,14 +1108,28 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
 
 
 
-class CoachHomeScreen extends StatefulWidget {
-  const CoachHomeScreen({super.key});
+// ─────────────────────────────────────────────────────────────────────────────
+// LEGACY COACH MENU — SUPERSEDED (2026-08-06)
+//
+// This is the previous coach home grid. It is kept rather than deleted,
+// following this project's convention for superseded code, but it is no longer
+// reachable: it routed to screens built on the retired
+// `nahatasports.com/api` (students, attendance, scan, fees), and it offered
+// entries the coach's permissions did not actually grant.
+//
+// `CoachHomeScreen` now resolves to the rebuilt menu under
+// `lib/features/coach/` — see the re-export at the top of this file. Every
+// existing call site (`auth/login.dart`, `auth/registration.dart`,
+// `main.dart`) keeps working without an import change.
+// ─────────────────────────────────────────────────────────────────────────────
+class LegacyCoachHomeScreen extends StatefulWidget {
+  const LegacyCoachHomeScreen({super.key});
 
   @override
-  State<CoachHomeScreen> createState() => _CoachHomeScreenState();
+  State<LegacyCoachHomeScreen> createState() => _LegacyCoachHomeScreenState();
 }
 
-class _CoachHomeScreenState extends State<CoachHomeScreen> {
+class _LegacyCoachHomeScreenState extends State<LegacyCoachHomeScreen> {
   int? studentId;
 
   @override

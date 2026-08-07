@@ -10,15 +10,19 @@ import '../navigation/admin_destination.dart';
 /// The two cosmetic choices are persisted, so an admin who collapses the rail
 /// or picks dark mode gets it back on the next launch.
 class AdminShellController extends ChangeNotifier {
-  AdminShellController() {
-    AdminLog.life('AdminShellController created');
+  /// [initial] is the module the console opens on. It is a parameter rather
+  /// than a constant because a permission-scoped console may not be allowed to
+  /// open the dashboard.
+  AdminShellController({AdminDestination initial = AdminDestination.dashboard})
+      : _destination = initial {
+    AdminLog.life('AdminShellController created at ${initial.label}');
     _restore();
   }
 
   static const String _kThemeKey = 'admin_dashboard_theme_mode';
   static const String _kSidebarKey = 'admin_dashboard_sidebar_collapsed';
 
-  AdminDestination _destination = AdminDestination.dashboard;
+  AdminDestination _destination;
   UsersTab _usersTab = UsersTab.users;
   bool _sidebarCollapsed = false;
   ThemeMode _themeMode = ThemeMode.light;

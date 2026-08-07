@@ -186,14 +186,137 @@ class ApiEndpoints {
   /// segment, not an id, so it must never be built through that helper.
   static const String coachingEnquiryStats = '/coaching-enquiries/stats';
 
+  // ---------------------------------------------------------------------------
   // Coach dashboard.
+  //
+  // Everything under `/coach/dashboard` is gated on the `COACH` role and scoped
+  // by the bearer token — the coach is resolved from the token's email, so no
+  // coach id is ever sent. See `coachDashboardRoutes.js`.
+  // ---------------------------------------------------------------------------
+
   static const String coachStats = '/coach/dashboard/stats';
   static const String coachScheduleToday = '/coach/dashboard/schedule/today';
   static const String coachTopPerformers =
       '/coach/dashboard/students/top-performers';
   static const String coachAttendanceRecords =
       '/coach/dashboard/attendance/records';
+
+  /// `GET /coach/dashboard/students/my-students?page=&limit=&search=&status=`
+  static const String coachMyStudents = '/coach/dashboard/students/my-students';
+
+  /// `GET /coach/dashboard/students/enrollments-by-month?month=&search=&status=`
+  ///
+  /// `month` is `yyyy-MM`. Answers one month's roster grouped batch-wise, plus
+  /// the index of every month that has enrollments so the picker needs no
+  /// second round trip.
+  static const String coachEnrollmentsByMonth =
+      '/coach/dashboard/students/enrollments-by-month';
+
+  /// `GET /coach/dashboard/schedule/batches?page=&limit=&status=&sportId=`
+  static const String coachBatches = '/coach/dashboard/schedule/batches';
+
+  /// `GET | POST /coach/dashboard/performance/progress`
+  static const String coachProgress = '/coach/dashboard/performance/progress';
+
+  /// `PUT | DELETE /coach/dashboard/performance/progress/{performanceId}`
+  static String coachProgressRecord(Object id) =>
+      '/coach/dashboard/performance/progress/$id';
+
+  // Autocomplete. Each answers a bare `[{id, name}]` under `data`, already
+  // scoped to the coach's own batches.
+  static const String coachAutocompleteStudents =
+      '/coach/dashboard/autocomplete/students';
+  static const String coachAutocompleteSports =
+      '/coach/dashboard/autocomplete/sports';
+  static const String coachAutocompleteBatches =
+      '/coach/dashboard/autocomplete/batches';
+  static const String coachAutocompletePrograms =
+      '/coach/dashboard/autocomplete/programs';
+
+  // Coach-side coaching enquiries. A different route family from the admin
+  // ones above — note the `/coach` segment.
+
+  /// `GET /coaching-enquiries/coach/my-enquiries?page=&limit=`
   static const String coachEnquiries = '/coaching-enquiries/coach/my-enquiries';
+
+  /// `POST /coaching-enquiries/coach/create`
+  static const String coachCreateEnquiry = '/coaching-enquiries/coach/create';
+
+  /// `PATCH /coaching-enquiries/coach/{enquiryId}/status`
+  static String coachEnquiryStatus(Object id) =>
+      '/coaching-enquiries/coach/$id/status';
+
+  /// `DELETE /coaching-enquiries/coach/{enquiryId}`
+  static String coachEnquiry(Object id) => '/coaching-enquiries/coach/$id';
+
+  /// `POST /coaching-enquiries/{enquiryId}/approve-and-enroll`
+  ///
+  /// Note the path has **no** `/coach` segment — unlike the other three, this
+  /// is the shared route, and it grants COACH alongside ADMIN, COMPLEX_ADMIN
+  /// and EMPLOYEE. Approving here is what creates the student and their
+  /// enrollment, so it is the one enquiry action that changes more than a
+  /// status. Takes `{paymentStatus, amountPaid, notes}`.
+  static String coachingEnquiryApproveAndEnroll(Object id) =>
+      '/coaching-enquiries/$id/approve-and-enroll';
+
+  // Attendance. Shared with admin/employee — the backend scopes the list to
+  // the caller's own batches when the caller is a coach.
+
+  /// `GET /attendance?page=&limit=&date=&batchId=&status=` and
+  /// `POST /attendance` to mark.
+  static const String attendance = '/attendance';
+
+  /// `PATCH /attendance/{attendanceId}` — correct an already-marked record.
+  static String attendanceRecord(Object id) => '/attendance/$id';
+
+  // Fees. Read and write are open to COACH; approve/reject are not (those are
+  // ADMIN/EMPLOYEE only), which is why Fees Approval is read-only for a coach.
+
+  /// `GET | POST /fees?page=&limit=&status=&search=`
+  static const String fees = '/fees';
+
+  /// `GET /fees/stats`
+  static const String feesStats = '/fees/stats';
+
+  /// `PUT | DELETE /fees/{feeId}`
+  static String fee(Object id) => '/fees/$id';
+
+  /// `PATCH /fees/{feeId}/payment` — record a payment against a fee record.
+  static String feePayment(Object id) => '/fees/$id/payment';
+
+  /// `POST /fees/scan-pass` — scanning a student gate pass. For a COACH this
+  /// **also marks the student Present for today**, so it must never be called
+  /// merely to look a pass up.
+  static const String feesScanPass = '/fees/scan-pass';
+
+  /// `GET /fees/scan-logs?date=` — the date-wise log of gate-pass scans.
+  static const String feesScanLogs = '/fees/scan-logs';
+
+  // Notifications.
+
+  /// `GET /notifications/admin?page=&limit=` — notifications this coach sent.
+  static const String notificationsAdmin = '/notifications/admin';
+
+  /// `POST /notifications/send`
+  static const String notificationsSend = '/notifications/send';
+
+  /// `GET /notifications/users` — the addressable audience.
+  static const String notificationsUsers = '/notifications/users';
+
+  /// `GET /notifications` — the caller's own inbox.
+  static const String notifications = '/notifications';
+
+  /// `GET /notifications/unread-count`
+  static const String notificationsUnreadCount = '/notifications/unread-count';
+
+  /// `PATCH /notifications/{notificationId}/read`
+  static String notificationRead(Object id) => '/notifications/$id/read';
+
+  /// `PATCH /notifications/mark-all-read`
+  static const String notificationsMarkAllRead = '/notifications/mark-all-read';
+
+  /// `PATCH | DELETE /notifications/{notificationId}`
+  static String notification(Object id) => '/notifications/$id';
 
   /// `GET /permissions/{role}` — the permission slugs granted to a role.
   static String permissionsForRole(String role) =>

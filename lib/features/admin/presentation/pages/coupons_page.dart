@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/admin_log.dart';
 import '../../domain/entities/coupon.dart';
+import '../navigation/admin_module.dart';
 import '../state/coupons_controller.dart';
 import '../state/view_state.dart';
 import '../theme/admin_theme.dart';
@@ -86,7 +87,9 @@ class _CouponsPageState extends State<CouponsPage> {
             _Toolbar(
               controller: controller,
               searchController: _search,
-              onAdd: () => _openForm(context, controller),
+              onAdd: AdminAccess.canCreate(AdminModules.coupons)
+                  ? () => _openForm(context, controller)
+                  : null,
             ),
             const SizedBox(height: AdminTokens.space4),
             Expanded(
@@ -102,7 +105,9 @@ class _CouponsPageState extends State<CouponsPage> {
                         child: _Body(
                           controller: controller,
                           isMobile: isMobile,
-                          onAdd: () => _openForm(context, controller),
+                          onAdd: AdminAccess.canCreate(AdminModules.coupons)
+                              ? () => _openForm(context, controller)
+                              : null,
                           onAction: (action, coupon) => _handleAction(
                             context,
                             controller,
@@ -368,7 +373,7 @@ class _Toolbar extends StatelessWidget {
 
   final CouponsController controller;
   final TextEditingController searchController;
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -412,11 +417,15 @@ class _Toolbar extends StatelessWidget {
       label: const Text('Refresh'),
     );
 
-    final add = FilledButton.icon(
-      onPressed: onAdd,
-      icon: const Icon(Icons.add_rounded, size: 19),
-      label: const Text('Create coupon'),
-    );
+    // Hidden rather than disabled: an action the account may not perform
+    // should not be advertised.
+    final add = onAdd == null
+        ? const SizedBox.shrink()
+        : FilledButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add_rounded, size: 19),
+            label: const Text('Create coupon'),
+          );
 
     if (narrow) {
       return Column(
@@ -461,7 +470,7 @@ class _Body extends StatelessWidget {
 
   final CouponsController controller;
   final bool isMobile;
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
   final void Function(CouponAction action, AdminCoupon coupon) onAction;
 
   @override

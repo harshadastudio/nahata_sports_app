@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/admin_log.dart';
 import '../../domain/entities/admin_role.dart';
 import '../../domain/entities/admin_user.dart';
+import '../navigation/admin_module.dart';
 import '../state/admin_users_controller.dart';
 import '../state/view_state.dart';
 import '../theme/admin_theme.dart';
@@ -87,7 +88,9 @@ class _UsersPageState extends State<UsersPage> {
             controller: controller,
             searchController: _search,
             showSearch: widget.showInlineSearch,
-            onAdd: () => _openForm(context, controller),
+            onAdd: AdminAccess.canCreate(AdminModules.users)
+                ? () => _openForm(context, controller)
+                : null,
           ),
           const SizedBox(height: AdminTokens.space4),
           Expanded(
@@ -103,7 +106,9 @@ class _UsersPageState extends State<UsersPage> {
                       child: _TableBody(
                         controller: controller,
                         isMobile: isMobile,
-                        onAdd: () => _openForm(context, controller),
+                        onAdd: AdminAccess.canCreate(AdminModules.users)
+                            ? () => _openForm(context, controller)
+                            : null,
                         onAction: (action, user) =>
                             _handleAction(context, controller, action, user),
                       ),
@@ -342,7 +347,7 @@ class _Toolbar extends StatelessWidget {
   final AdminUsersController controller;
   final TextEditingController searchController;
   final bool showSearch;
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -423,11 +428,14 @@ class _Toolbar extends StatelessWidget {
             : const Icon(Icons.refresh_rounded, size: 18),
         label: const Text('Refresh'),
       ),
-      FilledButton.icon(
-        onPressed: onAdd,
-        icon: const Icon(Icons.add_rounded, size: 19),
-        label: const Text('Add user'),
-      ),
+      // Hidden rather than disabled: an action the account may not perform
+      // should not be advertised.
+      if (onAdd != null)
+        FilledButton.icon(
+          onPressed: onAdd,
+          icon: const Icon(Icons.add_rounded, size: 19),
+          label: const Text('Add user'),
+        ),
     ];
 
     if (narrow) {
@@ -557,7 +565,7 @@ class _TableBody extends StatelessWidget {
 
   final AdminUsersController controller;
   final bool isMobile;
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
   final void Function(UserRowAction action, AdminUser user) onAction;
 
   @override

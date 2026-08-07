@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/admin_log.dart';
 import '../../domain/entities/admin_role.dart';
 import '../../domain/entities/coach.dart';
+import '../navigation/admin_module.dart';
 import '../state/coaches_controller.dart';
 import '../state/view_state.dart';
 import '../theme/admin_theme.dart';
@@ -82,7 +83,9 @@ class _CoachesPageState extends State<CoachesPage> {
       // On a phone the page scrolls as one piece, so the row list must lay
       // itself out inline rather than claim a viewport of its own.
       shrinkWrap: isMobile,
-      onAdd: () => _openForm(context, controller),
+      onAdd: AdminAccess.canCreate(AdminModules.coaches)
+          ? () => _openForm(context, controller)
+          : null,
       onAction: (action, coach) =>
           _handleAction(context, controller, action, coach),
     );
@@ -119,7 +122,9 @@ class _CoachesPageState extends State<CoachesPage> {
       _Header(
         controller: controller,
         searchController: _search,
-        onAdd: () => _openForm(context, controller),
+        onAdd: AdminAccess.canCreate(AdminModules.coaches)
+            ? () => _openForm(context, controller)
+            : null,
       ),
       const SizedBox(height: AdminTokens.space4),
       _SummaryCards(controller: controller),
@@ -516,7 +521,7 @@ class _Header extends StatelessWidget {
 
   final CoachesController controller;
   final TextEditingController searchController;
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -590,11 +595,15 @@ class _Header extends StatelessWidget {
       label: const Text('Refresh'),
     );
 
-    final add = FilledButton.icon(
-      onPressed: onAdd,
-      icon: const Icon(Icons.add_rounded, size: 19),
-      label: const Text('Add Coach'),
-    );
+    // Hidden rather than disabled: an action the account may not perform
+    // should not be advertised.
+    final add = onAdd == null
+        ? const SizedBox.shrink()
+        : FilledButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add_rounded, size: 19),
+            label: const Text('Add Coach'),
+          );
 
     if (narrow) {
       return Column(
@@ -815,7 +824,7 @@ class _Body extends StatelessWidget {
   /// itself rather than expand into a viewport it does not have.
   final bool shrinkWrap;
 
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
   final void Function(CoachAction action, Coach coach) onAction;
 
   /// The empty and error views centre themselves in whatever height they are

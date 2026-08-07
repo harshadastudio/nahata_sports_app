@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/admin_log.dart';
 import '../../domain/entities/membership.dart';
+import '../navigation/admin_module.dart';
 import '../state/memberships_controller.dart';
 import '../state/view_state.dart';
 import '../theme/admin_theme.dart';
@@ -96,7 +97,9 @@ class _MembershipsPageState extends State<MembershipsPage> {
       isMobile: isMobile,
       shrinkWrap: isMobile,
       scrollController: isMobile ? _scroll : null,
-      onAdd: () => _openForm(context, controller),
+      onAdd: AdminAccess.canCreate(AdminModules.memberships)
+          ? () => _openForm(context, controller)
+          : null,
       onAction: (action, membership) =>
           _handleAction(context, controller, action, membership),
     );
@@ -134,7 +137,9 @@ class _MembershipsPageState extends State<MembershipsPage> {
       _Header(
         controller: controller,
         searchController: _search,
-        onAdd: () => _openForm(context, controller),
+        onAdd: AdminAccess.canCreate(AdminModules.memberships)
+            ? () => _openForm(context, controller)
+            : null,
         onSweep: () => _runSweep(context, controller),
       ),
       const SizedBox(height: AdminTokens.space4),
@@ -688,7 +693,7 @@ class _Header extends StatelessWidget {
 
   final MembershipsController controller;
   final TextEditingController searchController;
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
   final VoidCallback onSweep;
 
   @override
@@ -764,11 +769,15 @@ class _Header extends StatelessWidget {
       label: const Text('Refresh'),
     );
 
-    final add = FilledButton.icon(
-      onPressed: onAdd,
-      icon: const Icon(Icons.add_rounded, size: 19),
-      label: const Text('Add Membership'),
-    );
+    // Hidden rather than disabled: an action the account may not perform
+    // should not be advertised.
+    final add = onAdd == null
+        ? const SizedBox.shrink()
+        : FilledButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add_rounded, size: 19),
+            label: const Text('Add Membership'),
+          );
 
     if (narrow) {
       return Column(
@@ -1110,7 +1119,7 @@ class _Body extends StatelessWidget {
   final bool isMobile;
   final bool shrinkWrap;
   final ScrollController? scrollController;
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
   final void Function(MembershipAction action, Membership membership) onAction;
 
   Widget _sized(Widget child) =>

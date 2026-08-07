@@ -43,6 +43,7 @@ import '../../domain/repositories/sport_repository.dart';
 import '../../domain/repositories/sports_complex_admin_repository.dart';
 import '../../domain/repositories/visitor_pass_repository.dart';
 import '../navigation/admin_destination.dart';
+import '../navigation/admin_shell_config.dart';
 import '../state/admin_roles_controller.dart';
 import '../state/admin_shell_controller.dart';
 import '../state/admin_users_controller.dart';
@@ -77,6 +78,7 @@ import 'dashboard_home_page.dart';
 import 'employees_page.dart';
 import 'event_passes_page.dart';
 import 'memberships_page.dart';
+import 'module_access_denied_page.dart';
 import 'module_placeholder_page.dart';
 import 'reports_page.dart';
 import 'security_guards_page.dart';
@@ -93,9 +95,15 @@ import 'visitor_passes_page.dart';
 ///
 /// The panel also runs its own [Theme] and [ScaffoldMessenger] — it is a
 /// desktop-style surface inside a mobile app, and it must not restyle the rest.
+///
+/// [config] decides the branding, the sidebar and which modules may be opened.
+/// It defaults to the estate-wide ADMIN console, so nothing about the existing
+/// admin experience changes; `ComplexAdminDashboardScreen` passes the
+/// venue-scoped, permission-filtered variant.
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({
     super.key,
+    this.config = AdminShellConfig.admin,
     this.repository,
     this.dashboardRepository,
     this.complexAdminRepository,
@@ -115,6 +123,9 @@ class AdminDashboardScreen extends StatefulWidget {
     this.couponsRepository,
     this.coachingEnquiryRepository,
   });
+
+  /// Branding, sidebar layout and module access for this console.
+  final AdminShellConfig config;
 
   /// Injectable for tests; production builds use the `*Impl` classes.
   final AdminRepository? repository;
@@ -220,7 +231,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _coachingEnquiryRepository =
         widget.coachingEnquiryRepository ?? CoachingEnquiryRepositoryImpl();
 
-    _shell = AdminShellController();
+    _shell = AdminShellController(initial: widget.config.initialDestination);
     _dashboard = DashboardController(_dashboardRepository);
     _users = AdminUsersController(_repository);
     _roles = AdminRolesController(_repository);
@@ -390,6 +401,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               shell.isDark ? Brightness.dark : Brightness.light,
             ),
             child: _Shell(
+              config: widget.config,
               scaffoldKey: _scaffoldKey,
               searchController: _searchController,
               notificationCount: _notificationCount,
@@ -406,6 +418,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 /// The chrome: sidebar (or drawer), top bar, and the current module.
 class _Shell extends StatelessWidget {
   const _Shell({
+    required this.config,
     required this.scaffoldKey,
     required this.searchController,
     required this.notificationCount,
@@ -413,6 +426,7 @@ class _Shell extends StatelessWidget {
     required this.onNotifications,
   });
 
+  final AdminShellConfig config;
   final GlobalKey<ScaffoldState> scaffoldKey;
   final TextEditingController searchController;
   final int notificationCount;
@@ -450,6 +464,7 @@ class _Shell extends StatelessWidget {
           ? Drawer(
               width: AdminTokens.sidebarWidth,
               child: AdminSidebar(
+                config: config,
                 current: shell.destination,
                 collapsed: false,
                 showToggle: false,
@@ -465,6 +480,7 @@ class _Shell extends StatelessWidget {
           children: [
             if (!isTablet)
               AdminSidebar(
+                config: config,
                 current: shell.destination,
                 collapsed: shell.sidebarCollapsed,
                 onToggleCollapse: shell.toggleSidebar,
@@ -522,6 +538,12 @@ class _Shell extends StatelessWidget {
   /// The one place a destination is turned into a page — adding a module means
   /// adding a case here and nothing else.
   Widget _pageFor(AdminDestination destination, bool isMobile) {
+    // Route-level access control. Only bites on a permission-enforcing config,
+    // so the ADMIN console reaches every case below exactly as before.
+    if (!config.allows(destination)) {
+      return ModuleAccessDeniedPage(destination: destination);
+    }
+
     switch (destination) {
       case AdminDestination.dashboard:
         return const DashboardHomePage();

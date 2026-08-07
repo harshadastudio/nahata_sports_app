@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/admin_log.dart';
 import '../../domain/entities/booking.dart';
+import '../navigation/admin_module.dart';
 import '../state/bookings_controller.dart';
 import '../state/view_state.dart';
 import '../theme/admin_theme.dart';
@@ -89,7 +90,9 @@ class _BookingsPageState extends State<BookingsPage> {
         controller: controller,
         isMobile: isMobile,
         shrinkWrap: isMobile,
-        onAdd: () => _openForm(context, controller),
+        onAdd: AdminAccess.canCreate(AdminModules.bookings)
+            ? () => _openForm(context, controller)
+            : null,
         onAction: (action, booking) =>
             _handleAction(context, controller, action, booking),
       ),
@@ -139,7 +142,9 @@ class _BookingsPageState extends State<BookingsPage> {
       _Header(
         controller: controller,
         searchController: _search,
-        onAdd: () => _openForm(context, controller),
+        onAdd: AdminAccess.canCreate(AdminModules.bookings)
+            ? () => _openForm(context, controller)
+            : null,
         onExport: (format, origin) =>
             _export(context, controller, format, origin),
       ),
@@ -950,7 +955,7 @@ class _Header extends StatelessWidget {
 
   final BookingsController controller;
   final TextEditingController searchController;
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
   final void Function(ExportFormat format, Rect? origin) onExport;
 
   @override
@@ -1022,11 +1027,15 @@ class _Header extends StatelessWidget {
       label: const Text('Refresh'),
     );
 
-    final add = FilledButton.icon(
-      onPressed: onAdd,
-      icon: const Icon(Icons.add_rounded, size: 19),
-      label: const Text('Add Booking'),
-    );
+    // Hidden rather than disabled: an action the account may not perform
+    // should not be advertised.
+    final add = onAdd == null
+        ? const SizedBox.shrink()
+        : FilledButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add_rounded, size: 19),
+            label: const Text('Add Booking'),
+          );
 
     if (narrow) {
       return Column(
@@ -1337,7 +1346,7 @@ class _Body extends StatelessWidget {
   final BookingsController controller;
   final bool isMobile;
   final bool shrinkWrap;
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
   final void Function(BookingAction action, Booking booking) onAction;
 
   Widget _sized(Widget child) =>

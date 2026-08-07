@@ -635,12 +635,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'auth/login.dart';
 import 'bottombar/Custombottombar.dart';
 import 'bottombar/morescreen.dart';
+import 'core/navigation/role_router.dart';
 import 'core/services/app_navigator.dart';
 import 'core/services/permission_service.dart';
 import 'core/services/session_manager.dart';
-import 'dashboard/admin_screen.dart';
-import 'dashboard/coach_screen.dart';
-import 'dashboard/security_screen.dart';
+// The per-role dashboards are reached through `RoleRouter`, not imported here.
 import 'network.dart';
 import 'notification.dart';
 import 'providers/profile_provider.dart';
@@ -1447,20 +1446,9 @@ class _SplashStep3State extends State<SplashStep3> {
     super.dispose();
   }
 
-  Widget _getScreenForRole(String role) {
-    switch (role.toLowerCase()) {
-      case 'admin':
-        return AdminDashboardScreen();
-      case 'coach':
-        return CoachHomeScreen();
-      case 'security':
-        return SecurityGateScannerScreen();
-      case 'student':
-      case 'user':
-      default:
-        return CustomBottomNav();
-    }
-  }
+  /// Re-entry after the splash: the same role → screen table the login screen
+  /// uses, so a restored `COMPLEX_ADMIN` session reopens its own console.
+  Widget _getScreenForRole(String role) => RoleRouter.screenFor(role);
 
   @override
   Widget build(BuildContext context) {

@@ -1,5 +1,6 @@
 import '../../models/profile_model.dart';
 import '../storage/profile_cache.dart';
+import 'app_session.dart';
 
 /// Well-known permission slugs returned by `/auth/profile`.
 ///
@@ -22,16 +23,34 @@ class AppPermissions {
 
 /// Permission slugs granted to the `COACH` role, as returned by
 /// `/auth/profile` and `/permissions/coach`.
+///
+/// These mirror the `COACH` block of the website's `roleMenuConfig.ts`
+/// one-for-one, so the app and the web dashboard hide and show the same
+/// sections for the same coach.
 class CoachPermissions {
   const CoachPermissions._();
 
   static const String dashboard = 'coach_dashboard';
+
+  /// Covers both My Students and Student Enrollments — the website gates both
+  /// on this single slug.
   static const String students = 'coach_students';
+
   static const String schedule = 'coach_schedule';
+
+  /// Covers the attendance sheet and the student pass scanner.
   static const String attendance = 'coach_attendance';
+
   static const String performance = 'coach_performance';
+  static const String feesManagement = 'coach_fees_management';
   static const String feesApproval = 'coach_fees_approval';
   static const String coachingEnquiries = 'coach_coaching_enquiries';
+  static const String notifications = 'coach_notifications';
+  static const String logout = 'coach_logout';
+
+  /// Not coach-specific — the website marks the profile entry `alwaysShow`, so
+  /// it is never filtered out even when the slug is absent.
+  static const String profile = 'profile';
 }
 
 /// Single source of truth for "may the current user do X?".
@@ -49,17 +68,28 @@ class PermissionService {
 
   Set<String> _permissions = <String>{};
   String _role = '';
+  Map<String, Map<String, bool>> _matrix = const <String, Map<String, bool>>{};
 
   Set<String> get permissions => Set.unmodifiable(_permissions);
+
+  /// The object-form permissions (`{"students": {"view": true}}`) when the
+  /// backend sent them; empty for the legacy slug list.
+  Map<String, Map<String, bool>> get matrix => Map.unmodifiable(_matrix);
 
   String get role => _role;
 
   bool get isLoaded => _permissions.isNotEmpty || _role.isNotEmpty;
 
   /// Refreshes the cached permission set from a profile.
+  ///
+  /// Also hands the profile to [AppSession] — this is the one call every
+  /// sign-in path makes, so the session scope (role, assigned complex) stays
+  /// in step with the permissions without a second wiring point.
   void sync(ProfileModel? profile) {
     _permissions = (profile?.permissions ?? const <String>[]).toSet();
-    _role = profile?.normalisedRole ?? '';
+    _role = profile?.roleKey ?? '';
+    _matrix = profile?.permissionMatrix ?? const <String, Map<String, bool>>{};
+    AppSession.instance.adopt(profile);
   }
 
   /// Loads permissions from disk — used before the first profile fetch lands.
@@ -74,6 +104,20 @@ class PermissionService {
 
   bool hasPermission(String permission) => _permissions.contains(permission);
 
+  /// `can('students', 'view')` — the module/action form returned by
+  /// `/auth/login`. Falls back to the flat `module.action` slug so a profile
+  /// restored from an older cache answers identically. Never hard-codes a role.
+  bool can(String module, String action) {
+    final actions = _matrix[module];
+    if (actions != null) return actions[action] ?? false;
+    return _permissions.contains('$module.$action');
+  }
+
+  bool canView(String module) => can(module, 'view');
+  bool canCreate(String module) => can(module, 'create');
+  bool canEdit(String module) => can(module, 'edit');
+  bool canDelete(String module) => can(module, 'delete');
+
   bool hasAny(Iterable<String> required) => required.any(_permissions.contains);
 
   bool hasAll(Iterable<String> required) =>
@@ -82,6 +126,7 @@ class PermissionService {
   bool hasRole(String role) => _role == role.toLowerCase();
 
   bool get isAdmin => _role == 'admin';
+  bool get isComplexAdmin => _role == 'complex_admin';
   bool get isCoach => _role == 'coach';
   bool get isSecurity => _role == 'security';
   bool get isUser => _role == 'user' || _role.isEmpty;
@@ -89,5 +134,7 @@ class PermissionService {
   void clear() {
     _permissions = <String>{};
     _role = '';
+    _matrix = const <String, Map<String, bool>>{};
+    AppSession.instance.clear();
   }
 }
