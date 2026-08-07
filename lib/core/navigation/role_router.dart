@@ -5,6 +5,7 @@ import '../../dashboard/admin_screen.dart';
 import '../../dashboard/coach_screen.dart';
 import '../../dashboard/security_screen.dart';
 import '../../features/complex_admin/presentation/pages/complex_admin_dashboard_page.dart';
+import '../../features/employee/presentation/pages/employee_home_page.dart';
 
 /// Turns `data.user.role` into the screen that role starts on.
 ///
@@ -19,6 +20,7 @@ import '../../features/complex_admin/presentation/pages/complex_admin_dashboard_
 /// | `ADMIN`        | `AdminDashboardScreen`        |
 /// | `COMPLEX_ADMIN`| `ComplexAdminDashboardScreen` |
 /// | `COACH`        | `CoachHomeScreen`             |
+/// | `EMPLOYEE`     | `EmployeeHomeScreen`          |
 /// | `SECURITY`     | `SecurityGateScannerScreen`   |
 /// | anything else  | `CustomBottomNav` (student)   |
 class RoleRouter {
@@ -44,6 +46,8 @@ class RoleRouter {
         return const ComplexAdminDashboardScreen();
       case 'coach':
         return const CoachHomeScreen();
+      case 'employee':
+        return const EmployeeHomeScreen();
       case 'security':
         return const SecurityGateScannerScreen();
       case 'student':
