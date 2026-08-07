@@ -122,6 +122,99 @@ class AuthRepository {
     }
   }
 
+  /// `POST /auth/register` — quick sign-up.
+  ///
+  /// The response carries `accessToken` and `refreshToken` beside the new
+  /// user, so a successful sign-up **is** a signed-in session: the tokens are
+  /// stored and the profile cached exactly as [login] does, and the caller can
+  /// route straight into the app without asking for the password again.
+  ///
+  /// The `data.user` it returns is a thin one — id, name, email, role, phone —
+  /// with no `permissions`. `/auth/profile` is therefore re-read straight
+  /// after, so the session ends up with the same permission set a login would
+  /// have produced. A failure there is not fatal: the account exists and the
+  /// tokens are valid, and the next profile refresh will fill the gap.
+  Future<AuthResult> signUp({
+    required String name,
+    required String email,
+    required String password,
+    required String phoneNumber,
+  }) async {
+    final trimmedName = name.trim();
+    final trimmedEmail = email.trim();
+    final digits = phoneNumber.replaceAll(RegExp(r'\D'), '');
+
+    // Fail before the round trip rather than let the server reject a body it
+    // could never accept.
+    if (trimmedName.isEmpty) {
+      throw const ValidationException('Enter your name.');
+    }
+    if (!RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$').hasMatch(trimmedEmail)) {
+      throw const ValidationException('Enter a valid email address.');
+    }
+    if (digits.length != 10) {
+      throw const ValidationException(
+        'The phone number must be exactly 10 digits.',
+      );
+    }
+    if (password.length < 6) {
+      throw const ValidationException(
+        'The password must be at least 6 characters.',
+      );
+    }
+
+    try {
+      final response = await _api.post(
+        ApiEndpoints.register,
+        requiresAuth: false,
+        body: {
+          'name': trimmedName,
+          'email': trimmedEmail,
+          'password': password,
+          'phone_number': digits,
+        },
+      );
+
+      if (!response.isOk) {
+        return AuthResult.failure(
+          response.message ?? 'Sign up failed. Please try again.',
+        );
+      }
+
+      final payload = response.payload;
+
+      await _tokens.saveTokens(
+        accessToken: _text(payload['accessToken'] ?? payload['token']),
+        refreshToken: _text(payload['refreshToken']),
+      );
+
+      final userJson = response.objectAt('user') ?? payload;
+      var profile = ProfileModel.fromJson(Map<String, dynamic>.from(userJson));
+
+      await _cache.save(profile);
+      PermissionService.instance.sync(profile);
+
+      // The permissions the sign-up response leaves out.
+      try {
+        profile = await fetchProfile();
+      } on ApiException catch (e) {
+        AppLogger.debug(
+          'Signed up, but the profile read failed: ${e.message}',
+          name: 'Auth',
+        );
+      }
+
+      AppLogger.debug('Sign up succeeded for $trimmedEmail', name: 'Auth');
+      return AuthResult.success(profile);
+    } on ApiException catch (e) {
+      AppLogger.error('Sign up failed', name: 'Auth', error: e.message);
+      return AuthResult.failure(e.message, exception: e);
+    } catch (e, s) {
+      AppLogger.error('Sign up error', name: 'Auth', error: e, stackTrace: s);
+      return AuthResult.failure(AuthMessages.unknown);
+    }
+  }
+
   /// `POST /auth/google-login`
   ///
   /// [credential] is the Google **ID token** (`GoogleSignInAuthentication

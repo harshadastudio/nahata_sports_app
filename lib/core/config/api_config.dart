@@ -78,6 +78,14 @@ class ApiEndpoints {
   static const String login = '/auth/login';
   static const String googleLogin = '/auth/google-login';
   static const String registerStudent = '/students/register';
+
+  /// `POST /auth/register` — the quick account sign-up:
+  /// `{name, email, password, phone_number}`.
+  ///
+  /// Distinct from [registerStudent], which enrols a student against a sports
+  /// complex and needs far more of the form. This one creates the account and
+  /// returns a signed-in session straight away.
+  static const String register = '/auth/register';
   static const String studentMe = '/students/me';
   static const String refresh = '/auth/refresh';
   static const String profile = '/auth/profile';

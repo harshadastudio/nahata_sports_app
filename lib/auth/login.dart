@@ -333,6 +333,7 @@ import '../repositories/auth_repository.dart';
 // Role → screen routing now lives in `core/navigation/role_router.dart`, so the
 // individual dashboards are no longer imported here.
 import 'google_auth.dart';
+import 'signup.dart';
 // import 'package:google_sign_in/google_sign_in.dart';
 //
 // class LoginScreen extends StatefulWidget {
@@ -1548,6 +1549,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 20),
 
+                    // Two ways in, because they are for two different people:
+                    // Register is the full enrolment (sports complex, DOB,
+                    // photo) that a coaching student needs, while Sign Up is
+                    // the four-field `POST /auth/register` for somebody who
+                    // just wants an account to book a court.
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -1568,8 +1574,33 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ],
-          ),
-//
+                    ),
+                    const SizedBox(height: 8),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text("Just want to book a court? "),
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const SignUpScreen(),
+                              ),
+                            );
+                          },
+                          child: const Text(
+                            "Sign Up",
+                            style: TextStyle(
+                              color: brandBlue,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                   ],
                 ),
               ),
