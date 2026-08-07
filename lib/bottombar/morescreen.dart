@@ -2093,10 +2093,44 @@ class _YourPassScreenState extends State<YourPassScreen> {
     );
   }
 
+
+
 }
 
 
 // edit_profile_screen.dart
+
+/// The one-line explanation under a field this screen cannot write.
+///
+/// `PUT /auth/profile` accepts name, phone number, gender and blood group and
+/// nothing else, so the rest is shown disabled with the reason next to it —
+/// a field that looks editable and quietly discards the edit is the worse
+/// failure.
+class _ReadOnlyNote extends StatelessWidget {
+  const _ReadOnlyNote(this.message);
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.lock_outline_rounded, size: 12, color: Colors.grey[600]),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({Key? key}) : super(key: key);
@@ -2123,8 +2157,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String? selectedGender;
   String? selectedBloodGroup;
 
-  File? studentPhotoFile;
-  final ImagePicker _picker = ImagePicker();
+  /// The dropdowns' options, named once so the form and the value it loads
+  /// from the API can never disagree about the spelling.
+  static const List<String> _genderOptions = ['Male', 'Female', 'Other'];
+  static const List<String> _bloodGroupOptions = [
+    'A+',
+    'A-',
+    'B+',
+    'B-',
+    'O+',
+    'O-',
+    'AB+',
+    'AB-',
+  ];
 
   String? userId;
   bool isLoading = false;
@@ -2133,8 +2178,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   int? studentRecordId;
   String? avatarUrl;
 
-  // Simple validation regexes
-  final _emailReg = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+  // The email field is read-only now, so only the phone needs validating.
   final _phoneReg = RegExp(r'^\d{10}$');
 
   @override
@@ -2146,51 +2190,25 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _loadUserAndData() async {
     setState(() => isLoading = true);
 
-    final profile = await AuthRepository.instance.cachedProfile();
-    userId = profile?.id?.toString() ?? await AuthService.getUserId();
-
-    if (userId == null) {
-      setState(() => isLoading = false);
-      return;
-    }
-
-    // Seed the form from the live profile so the fields are populated even if
-    // the legacy detail endpoint is slow or unavailable.
-    if (profile != null) {
-      nameController.text = profile.name ?? '';
-      emailController.text = profile.email ?? '';
-      phoneController.text = profile.phoneNumber ?? '';
-      statusController.text = profile.status ?? '';
-    }
+    // Cached first so the form is never blank while the network call runs.
+    final cached = await AuthRepository.instance.cachedProfile();
+    userId = cached?.id?.toString() ?? await AuthService.getUserId();
+    if (cached != null) _applyProfile(cached);
 
     try {
-      // `GET /students/me` is the source of truth for the editor; the legacy
-      // `{userId}/edit` call below fills in the fields it does not carry.
+      // `GET /auth/profile` is the source of truth for this form: it owns
+      // every field the Save button writes back through `PUT /auth/profile`.
+      final profile = await AuthRepository.instance.fetchProfile();
+      userId ??= profile.id?.toString();
+      _applyProfile(profile);
+
+      // `GET /students/me` only fills in what the account profile has no
+      // concept of — the student record id and the coaching status.
       final student = await UserRepository.instance.fetchMyStudentProfile();
       if (student != null) _applyStudentProfile(student);
-
-      final data = await UserRepository.instance.fetchUserDetails(userId!);
-
-      if (data == null) {
-        if (student == null) _showSnack("Failed to load profile");
-      } else {
-        // Only fill what /students/me left empty — it wins on shared fields.
-        _fillIfEmpty(nameController, data['name']);
-        _fillIfEmpty(emailController, data['email']);
-        _fillIfEmpty(phoneController, data['phone']);
-        _fillIfEmpty(dobController, data['dob']);
-        _fillIfEmpty(statusController, data['status']);
-        _fillIfEmpty(createdController, data['created_at']);
-        _fillIfEmpty(updatedController, data['updated_at']);
-
-        // Fields the new API does not expose at all.
-        idCardController.text = data['id_card']?.toString() ?? '';
-        coachIdController.text = data['coach_id']?.toString() ?? '';
-
-        selectedGender ??= _clean(data['gender']);
-        selectedBloodGroup ??= _clean(data['blood_group']);
-      }
     } on ApiException catch (e) {
+      // The cached profile is already on screen, so this is a warning rather
+      // than an empty form.
       _showSnack(e.message);
     } catch (e) {
       debugPrint("Error fetching profile: $e");
@@ -2198,6 +2216,39 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
+  }
+
+  /// Seeds the form from `GET /auth/profile`.
+  void _applyProfile(ProfileModel profile) {
+    nameController.text = profile.name ?? nameController.text;
+    emailController.text = profile.email ?? emailController.text;
+    phoneController.text = profile.phoneNumber ?? phoneController.text;
+    dobController.text = profile.dob ?? dobController.text;
+    statusController.text = profile.status ?? statusController.text;
+    createdController.text = profile.joinDate ?? createdController.text;
+    updatedController.text =
+        _clean(profile.extras['updatedAt']) ?? updatedController.text;
+
+    // The dropdowns match on the exact option text, so a value the list does
+    // not contain is dropped rather than left selected-but-invisible.
+    selectedGender = _matchOption(profile.gender, _genderOptions);
+    selectedBloodGroup = _matchOption(profile.bloodGroup, _bloodGroupOptions);
+
+    avatarUrl = profile.imageUrl ?? avatarUrl;
+  }
+
+  /// Case-insensitive match against a dropdown's options.
+  ///
+  /// The API returns whatever was last written — `"o"` for a blood group the
+  /// form offers as `"O+"` — so an unrecognised value leaves the dropdown
+  /// empty instead of throwing on a value that is not in `items`.
+  static String? _matchOption(String? value, List<String> options) {
+    final text = _clean(value);
+    if (text == null) return null;
+    for (final option in options) {
+      if (option.toLowerCase() == text.toLowerCase()) return option;
+    }
+    return null;
   }
 
   /// Seeds the form from `GET /students/me`.
@@ -2209,8 +2260,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       emailController.text = user.email ?? emailController.text;
       phoneController.text = user.phoneNumber ?? phoneController.text;
       dobController.text = user.dob ?? dobController.text;
-      selectedGender = user.gender ?? selectedGender;
-      selectedBloodGroup = user.bloodGroup ?? selectedBloodGroup;
+      // Through [_matchOption] like every other write: this endpoint returns
+      // the same free-text values as the profile ("o" for a blood group the
+      // form offers as "O+"), and a value the dropdown has no item for is an
+      // assertion failure, not a blank field.
+      selectedGender =
+          _matchOption(user.gender, _genderOptions) ?? selectedGender;
+      selectedBloodGroup =
+          _matchOption(user.bloodGroup, _bloodGroupOptions) ??
+              selectedBloodGroup;
       avatarUrl = user.avatar ?? avatarUrl;
     }
 
@@ -2221,106 +2279,36 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     studentRecordId = student.id;
   }
 
-  /// Writes [value] into [controller] only when the field is still empty.
-  void _fillIfEmpty(TextEditingController controller, Object? value) {
-    if (controller.text.trim().isNotEmpty) return;
-    final text = _clean(value);
-    if (text != null) controller.text = text;
-  }
-
   static String? _clean(Object? value) {
     final text = value?.toString().trim();
     return (text == null || text.isEmpty || text == 'null') ? null : text;
   }
 
-  Future<void> _pickStudentPhoto() async {
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => SafeArea(
-        child: Wrap(children: [
-          ListTile(
-            leading: const Icon(Icons.photo_library),
-            title: const Text('Choose from gallery'),
-            onTap: () async {
-              Navigator.pop(context);
-              final XFile? f =
-              await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-              if (f != null) setState(() => studentPhotoFile = File(f.path));
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.camera_alt),
-            title: const Text('Take a photo'),
-            onTap: () async {
-              Navigator.pop(context);
-              final XFile? f =
-              await _picker.pickImage(source: ImageSource.camera, imageQuality: 80);
-              if (f != null) setState(() => studentPhotoFile = File(f.path));
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.close),
-            title: const Text('Cancel'),
-            onTap: () => Navigator.pop(context),
-          )
-        ]),
-      ),
-    );
-  }
-
-  Future<void> _pickDob() async {
-    DateTime initial = DateTime.tryParse(dobController.text) ?? DateTime(2005, 1, 1);
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
-    );
-    if (picked != null) {
-      dobController.text = DateFormat('yyyy-MM-dd').format(picked);
-      setState(() {});
-    }
-  }
-
+  /// `PUT /auth/profile`
+  ///
+  /// Sends exactly the four fields the endpoint owns — name, phone number,
+  /// gender and blood group. Email, date of birth and the photo are shown
+  /// read-only in the form because this endpoint cannot write them; sending
+  /// them anyway would look like an edit that silently never took.
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (userId == null) {
-      _showSnack("User not found");
-      return;
-    }
 
     setState(() => isLoading = true);
 
     try {
-      await UserRepository.instance.updateUser(
-        userId: userId!,
-        fields: {
-          'name': nameController.text.trim(),
-          'email': emailController.text.trim(),
-          'phone': phoneController.text.trim(),
-          // 'parent_contact': parentController.text.trim(),
-          'dob': dobController.text.trim(),
-          'gender': selectedGender ?? '',
-          'blood_group': selectedBloodGroup ?? '',
-          'coach_id': coachIdController.text.trim(),
-          'status': statusController.text.trim(),
-          // passcode required by backend earlier — keep or remove if not needed
-          'passcode': '123',
-        },
-        files: [
-          if (studentPhotoFile != null)
-            UploadFile(
-              field: 'student_photo',
-              path: studentPhotoFile!.path,
-              contentType: lookupMime(studentPhotoFile!.path) ?? 'image/jpeg',
-            ),
-        ],
+      final profile = await AuthRepository.instance.updateProfile(
+        name: nameController.text.trim(),
+        phoneNumber: phoneController.text.trim(),
+        gender: selectedGender,
+        bloodGroup: selectedBloodGroup,
       );
 
-      // Re-read /auth/profile so Home, More and the dashboard all pick up the
-      // new name/photo without any manual refresh.
+      // The call already returned the updated user and cached it, so the
+      // provider is handed that copy rather than made to re-fetch it. Home,
+      // More and the dashboards repaint from this.
       if (mounted) {
-        await context.read<ProfileProvider>().profileUpdated();
+        context.read<ProfileProvider>().adopt(profile);
+        _applyProfile(profile);
       }
 
       _showDialogAndBack("Profile updated successfully");
@@ -2398,23 +2386,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             child: Row(
               children: [
-                GestureDetector(
-                  onTap: _pickStudentPhoto,
-                  child: CircleAvatar(
-                    radius: 38,
-                    backgroundColor: Colors.grey[200],
-                    // A freshly picked photo wins; otherwise show the avatar
-                    // that came back from /students/me.
-                    backgroundImage: studentPhotoFile != null
-                        ? FileImage(studentPhotoFile!) as ImageProvider
-                        : (avatarUrl != null && avatarUrl!.isNotEmpty
-                            ? NetworkImage(avatarUrl!)
-                            : null),
-                    child: (studentPhotoFile == null &&
-                            (avatarUrl == null || avatarUrl!.isEmpty))
-                        ? const Icon(Icons.camera_alt, size: 30, color: Colors.black54)
-                        : null,
-                  ),
+                // Not tappable: there is nowhere to upload a picked photo to,
+                // so offering the picker would only lose the user's choice.
+                CircleAvatar(
+                  radius: 38,
+                  backgroundColor: Colors.grey[200],
+                  backgroundImage: (avatarUrl != null && avatarUrl!.isNotEmpty)
+                      ? NetworkImage(avatarUrl!)
+                      : null,
+                  child: (avatarUrl == null || avatarUrl!.isEmpty)
+                      ? const Icon(
+                          Icons.person_outline,
+                          size: 30,
+                          color: Colors.black54,
+                        )
+                      : null,
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -2427,14 +2413,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       Text('ID: ${idCardController.text.isEmpty ? "N/A" : idCardController.text}',
                           style: theme.textTheme.bodySmall),
                       const SizedBox(height: 8),
-                      ElevatedButton(
-                        onPressed: _pickStudentPhoto,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2E3192),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        child: const Text('Change Photo',style: TextStyle(color: Colors.white),),
-                      )
+                      // No "Change Photo": `PUT /auth/profile` takes no image,
+                      // so the button had nowhere to send one.
+                      const _ReadOnlyNote(
+                        'Contact support to change your photo.',
+                      ),
                     ],
                   ),
                 )
@@ -2455,29 +2438,32 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             child: Form(
               key: _formKey,
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Name (read-only)
+                // Name — editable: `PUT /auth/profile` accepts it.
                 _label('Full Name'),
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: nameController,
-                  readOnly: true,
-                  decoration: _outlined('Full Name', enabled: false),
+                  decoration: _outlined('Full Name'),
+                  textCapitalization: TextCapitalization.words,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Name required';
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 12),
 
-                // Email
+                // Email — read-only: this endpoint cannot change it, and an
+                // editable box that silently discards the edit is worse than
+                // a disabled one.
                 _label('Email'),
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: emailController,
-                  decoration: _outlined('Email'),
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Email required';
-                    if (!_emailReg.hasMatch(v.trim())) return 'Enter a valid email';
-                    return null;
-                  },
+                  readOnly: true,
+                  enabled: false,
+                  decoration: _outlined('Email', enabled: false),
                 ),
+                const _ReadOnlyNote('Contact support to change your email.'),
                 const SizedBox(height: 12),
 
                 // Phone
@@ -2511,19 +2497,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 // ),
                 // const SizedBox(height: 12),
 
-                // DOB
+                // DOB — read-only for the same reason as the email, and with
+                // no validator: the profile returns it null for most accounts,
+                // and a required field nobody can fill would block Save
+                // outright.
                 _label('Date of Birth'),
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: dobController,
                   readOnly: true,
-                  onTap: _pickDob,
-                  decoration: _outlined('YYYY-MM-DD', suffix: Icons.calendar_today),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'DOB required';
-                    return null;
-                  },
+                  enabled: false,
+                  decoration: _outlined('Not set', enabled: false),
                 ),
+                const _ReadOnlyNote('Contact support to change your date of birth.'),
                 const SizedBox(height: 12),
 
                 // Gender & Blood group row
@@ -2533,9 +2519,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       _label('Gender'),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<String>(
-                        value: selectedGender,
+                        // Normalised here as well as at every write: a value
+                        // with no matching item is an assertion failure that
+                        // takes the whole screen down, so the render path
+                        // refuses to pass one through.
+                        value: _matchOption(selectedGender, _genderOptions),
                         decoration: _outlined('Gender'),
-                        items: ['Male', 'Female', 'Other']
+                        items: _genderOptions
                             .map((g) => DropdownMenuItem(value: g, child: Text(g)))
                             .toList(),
                         onChanged: (v) => setState(() => selectedGender = v),
@@ -2552,9 +2542,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       _label('Blood Group'),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<String>(
-                        value: selectedBloodGroup,
+                        value: _matchOption(
+                          selectedBloodGroup,
+                          _bloodGroupOptions,
+                        ),
                         decoration: _outlined('Blood Group'),
-                        items: ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
+                        items: _bloodGroupOptions
                             .map((g) => DropdownMenuItem(value: g, child: Text(g)))
                             .toList(),
                         onChanged: (v) => setState(() => selectedBloodGroup = v),

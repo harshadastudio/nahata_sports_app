@@ -1636,12 +1636,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           return;
                         }
 
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => Screen(studentId: userId),
-                          ),
-                        );
+                        // await Navigator.push(
+                        //   context,
+                        //   MaterialPageRoute(
+                        //     builder: (_) => Screen(studentId: userId),
+                        //   ),
+                        // );
 
                         // 🔁 After returning, pick up any profile edits.
                         await provider.refresh(force: true);

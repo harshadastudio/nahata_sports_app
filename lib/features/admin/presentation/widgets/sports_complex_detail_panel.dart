@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/admin_log.dart';
 import '../../domain/entities/admin_sports_complex.dart';
 import '../state/view_state.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 import 'admin_states.dart';
@@ -164,29 +165,31 @@ class SportsComplexDetailPanel extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () =>
-                      onAction(SportsComplexAction.delete, complex),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: const Text('Delete'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: tokens.danger,
-                    side: BorderSide(
-                      color: tokens.danger.withValues(alpha: 0.4),
+              if (AdminAccess.canDelete(AdminModules.sportsComplex))
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        onAction(SportsComplexAction.delete, complex),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Delete'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: tokens.danger,
+                      side: BorderSide(
+                        color: tokens.danger.withValues(alpha: 0.4),
+                      ),
                     ),
                   ),
                 ),
-              ),
               const SizedBox(width: AdminTokens.space3),
-              Expanded(
-                flex: 2,
-                child: FilledButton.icon(
-                  onPressed: () => onAction(SportsComplexAction.edit, complex),
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('Edit complex'),
+              if (AdminAccess.canEdit(AdminModules.sportsComplex))
+                Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                    onPressed: () => onAction(SportsComplexAction.edit, complex),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Edit complex'),
+                  ),
                 ),
-              ),
             ],
           ),
         ),

@@ -171,6 +171,16 @@ class _UsersPageState extends State<UsersPage> {
     UserRowAction action,
     AdminUser user,
   ) async {
+    // Last line of defence for the write actions: even if some path still
+    // offered one, `data.user.permissions` decides whether it runs.
+    if (!(action == UserRowAction.view) &&
+        !AdminAccess.can(
+          AdminModules.users,
+          action == UserRowAction.delete ? 'delete' : 'edit',
+        )) {
+      return;
+    }
+
     switch (action) {
       case UserRowAction.view:
         // Not awaited: the panel opens straight away showing the row we already

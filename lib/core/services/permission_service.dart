@@ -86,10 +86,15 @@ class PermissionService {
   /// sign-in path makes, so the session scope (role, assigned complex) stays
   /// in step with the permissions without a second wiring point.
   void sync(ProfileModel? profile) {
-    _permissions = (profile?.permissions ?? const <String>[]).toSet();
-    _role = profile?.roleKey ?? '';
-    _matrix = profile?.permissionMatrix ?? const <String, Map<String, bool>>{};
     AppSession.instance.adopt(profile);
+
+    // Read back rather than using [profile] directly: the session carries
+    // forward the permission matrix and assigned complex that a slimmer
+    // `/auth/profile` payload leaves out.
+    final effective = AppSession.instance.profile;
+    _permissions = (effective?.permissions ?? const <String>[]).toSet();
+    _role = effective?.roleKey ?? '';
+    _matrix = effective?.permissionMatrix ?? const <String, Map<String, bool>>{};
   }
 
   /// Loads permissions from disk — used before the first profile fetch lands.

@@ -232,6 +232,16 @@ class _CourtsPageState extends State<CourtsPage> {
     CourtAction action,
     Court court,
   ) async {
+    // Last line of defence for the write actions: even if some path still
+    // offered one, `data.user.permissions` decides whether it runs.
+    if (!(action == CourtAction.view) &&
+        !AdminAccess.can(
+          AdminModules.courts,
+          action == CourtAction.delete ? 'delete' : 'edit',
+        )) {
+      return;
+    }
+
     switch (action) {
       case CourtAction.view:
         // Not awaited: the panel opens with the row already in hand and fills

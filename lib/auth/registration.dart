@@ -5,13 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../bottombar/Custombottombar.dart';
+import '../core/navigation/role_router.dart';
 import '../models/sports_complex_model.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/sports_complex_repository.dart';
-import '../dashboard/admin_screen.dart';
-import '../dashboard/coach_screen.dart';
-import '../dashboard/security_screen.dart';
+// The per-role dashboards are reached through `RoleRouter`, not imported here.
 import 'google_auth.dart';
 import 'login.dart';
 
@@ -144,20 +142,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   //     return false;
   //   }
   // }
-  Widget _getScreenForRole(String role) {
-    switch (role.toLowerCase()) {
-      case 'admin':
-        return AdminDashboardScreen();
-      case 'coach':
-        return CoachHomeScreen();
-      case 'security':
-        return SecurityGateScannerScreen();
-      case 'student':
-      case 'user':
-      default:
-        return CustomBottomNav();
-    }
-  }
+  /// Same role → screen table as the login screen, so a Google sign-up that
+  /// returns an existing staff account lands on that account's own console.
+  Widget _getScreenForRole(String role) => RoleRouter.screenFor(role);
   @override
   Widget build(BuildContext context) {
     return Scaffold(

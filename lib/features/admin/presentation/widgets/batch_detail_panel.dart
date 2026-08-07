@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/batch.dart';
 import '../state/view_state.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 import 'admin_states.dart';
@@ -167,28 +168,30 @@ class BatchDetailPanel extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => onAction(BatchAction.delete, batch),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: const Text('Delete'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: tokens.danger,
-                    side: BorderSide(
-                      color: tokens.danger.withValues(alpha: 0.4),
+              if (AdminAccess.canDelete(AdminModules.batches))
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => onAction(BatchAction.delete, batch),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Delete'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: tokens.danger,
+                      side: BorderSide(
+                        color: tokens.danger.withValues(alpha: 0.4),
+                      ),
                     ),
                   ),
                 ),
-              ),
               const SizedBox(width: AdminTokens.space3),
-              Expanded(
-                flex: 2,
-                child: FilledButton.icon(
-                  onPressed: () => onAction(BatchAction.edit, batch),
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('Edit batch'),
+              if (AdminAccess.canEdit(AdminModules.batches))
+                Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                    onPressed: () => onAction(BatchAction.edit, batch),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Edit batch'),
+                  ),
                 ),
-              ),
             ],
           ),
         ),

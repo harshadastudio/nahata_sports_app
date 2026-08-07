@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/court.dart';
 import '../state/courts_controller.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 
@@ -760,7 +761,7 @@ class CourtRowActions extends StatelessWidget {
             ),
             padding: EdgeInsets.zero,
             onSelected: (action) => onAction(action, court),
-            itemBuilder: (context) => [
+            itemBuilder: (context) => <PopupMenuEntry<CourtAction>>[
               _item(
                 CourtAction.view,
                 Icons.visibility_outlined,
@@ -803,7 +804,12 @@ class CourtRowActions extends StatelessWidget {
                 'Delete court',
                 tokens.danger,
               ),
-            ],
+            ]
+              .gatedBy(
+                AdminModules.courts,
+                isDestructive: (a) => a == CourtAction.delete,
+                isReadOnly: (a) => a == CourtAction.view,
+              ),
           ),
         ],
       ),

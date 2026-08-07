@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/entities/coupon.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 import 'coupon_chips.dart';
@@ -354,7 +355,7 @@ class CouponRowActions extends StatelessWidget {
         icon: Icon(Icons.more_horiz_rounded, size: 18, color: tokens.textMuted),
         padding: EdgeInsets.zero,
         onSelected: (action) => onAction(action, coupon),
-        itemBuilder: (context) => [
+        itemBuilder: (context) => <PopupMenuEntry<CouponAction>>[
           _item(
             CouponAction.view,
             Icons.visibility_outlined,
@@ -386,7 +387,12 @@ class CouponRowActions extends StatelessWidget {
             'Delete coupon',
             tokens.danger,
           ),
-        ],
+        ]
+              .gatedBy(
+                AdminModules.coupons,
+                isDestructive: (a) => a == CouponAction.delete,
+                isReadOnly: (a) => a == CouponAction.view || a == CouponAction.copyCode,
+              ),
       ),
     );
   }

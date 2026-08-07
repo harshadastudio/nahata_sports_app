@@ -198,6 +198,16 @@ class _SportsComplexesPageState extends State<SportsComplexesPage> {
     SportsComplexAction action,
     AdminSportsComplex complex,
   ) async {
+    // Last line of defence for the write actions: even if some path still
+    // offered one, `data.user.permissions` decides whether it runs.
+    if (!(action == SportsComplexAction.view) &&
+        !AdminAccess.can(
+          AdminModules.sportsComplex,
+          action == SportsComplexAction.delete ? 'delete' : 'edit',
+        )) {
+      return;
+    }
+
     switch (action) {
       case SportsComplexAction.view:
         // Not awaited: the panel opens with the row already in hand and fills

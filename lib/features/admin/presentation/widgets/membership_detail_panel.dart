@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/membership.dart';
 import '../state/view_state.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 import 'admin_states.dart';
@@ -141,13 +142,14 @@ class MembershipDetailPanel extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AdminTokens.space3),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => onAction(MembershipAction.edit, membership),
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('Edit'),
+              if (AdminAccess.canEdit(AdminModules.memberships))
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => onAction(MembershipAction.edit, membership),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Edit'),
+                  ),
                 ),
-              ),
             ],
           ),
         ),

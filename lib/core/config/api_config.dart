@@ -400,6 +400,21 @@ class ApiEndpoints {
   /// `POST /event-passes/upload-image` — multipart, field `image`.
   static const String eventPassUploadImage = '/event-passes/upload-image';
 
+  // Event gate scanning (the security console).
+
+  /// `GET /event-passes/{eventPassId}/scan-stats` — `{totalPasses,
+  /// totalPersons, in, out, notScanned, currentlyInside}`.
+  static String eventPassScanStats(Object id) => '/event-passes/$id/scan-stats';
+
+  /// `POST /event-passes/scan` — `{passCode, scanType: In|Out}`. **Changes the
+  /// pass**: the first scan records the entry and the second the exit.
+  static const String eventPassScan = '/event-passes/scan';
+
+  /// `POST /event-passes/members/{memberId}/scan` — one member of a group
+  /// booking, `{scanType: In|Out}`.
+  static String eventPassMemberScan(Object memberId) =>
+      '/event-passes/members/$memberId/scan';
+
   /// `GET /event-passes/bookings/all?page=&limit=` — every event booking.
   static const String allEventBookings = '/event-passes/bookings/all';
 
@@ -601,6 +616,24 @@ class ApiEndpoints {
 
   /// `PATCH /courts/{courtId}/show-on-frontend`
   static String courtVisibility(Object id) => '/courts/$id/show-on-frontend';
+
+  // Court-booking gate scanning (the security console).
+
+  /// `GET /courts/bookings/scan-stats?courtId=&date=` — the same six counters
+  /// the event scanner reports.
+  static const String courtBookingScanStats = '/courts/bookings/scan-stats';
+
+  /// `POST /courts/bookings/scan` — `{passCode, scanType: In|Out}`.
+  static const String courtBookingScan = '/courts/bookings/scan';
+
+  /// `POST /courts/members/{bookingMemberId}/scan` — one member of a booking.
+  static String courtBookingMemberScan(Object memberId) =>
+      '/courts/members/$memberId/scan';
+
+  /// `POST /courts/bookings/{bookingId}/members/{bookingMemberId}/send-email`
+  /// — `{recipientEmail}`.
+  static String courtBookingMemberEmail(Object bookingId, Object memberId) =>
+      '/courts/bookings/$bookingId/members/$memberId/send-email';
 
   /// `GET | POST /courts/{courtId}/slots`
   static String courtSlots(Object courtId) => '/courts/$courtId/slots';

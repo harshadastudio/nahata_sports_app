@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/booking.dart';
 import '../state/bookings_controller.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 import 'booking_chips.dart';
@@ -489,7 +490,7 @@ class BookingRowActions extends StatelessWidget {
             ),
             padding: EdgeInsets.zero,
             onSelected: (action) => onAction(action, booking),
-            itemBuilder: (context) => [
+            itemBuilder: (context) => <PopupMenuEntry<BookingAction>>[
               _item(
                 BookingAction.edit,
                 Icons.edit_outlined,
@@ -534,7 +535,12 @@ class BookingRowActions extends StatelessWidget {
                 'Delete booking',
                 tokens.danger,
               ),
-            ],
+            ]
+              .gatedBy(
+                AdminModules.bookings,
+                isDestructive: (a) => a == BookingAction.delete,
+                isReadOnly: (a) => a == BookingAction.view,
+              ),
           ),
         ],
       ),

@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 
 import '../../../../admin/notifications/admin_notification.dart';
 import '../../../../core/services/session_manager.dart';
+import '../../../security/presentation/pages/security_dashboard_page.dart';
+import '../../../security/presentation/state/security_dashboard_controller.dart';
 import '../../core/admin_log.dart';
 import '../../data/repositories/admin_repository_impl.dart';
 import '../../data/repositories/batch_repository_impl.dart';
@@ -190,6 +192,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   late final VisitorPassesController _visitorPasses;
   late final CouponsController _coupons;
   late final CoachingEnquiriesController _coachingEnquiries;
+  late final SecurityDashboardController _security;
 
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _searchController = TextEditingController();
@@ -252,6 +255,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _coachingEnquiries = CoachingEnquiriesController(
       _coachingEnquiryRepository,
     );
+    // Shares the visitor-pass repository with the Visitor Passes module: the
+    // Security Dashboard reads the same passes, and writes through the same
+    // controller, so the two can never disagree about a pass's status.
+    _security = SecurityDashboardController(_visitorPassRepository);
 
     _loadNotifications();
     _notificationTimer = Timer.periodic(
@@ -264,6 +271,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void dispose() {
     _notificationTimer?.cancel();
     _searchController.dispose();
+    _security.dispose();
     _coachingEnquiries.dispose();
     _coupons.dispose();
     _visitorPasses.dispose();
@@ -392,6 +400,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ChangeNotifierProvider<CouponsController>.value(value: _coupons),
         ChangeNotifierProvider<CoachingEnquiriesController>.value(
           value: _coachingEnquiries,
+        ),
+        ChangeNotifierProvider<SecurityDashboardController>.value(
+          value: _security,
         ),
       ],
       child: Consumer<AdminShellController>(
@@ -573,6 +584,14 @@ class _Shell extends StatelessWidget {
         return const EventPassesPage();
       case AdminDestination.visitorPasses:
         return const VisitorPassesPage();
+      case AdminDestination.securityDashboard:
+        // Builder: the Reports jump needs a context below the shell's
+        // providers, which `_pageFor` does not itself receive.
+        return Builder(
+          builder: (context) => SecurityDashboardPage(
+            onOpenReports: () => openReportsModule(context),
+          ),
+        );
       case AdminDestination.memberships:
         return const MembershipsPage();
       case AdminDestination.bookings:

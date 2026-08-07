@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 import '../../../../core/services/permission_service.dart';
 import 'admin_destination.dart';
 
@@ -54,6 +56,7 @@ extension AdminDestinationPermission on AdminDestination {
         return AdminModules.courts;
       case AdminDestination.events:
       case AdminDestination.visitorPasses:
+      case AdminDestination.securityDashboard:
       case AdminDestination.bookings:
         return AdminModules.bookings;
       case AdminDestination.memberships:
@@ -102,4 +105,68 @@ class AdminAccess {
   /// Whether a sidebar entry / page may be opened at all.
   static bool allows(AdminDestination destination) =>
       canView(destination.permissionModule);
+}
+
+/// Permission filtering for a row's "more actions" menu.
+///
+/// Written as an extension so a table gates its menu by appending one call to
+/// the list it already builds — the entries themselves stay where they are:
+///
+/// ```dart
+/// itemBuilder: (context) => <PopupMenuEntry<SportAction>>[
+///   _item(SportAction.edit, …),
+///   _item(SportAction.delete, …),
+/// ].gatedBy(
+///   AdminModules.sports,
+///   isDestructive: (a) => a == SportAction.delete,
+///   isReadOnly: (a) => a == SportAction.view,
+/// ),
+/// ```
+///
+/// Read-only entries always survive; destructive ones need
+/// `permissions.<module>.delete` and everything else `…edit`.
+extension AdminMenuGate<T> on List<PopupMenuEntry<T>> {
+  List<PopupMenuEntry<T>> gatedBy(
+    String module, {
+    bool Function(T value)? isDestructive,
+    bool Function(T value)? isReadOnly,
+  }) {
+    final mayEdit = AdminAccess.canEdit(module);
+    final mayDelete = AdminAccess.canDelete(module);
+    if (mayEdit && mayDelete) return this;
+
+    final kept = <PopupMenuEntry<T>>[];
+    for (final entry in this) {
+      if (entry is PopupMenuItem<T>) {
+        final value = entry.value;
+        if (value != null && !(isReadOnly?.call(value) ?? false)) {
+          final allowed =
+              (isDestructive?.call(value) ?? false) ? mayDelete : mayEdit;
+          if (!allowed) continue;
+        }
+      }
+      kept.add(entry);
+    }
+
+    return _withoutStrandedDividers(kept);
+  }
+
+  /// Removes the separators left hanging when the entries around them were
+  /// filtered out — leading, trailing and doubled-up.
+  static List<PopupMenuEntry<T>> _withoutStrandedDividers<T>(
+    List<PopupMenuEntry<T>> entries,
+  ) {
+    final tidy = <PopupMenuEntry<T>>[];
+    for (final entry in entries) {
+      final isDivider = entry is PopupMenuDivider;
+      if (isDivider && (tidy.isEmpty || tidy.last is PopupMenuDivider)) {
+        continue;
+      }
+      tidy.add(entry);
+    }
+    while (tidy.isNotEmpty && tidy.last is PopupMenuDivider) {
+      tidy.removeLast();
+    }
+    return tidy;
+  }
 }

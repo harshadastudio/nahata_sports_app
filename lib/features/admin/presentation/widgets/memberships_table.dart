@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/membership.dart';
 import '../state/memberships_controller.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 import 'membership_status_chip.dart';
@@ -623,7 +624,7 @@ class MembershipRowActions extends StatelessWidget {
             ),
             padding: EdgeInsets.zero,
             onSelected: (action) => onAction(action, membership),
-            itemBuilder: (context) => [
+            itemBuilder: (context) => <PopupMenuEntry<MembershipAction>>[
               _item(
                 MembershipAction.edit,
                 Icons.edit_outlined,
@@ -703,7 +704,12 @@ class MembershipRowActions extends StatelessWidget {
                 'Delete membership',
                 tokens.danger,
               ),
-            ],
+            ]
+              .gatedBy(
+                AdminModules.memberships,
+                isDestructive: (a) => a == MembershipAction.delete,
+                isReadOnly: (a) => a == MembershipAction.view,
+              ),
           ),
         ],
       ),

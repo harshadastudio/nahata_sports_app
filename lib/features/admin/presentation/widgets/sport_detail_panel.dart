@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/sport.dart';
 import '../state/view_state.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 import 'admin_states.dart';
@@ -176,28 +177,30 @@ class SportDetailPanel extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => onAction(SportAction.delete, sport),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: const Text('Delete'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: tokens.danger,
-                    side: BorderSide(
-                      color: tokens.danger.withValues(alpha: 0.4),
+              if (AdminAccess.canDelete(AdminModules.sports))
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => onAction(SportAction.delete, sport),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Delete'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: tokens.danger,
+                      side: BorderSide(
+                        color: tokens.danger.withValues(alpha: 0.4),
+                      ),
                     ),
                   ),
                 ),
-              ),
               const SizedBox(width: AdminTokens.space3),
-              Expanded(
-                flex: 2,
-                child: FilledButton.icon(
-                  onPressed: () => onAction(SportAction.edit, sport),
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('Edit sport'),
+              if (AdminAccess.canEdit(AdminModules.sports))
+                Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                    onPressed: () => onAction(SportAction.edit, sport),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Edit sport'),
+                  ),
                 ),
-              ),
             ],
           ),
         ),

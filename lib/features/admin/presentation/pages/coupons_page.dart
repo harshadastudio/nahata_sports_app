@@ -173,6 +173,16 @@ class _CouponsPageState extends State<CouponsPage> {
     CouponAction action,
     AdminCoupon coupon,
   ) async {
+    // Last line of defence for the write actions: even if some path still
+    // offered one, `data.user.permissions` decides whether it runs.
+    if (!(action == CouponAction.view || action == CouponAction.copyCode) &&
+        !AdminAccess.can(
+          AdminModules.coupons,
+          action == CouponAction.delete ? 'delete' : 'edit',
+        )) {
+      return;
+    }
+
     switch (action) {
       case CouponAction.view:
         controller.select(coupon);
