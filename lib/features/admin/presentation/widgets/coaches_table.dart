@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../domain/entities/coach.dart';
 import '../../domain/entities/sport.dart';
 import '../state/coaches_controller.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 
@@ -896,7 +897,7 @@ class CoachRowActions extends StatelessWidget {
             ),
             padding: EdgeInsets.zero,
             onSelected: (action) => onAction(action, coach),
-            itemBuilder: (context) => [
+            itemBuilder: (context) => <PopupMenuEntry<CoachAction>>[
               _item(
                 CoachAction.edit,
                 Icons.edit_outlined,
@@ -940,7 +941,12 @@ class CoachRowActions extends StatelessWidget {
                 'Delete coach',
                 tokens.danger,
               ),
-            ],
+            ]
+              .gatedBy(
+                AdminModules.coaches,
+                isDestructive: (a) => a == CoachAction.delete,
+                isReadOnly: (a) => a == CoachAction.view,
+              ),
           ),
         ],
       ),

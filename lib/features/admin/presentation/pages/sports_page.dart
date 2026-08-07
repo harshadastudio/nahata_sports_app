@@ -201,6 +201,16 @@ class _SportsPageState extends State<SportsPage> {
     SportAction action,
     Sport sport,
   ) async {
+    // Last line of defence for the write actions: even if some path still
+    // offered one, `data.user.permissions` decides whether it runs.
+    if (!(action == SportAction.view) &&
+        !AdminAccess.can(
+          AdminModules.sports,
+          action == SportAction.delete ? 'delete' : 'edit',
+        )) {
+      return;
+    }
+
     switch (action) {
       case SportAction.view:
         // Not awaited: the panel opens with the row already in hand and fills

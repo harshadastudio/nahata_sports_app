@@ -281,6 +281,72 @@ class AuthRepository {
     return profile;
   }
 
+  /// `PUT /auth/profile` — the four fields the endpoint accepts.
+  ///
+  /// Body: `{name, phone_number, gender, blood_group}`. Nothing else is sent;
+  /// the endpoint ignores unknown keys, and sending a field it does not own
+  /// (email, status, dob) would imply an edit that never takes.
+  ///
+  /// A null argument means "leave this alone" and is omitted from the body,
+  /// so a screen that edits only the blood group does not blank the gender.
+  ///
+  /// The response carries the updated user twice — at the top level and again
+  /// under `data` — so [ApiResponse.objectAt] finds it either way. The result
+  /// is cached and pushed through [PermissionService] exactly like a fresh
+  /// [fetchProfile], which is what makes Home, More and the dashboards pick up
+  /// the new name without a manual reload.
+  Future<ProfileModel> updateProfile({
+    String? name,
+    String? phoneNumber,
+    String? gender,
+    String? bloodGroup,
+  }) async {
+    final body = <String, dynamic>{
+      if (name != null) 'name': name.trim(),
+      if (phoneNumber != null) 'phone_number': phoneNumber.trim(),
+      if (gender != null) 'gender': gender.trim(),
+      if (bloodGroup != null) 'blood_group': bloodGroup.trim(),
+    };
+
+    if (body.isEmpty) {
+      throw const ValidationException('There is nothing to update.');
+    }
+
+    // Fail before the round trip rather than let the server reject a body it
+    // could never accept.
+    final trimmedName = body['name'] as String?;
+    if (trimmedName != null && trimmedName.isEmpty) {
+      throw const ValidationException('Enter your name.');
+    }
+
+    final phone = body['phone_number'] as String?;
+    if (phone != null && phone.replaceAll(RegExp(r'\D'), '').length != 10) {
+      throw const ValidationException(
+        'The phone number must be exactly 10 digits.',
+      );
+    }
+
+    final response = await _api.put(ApiEndpoints.profile, body: body);
+    if (!response.isOk) throw response.toException();
+
+    final userJson = response.objectAt('user') ?? response.payload;
+    if (userJson.isEmpty) {
+      throw const ParseException(
+        'The profile was updated but the server did not return it.',
+      );
+    }
+
+    final profile = ProfileModel.fromJson(Map<String, dynamic>.from(userJson));
+    await _cache.save(profile);
+    PermissionService.instance.sync(profile);
+
+    AppLogger.debug(
+      'Profile updated (${body.keys.join(', ')})',
+      name: 'Auth',
+    );
+    return profile;
+  }
+
   /// Profile from disk/memory — instant, no network.
   Future<ProfileModel?> cachedProfile() => _cache.read();
 

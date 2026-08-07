@@ -101,6 +101,14 @@ enum AdminDestination {
     subtitle: 'Gate passes, QR scanning and visitor entry',
     ready: true,
   ),
+  securityDashboard(
+    label: 'Security Dashboard',
+    shortLabel: 'Security',
+    icon: Icons.shield_outlined,
+    activeIcon: Icons.shield_rounded,
+    subtitle: 'Gate activity, who is on site and visitor trends',
+    ready: true,
+  ),
   memberships(
     label: 'Memberships',
     icon: Icons.card_membership_outlined,

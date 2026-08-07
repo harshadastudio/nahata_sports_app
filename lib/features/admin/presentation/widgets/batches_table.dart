@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/batch.dart';
 import '../state/batches_controller.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 import 'occupancy_ring.dart';
@@ -748,7 +749,7 @@ class BatchRowActions extends StatelessWidget {
             ),
             padding: EdgeInsets.zero,
             onSelected: (action) => onAction(action, batch),
-            itemBuilder: (context) => [
+            itemBuilder: (context) => <PopupMenuEntry<BatchAction>>[
               _item(
                 BatchAction.edit,
                 Icons.edit_outlined,
@@ -779,7 +780,12 @@ class BatchRowActions extends StatelessWidget {
                 'Delete batch',
                 tokens.danger,
               ),
-            ],
+            ]
+              .gatedBy(
+                AdminModules.batches,
+                isDestructive: (a) => a == BatchAction.delete,
+                isReadOnly: (a) => a == BatchAction.view,
+              ),
           ),
         ],
       ),

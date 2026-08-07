@@ -321,10 +321,16 @@ class _ViewgameState extends State<Viewgame>
                     ),
                   );
                 },
+                // The grid fixes this card's height (childAspectRatio), so the
+                // column has to fit whatever it is given: the padding is tight
+                // enough for a two-line title, and the title itself is
+                // Flexible so a long name or a large system text scale
+                // ellipsises instead of overflowing the cell.
                 child: Padding(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
                         width: 60,
@@ -340,15 +346,19 @@ class _ViewgameState extends State<Viewgame>
                               : const Icon(Icons.sports, color: Colors.white, size: 30),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                      const SizedBox(height: 8),
+                      Flexible(
+                        child: Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
-                        textAlign: TextAlign.center,
                       ),
                     ],
                   ),

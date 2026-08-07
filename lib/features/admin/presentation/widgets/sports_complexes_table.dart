@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/admin_sports_complex.dart';
 import '../state/sports_complexes_controller.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 
@@ -707,7 +708,7 @@ class SportsComplexRowActions extends StatelessWidget {
             ),
             padding: EdgeInsets.zero,
             onSelected: (action) => onAction(action, complex),
-            itemBuilder: (context) => [
+            itemBuilder: (context) => <PopupMenuEntry<SportsComplexAction>>[
               _item(
                 SportsComplexAction.edit,
                 Icons.edit_outlined,
@@ -738,7 +739,12 @@ class SportsComplexRowActions extends StatelessWidget {
                 'Delete complex',
                 tokens.danger,
               ),
-            ],
+            ]
+              .gatedBy(
+                AdminModules.sportsComplex,
+                isDestructive: (a) => a == SportsComplexAction.delete,
+                isReadOnly: (a) => a == SportsComplexAction.view,
+              ),
           ),
         ],
       ),

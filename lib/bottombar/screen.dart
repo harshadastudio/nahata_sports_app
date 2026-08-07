@@ -28,6 +28,13 @@ class _ScreenState extends State<Screen> {
 
   ProfileProvider? _profileProvider;
 
+  /// The account profile, from `GET /auth/profile`.
+  ///
+  /// The legacy `/student_dashboard` call below owns the fee, the gate pass
+  /// and the attendance — none of which the account profile knows about — so
+  /// the two are shown side by side rather than one replacing the other.
+  ProfileModel? _profile;
+
   @override
   void initState() {
     super.initState();
@@ -61,8 +68,18 @@ class _ScreenState extends State<Screen> {
 
   /// 🔹 Load user data, then fetch student and attendance data
   Future<List<StudentData>> _initAndFetch() async {
-    final ProfileModel? profile =
-        await AuthRepository.instance.cachedProfile();
+    // Cached first so the card paints immediately, then the live read.
+    ProfileModel? profile = await AuthRepository.instance.cachedProfile();
+    if (mounted && profile != null) setState(() => _profile = profile);
+
+    try {
+      profile = await AuthRepository.instance.fetchProfile();
+      if (mounted) setState(() => _profile = profile);
+    } on ApiException catch (e) {
+      // The cached copy is already on screen; the student data below is what
+      // this page is really for, so a stale profile is not worth failing over.
+      debugPrint("Profile fetch failed: ${e.message}");
+    }
 
     final id = widget.studentId.isNotEmpty
         ? widget.studentId

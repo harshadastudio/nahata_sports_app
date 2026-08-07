@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../navigation/admin_destination.dart';
+import '../navigation/admin_module.dart';
 import '../state/admin_shell_controller.dart';
 import '../theme/admin_theme.dart';
 import 'roles_permissions_page.dart';
@@ -22,12 +23,19 @@ class UsersModulePage extends StatelessWidget {
     final tokens = AdminTheme.of(context);
     final narrow = MediaQuery.sizeOf(context).width < AdminTokens.mobileMax;
 
+    // Roles & Permissions is its own permission module. Without it the module
+    // is just the users list, and the switcher would offer a tab that opens
+    // nothing the account may see.
+    final showRoles = AdminAccess.canView(AdminModules.roles);
+    final tab = showRoles ? shell.usersTab : UsersTab.users;
+
     return ColoredBox(
       color: tokens.canvas,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
+          if (showRoles)
+            Container(
             padding: EdgeInsets.fromLTRB(
               narrow ? AdminTokens.space4 : AdminTokens.space6,
               AdminTokens.space4,
@@ -39,7 +47,7 @@ class UsersModulePage extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: _TabSwitcher(
-                current: shell.usersTab,
+                current: tab,
                 onSelect: shell.openUsersTab,
                 stretch: narrow,
               ),
@@ -47,11 +55,11 @@ class UsersModulePage extends StatelessWidget {
           ),
           Expanded(
             child: IndexedStack(
-              index: shell.usersTab.index,
+              index: tab.index,
               sizing: StackFit.expand,
               children: [
                 UsersPage(showInlineSearch: showInlineSearch),
-                const RolesPermissionsPage(),
+                if (showRoles) const RolesPermissionsPage(),
               ],
             ),
           ),

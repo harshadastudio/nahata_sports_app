@@ -197,6 +197,16 @@ class _CoachesPageState extends State<CoachesPage> {
     CoachAction action,
     Coach coach,
   ) async {
+    // Last line of defence for the write actions: even if some path still
+    // offered one, `data.user.permissions` decides whether it runs.
+    if (!(action == CoachAction.view) &&
+        !AdminAccess.can(
+          AdminModules.coaches,
+          action == CoachAction.delete ? 'delete' : 'edit',
+        )) {
+      return;
+    }
+
     switch (action) {
       case CoachAction.view:
         // Not awaited: the panel opens with the row already in hand and fills

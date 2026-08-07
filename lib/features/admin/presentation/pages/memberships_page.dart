@@ -215,6 +215,16 @@ class _MembershipsPageState extends State<MembershipsPage> {
     MembershipAction action,
     Membership membership,
   ) async {
+    // Last line of defence for the write actions: even if some path still
+    // offered one, `data.user.permissions` decides whether it runs.
+    if (!(action == MembershipAction.view) &&
+        !AdminAccess.can(
+          AdminModules.memberships,
+          action == MembershipAction.delete ? 'delete' : 'edit',
+        )) {
+      return;
+    }
+
     switch (action) {
       case MembershipAction.view:
         unawaited(controller.openMembership(membership));

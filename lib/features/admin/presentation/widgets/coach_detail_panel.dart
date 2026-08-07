@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/coach.dart';
 import '../state/view_state.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 import 'admin_states.dart';
@@ -146,28 +147,30 @@ class CoachDetailPanel extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => onAction(CoachAction.delete, coach),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: const Text('Delete'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: tokens.danger,
-                    side: BorderSide(
-                      color: tokens.danger.withValues(alpha: 0.4),
+              if (AdminAccess.canDelete(AdminModules.coaches))
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => onAction(CoachAction.delete, coach),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Delete'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: tokens.danger,
+                      side: BorderSide(
+                        color: tokens.danger.withValues(alpha: 0.4),
+                      ),
                     ),
                   ),
                 ),
-              ),
               const SizedBox(width: AdminTokens.space3),
-              Expanded(
-                flex: 2,
-                child: FilledButton.icon(
-                  onPressed: () => onAction(CoachAction.edit, coach),
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('Edit coach'),
+              if (AdminAccess.canEdit(AdminModules.coaches))
+                Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                    onPressed: () => onAction(CoachAction.edit, coach),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Edit coach'),
+                  ),
                 ),
-              ),
             ],
           ),
         ),

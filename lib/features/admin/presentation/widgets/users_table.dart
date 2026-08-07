@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/admin_user.dart';
 import '../state/admin_users_controller.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 import 'admin_badges.dart';
@@ -525,7 +526,7 @@ class _RowActions extends StatelessWidget {
         icon: Icon(Icons.more_horiz_rounded, size: 18, color: tokens.textMuted),
         padding: EdgeInsets.zero,
         onSelected: (action) => onAction(action, user),
-        itemBuilder: (context) => [
+        itemBuilder: (context) => <PopupMenuEntry<UserRowAction>>[
           _menuItem(
             context,
             UserRowAction.view,
@@ -548,7 +549,12 @@ class _RowActions extends StatelessWidget {
             'Delete user',
             tokens.danger,
           ),
-        ],
+        ]
+              .gatedBy(
+                AdminModules.users,
+                isDestructive: (a) => a == UserRowAction.delete,
+                isReadOnly: (a) => a == UserRowAction.view,
+              ),
       ),
     );
   }

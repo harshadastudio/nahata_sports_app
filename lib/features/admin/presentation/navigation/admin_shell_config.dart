@@ -82,6 +82,7 @@ class AdminShellConfig {
           AdminDestination.bookings,
           AdminDestination.events,
           AdminDestination.visitorPasses,
+          AdminDestination.securityDashboard,
         ],
       ),
       AdminNavSection(
@@ -132,6 +133,7 @@ class AdminShellConfig {
             AdminDestination.batches,
             AdminDestination.courts,
             AdminDestination.bookings,
+            AdminDestination.securityDashboard,
           ],
         ),
         AdminNavSection(

@@ -84,6 +84,9 @@ class ProfileModel {
     this.department,
     this.assignedSports = const <String>[],
     this.assignedLocation,
+    this.gender,
+    this.bloodGroup,
+    this.dob,
     this.permissions = const <String>[],
     this.permissionMatrix = const <String, Map<String, bool>>{},
     this.profilePicture,
@@ -113,6 +116,14 @@ class ProfileModel {
   final String? department;
   final List<String> assignedSports;
   final String? assignedLocation;
+
+  /// The three fields `PUT /auth/profile` accepts alongside name and phone.
+  ///
+  /// [dob] reads `dob` or `date_of_birth` — the profile payload carries both
+  /// keys and only one of them is ever filled.
+  final String? gender;
+  final String? bloodGroup;
+  final String? dob;
   /// Flat permission slugs. Two shapes reach this list:
   ///
   ///  * the legacy `/auth/profile` form — `["user_dashboard", …]`, used
@@ -240,6 +251,11 @@ class ProfileModel {
           _asStringList(json['assigned_sports'] ?? json['assignedSports']),
       assignedLocation:
           _asString(json['assigned_location'] ?? json['assignedLocation']),
+      gender: _asString(json['gender']),
+      bloodGroup: _asString(json['blood_group'] ?? json['bloodGroup']),
+      dob: _asString(
+        json['dob'] ?? json['date_of_birth'] ?? json['dateOfBirth'],
+      ),
       permissions: matrix.isEmpty
           ? _asStringList(json['permissions'])
           : _flattenPermissions(matrix),
@@ -274,6 +290,9 @@ class ProfileModel {
     'department',
     'assigned_sports', 'assignedSports',
     'assigned_location', 'assignedLocation',
+    'gender',
+    'blood_group', 'bloodGroup',
+    'dob', 'date_of_birth', 'dateOfBirth',
     'permissions',
     'profile_picture', 'profilePicture',
     'photo',
@@ -299,6 +318,9 @@ class ProfileModel {
         'department': department,
         'assigned_sports': assignedSports,
         'assigned_location': assignedLocation,
+        'gender': gender,
+        'blood_group': bloodGroup,
+        'dob': dob,
         // Written back in whichever shape it arrived, so a cached profile
         // re-parses into exactly the same object.
         'permissions': permissionMatrix.isEmpty ? permissions : permissionMatrix,
@@ -353,6 +375,9 @@ class ProfileModel {
     String? department,
     List<String>? assignedSports,
     String? assignedLocation,
+    String? gender,
+    String? bloodGroup,
+    String? dob,
     List<String>? permissions,
     Map<String, Map<String, bool>>? permissionMatrix,
     String? profilePicture,
@@ -378,6 +403,9 @@ class ProfileModel {
       department: department ?? this.department,
       assignedSports: assignedSports ?? this.assignedSports,
       assignedLocation: assignedLocation ?? this.assignedLocation,
+      gender: gender ?? this.gender,
+      bloodGroup: bloodGroup ?? this.bloodGroup,
+      dob: dob ?? this.dob,
       permissions: permissions ?? this.permissions,
       permissionMatrix: permissionMatrix ?? this.permissionMatrix,
       profilePicture: profilePicture ?? this.profilePicture,
@@ -398,6 +426,9 @@ class ProfileModel {
           other.sportComplex == sportComplex &&
           other.status == status &&
           other.membershipType == membershipType &&
+          other.gender == gender &&
+          other.bloodGroup == bloodGroup &&
+          other.dob == dob &&
           other.profilePicture == profilePicture &&
           other.avatar == avatar &&
           other.totalBookings == totalBookings &&
@@ -414,6 +445,9 @@ class ProfileModel {
         sportComplex,
         status,
         membershipType,
+        gender,
+        bloodGroup,
+        dob,
         profilePicture,
         avatar,
         totalBookings,

@@ -235,6 +235,16 @@ class _BookingsPageState extends State<BookingsPage> {
     BookingAction action,
     Booking booking,
   ) async {
+    // Last line of defence for the write actions: even if some path still
+    // offered one, `data.user.permissions` decides whether it runs.
+    if (!(action == BookingAction.view) &&
+        !AdminAccess.can(
+          AdminModules.bookings,
+          action == BookingAction.delete ? 'delete' : 'edit',
+        )) {
+      return;
+    }
+
     switch (action) {
       case BookingAction.view:
         unawaited(controller.openBooking(booking));

@@ -83,7 +83,44 @@ class AppSession {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  void adopt(ProfileModel? profile) => _profile = profile;
+  /// Replaces the session, carrying forward what a thinner payload omits.
+  ///
+  /// `POST /auth/login` returns the permission object and the assigned complex;
+  /// `GET /auth/profile` — which runs on every start-up and refresh — returns
+  /// neither. Overwriting blindly would quietly widen a complex admin's console
+  /// the moment the app refreshed, so for the **same user** an absent matrix or
+  /// complex keeps the value already held. A payload that *does* carry them
+  /// always wins, which is what makes a server-side revocation take effect.
+  void adopt(ProfileModel? profile) {
+    if (profile == null) {
+      _profile = null;
+      return;
+    }
+
+    final previous = _profile;
+    final sameUser =
+        previous != null && previous.id != null && previous.id == profile.id;
+
+    var next = profile;
+
+    if (sameUser &&
+        next.permissionMatrix.isEmpty &&
+        previous.permissionMatrix.isNotEmpty) {
+      next = next.copyWith(
+        permissions: previous.permissions,
+        permissionMatrix: previous.permissionMatrix,
+      );
+    }
+
+    if (sameUser && next.sportComplex == null && previous.sportComplex != null) {
+      next = next.copyWith(
+        sportComplex: previous.sportComplex,
+        sportComplexId: next.sportComplexId ?? previous.sportComplexId,
+      );
+    }
+
+    _profile = next;
+  }
 
   void clear() => _profile = null;
 }

@@ -6,18 +6,14 @@ import '../../domain/entities/visitor_pass.dart';
 import '../state/view_state.dart';
 import '../state/visitor_passes_controller.dart';
 import '../theme/admin_theme.dart';
+import '../utils/visitor_pass_actions.dart';
 import '../utils/visitor_pass_sharing.dart';
 import '../widgets/admin_dialogs.dart';
 import '../widgets/admin_states.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/pagination_bar.dart';
-import '../widgets/visitor_pass_created_sheet.dart';
 import '../widgets/visitor_pass_detail_panel.dart';
-import '../widgets/visitor_pass_email_dialog.dart';
-import '../widgets/visitor_pass_form_dialog.dart';
-import '../widgets/visitor_pass_result_sheet.dart';
 import '../widgets/visitor_passes_table.dart';
-import 'visitor_pass_scanner_page.dart';
 
 /// Visitor Passes: the list, the gate scanner, and the pass lifecycle.
 class VisitorPassesPage extends StatefulWidget {
@@ -88,7 +84,7 @@ class _VisitorPassesPageState extends State<VisitorPassesPage> {
             _Toolbar(
               controller: controller,
               searchController: _search,
-              onAdd: () => _openForm(context, controller),
+              onAdd: () => VisitorPassActions.generate(context, controller),
               onScan: () => _openScanner(context, controller),
             ),
             const SizedBox(height: AdminTokens.space4),
@@ -105,7 +101,8 @@ class _VisitorPassesPageState extends State<VisitorPassesPage> {
                         child: _Body(
                           controller: controller,
                           isMobile: isMobile,
-                          onAdd: () => _openForm(context, controller),
+                          onAdd: () =>
+                              VisitorPassActions.generate(context, controller),
                           onAction: (action, pass) =>
                               _handleAction(context, controller, action, pass),
                         ),
@@ -161,7 +158,20 @@ class _VisitorPassesPageState extends State<VisitorPassesPage> {
 
   // ---------------------------------------------------------------------------
   // Actions
+  //
+  // The flows themselves live in [VisitorPassActions] — the Security Dashboard
+  // offers the same six, and one gate must not behave differently from another.
   // ---------------------------------------------------------------------------
+
+  /// Opens the camera scanner, then refreshes: statuses will have moved on
+  /// while it was up.
+  Future<void> _openScanner(
+    BuildContext context,
+    VisitorPassesController controller,
+  ) async {
+    if (!await VisitorPassActions.openScanner(context, controller)) return;
+    await controller.refresh();
+  }
 
   Future<void> _handleAction(
     BuildContext context,
@@ -176,76 +186,31 @@ class _VisitorPassesPageState extends State<VisitorPassesPage> {
           await _showDetailSheet(context, controller);
         }
       case VisitorPassAction.checkIn:
-        await _scan(context, controller, pass, VisitorScanType.checkIn);
+        await VisitorPassActions.scan(
+          context,
+          controller,
+          pass,
+          VisitorScanType.checkIn,
+        );
       case VisitorPassAction.checkOut:
-        await _scan(context, controller, pass, VisitorScanType.checkOut);
+        await VisitorPassActions.scan(
+          context,
+          controller,
+          pass,
+          VisitorScanType.checkOut,
+        );
       case VisitorPassAction.share:
         _reportOutcome(context, await VisitorPassSharing.share(pass));
       case VisitorPassAction.whatsapp:
         _reportOutcome(context, await VisitorPassSharing.shareToWhatsApp(pass));
       case VisitorPassAction.email:
-        await _sendEmail(context, controller, pass);
+        await VisitorPassActions.sendEmail(context, controller, pass);
       case VisitorPassAction.delete:
-        await _confirmDelete(context, controller, pass);
+        await VisitorPassActions.confirmDelete(context, controller, pass);
     }
   }
 
-  /// Records a leg of the visit from the list, without the camera — the pass is
-  /// already identified, so the code is all `/verify` needs.
-  Future<void> _scan(
-    BuildContext context,
-    VisitorPassesController controller,
-    VisitorPass pass,
-    VisitorScanType scanType,
-  ) async {
-    final code = (pass.passCode ?? '').trim();
-    if (code.isEmpty) {
-      AdminFeedback.error(
-        context,
-        'This pass has no code, so it cannot be scanned.',
-      );
-      return;
-    }
 
-    try {
-      final result = await controller.verify(
-        passCode: code,
-        scanType: scanType,
-      );
-      if (!context.mounted) return;
-
-      await VisitorPassResultSheet.show(
-        context,
-        result: result,
-        passCode: code,
-      );
-
-      // The list row was patched in place; the open panel is re-read so its
-      // timestamps come from the server rather than being inferred.
-      if (controller.selected != null) {
-        await controller.reloadSelected();
-      }
-    } catch (error) {
-      if (!context.mounted) return;
-      AdminFeedback.error(context, _messageOf(error));
-    }
-  }
-
-  Future<void> _openScanner(
-    BuildContext context,
-    VisitorPassesController controller,
-  ) async {
-    await VisitorPassScannerPage.push(
-      context,
-      onVerify: (code, type) =>
-          controller.verify(passCode: code, scanType: type),
-      onLookup: controller.lookup,
-    );
-
-    // Statuses will have moved on while the scanner was open.
-    if (!context.mounted) return;
-    await controller.refresh();
-  }
 
   Future<void> _showDetailSheet(
     BuildContext context,
@@ -307,117 +272,8 @@ class _VisitorPassesPageState extends State<VisitorPassesPage> {
     ).whenComplete(controller.clearSelection);
   }
 
-  Future<void> _openForm(
-    BuildContext context,
-    VisitorPassesController controller,
-  ) async {
-    // The picker needs its options before the dialog is useful.
-    if (controller.complexes.isEmpty && !controller.complexesState.isLoading) {
-      await controller.loadComplexes();
-    }
-    if (!context.mounted) return;
 
-    final created = await VisitorPassFormDialog.show(
-      context,
-      complexes: controller.complexes,
-      complexesState: controller.complexesState,
-      onReloadComplexes: () => controller.loadComplexes(refresh: true),
-      onSubmit: controller.create,
-    );
 
-    if (created == null || !context.mounted) return;
-
-    AdminFeedback.success(
-      context,
-      'Visitor pass generated for ${created.displayName}.',
-    );
-
-    await VisitorPassCreatedSheet.show(
-      context,
-      pass: created,
-      onShareOutcome: (outcome) => _reportOutcome(context, outcome),
-      onEmail: () => _sendEmail(context, controller, created),
-    );
-  }
-
-  Future<void> _sendEmail(
-    BuildContext context,
-    VisitorPassesController controller,
-    VisitorPass pass,
-  ) async {
-    final message = await VisitorPassEmailDialog.show(
-      context,
-      pass: pass,
-      onSubmit: (email, name) => controller.sendEmail(
-        pass: pass,
-        recipientEmail: email,
-        recipientName: name,
-      ),
-    );
-
-    if (message == null || !context.mounted) return;
-    AdminFeedback.success(context, message);
-  }
-
-  Future<void> _confirmDelete(
-    BuildContext context,
-    VisitorPassesController controller,
-    VisitorPass pass,
-  ) async {
-    final tokens = AdminTheme.of(context);
-
-    final confirmed = await ConfirmDialog.show(
-      context,
-      title: 'Delete this visitor pass?',
-      message:
-          'Are you sure you want to delete this visitor pass? The QR stops '
-          'working immediately and the record is removed. This cannot be '
-          'undone.',
-      confirmLabel: 'Delete pass',
-      destructive: true,
-      detail: SolidCard(
-        padding: const EdgeInsets.all(AdminTokens.space3),
-        color: tokens.surfaceAlt,
-        radius: AdminTokens.radiusMd,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              pass.displayName,
-              style: TextStyle(
-                color: tokens.textPrimary,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            Text(
-              [
-                if ((pass.passCode ?? '').trim().isNotEmpty)
-                  pass.passCode!.trim(),
-                if (pass.statusLabel.isNotEmpty) pass.statusLabel,
-                if ((pass.sportComplexName ?? '').trim().isNotEmpty)
-                  pass.sportComplexName!.trim(),
-              ].join(' · '),
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: tokens.textMuted, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (!confirmed || !context.mounted) return;
-
-    try {
-      await controller.delete(pass);
-      if (!context.mounted) return;
-      AdminFeedback.success(context, 'The visitor pass was deleted.');
-    } catch (error) {
-      if (!context.mounted) return;
-      AdminFeedback.error(context, _messageOf(error));
-    }
-  }
 
   void _reportOutcome(BuildContext context, ShareOutcome outcome) {
     if (!context.mounted) return;
@@ -428,11 +284,6 @@ class _VisitorPassesPageState extends State<VisitorPassesPage> {
     }
   }
 
-  static String _messageOf(Object error) {
-    // ApiException.toString() carries the user-facing message.
-    final text = error.toString().replaceFirst('Exception: ', '');
-    return text.isEmpty ? 'Something went wrong. Please try again.' : text;
-  }
 }
 
 // -----------------------------------------------------------------------------

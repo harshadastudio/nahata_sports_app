@@ -237,6 +237,16 @@ class _BatchesPageState extends State<BatchesPage> {
     BatchAction action,
     AdminBatch batch,
   ) async {
+    // Last line of defence for the write actions: even if some path still
+    // offered one, `data.user.permissions` decides whether it runs.
+    if (!(action == BatchAction.view) &&
+        !AdminAccess.can(
+          AdminModules.batches,
+          action == BatchAction.delete ? 'delete' : 'edit',
+        )) {
+      return;
+    }
+
     switch (action) {
       case BatchAction.view:
         // Not awaited: the panel opens with the row already in hand and fills

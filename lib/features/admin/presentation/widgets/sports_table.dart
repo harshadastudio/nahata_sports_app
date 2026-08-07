@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/sport.dart';
 import '../state/sports_controller.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 
@@ -936,7 +937,7 @@ class SportRowActions extends StatelessWidget {
             ),
             padding: EdgeInsets.zero,
             onSelected: (action) => onAction(action, sport),
-            itemBuilder: (context) => [
+            itemBuilder: (context) => <PopupMenuEntry<SportAction>>[
               _item(
                 SportAction.edit,
                 Icons.edit_outlined,
@@ -973,7 +974,12 @@ class SportRowActions extends StatelessWidget {
                 'Delete sport',
                 tokens.danger,
               ),
-            ],
+            ]
+              .gatedBy(
+                AdminModules.sports,
+                isDestructive: (a) => a == SportAction.delete,
+                isReadOnly: (a) => a == SportAction.view,
+              ),
           ),
         ],
       ),
