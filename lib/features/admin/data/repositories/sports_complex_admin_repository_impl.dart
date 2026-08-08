@@ -1,6 +1,8 @@
+import '../../../../core/api/complex_scope.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../repositories/sports_complex_repository.dart';
 import '../../core/admin_log.dart';
+import '../catalogue_fetch.dart';
 import '../../domain/entities/admin_role.dart';
 import '../../domain/entities/admin_sports_complex.dart';
 import '../../domain/repositories/sports_complex_admin_repository.dart';
@@ -26,12 +28,26 @@ class SportsComplexAdminRepositoryImpl implements SportsComplexAdminRepository {
 
   @override
   Future<List<AdminSportsComplex>> fetchComplexes() async {
-    final response = await _remote.list();
-    if (!response.isOk) throw response.toException();
+    // The confirmed URL is `?page=1&limit=100`, but the module consumes the
+    // whole catalogue, so the pages are walked. See `fetchCatalogue`.
+    final complexes = await fetchCatalogue<AdminSportsComplex>(
+      request: (page) => _remote.list(page: page),
+      parse: (response) => AdminSportsComplexMapper.listFrom(response.data),
+      identity: (complex) => complex.id,
+      label: 'sports complexes',
+    );
 
-    final complexes = AdminSportsComplexMapper.listFrom(response.data);
-    AdminLog.data('Sports complexes → ${complexes.length}');
-    return complexes;
+    // A COMPLEX_ADMIN administers one venue. The route is the global catalogue
+    // for both roles — there is no confirmed venue-scoped endpoint — so the
+    // narrowing happens here, and it uses the session's own id, never a value
+    // chosen in the UI and never a constant.
+    final scoped = ComplexScope.restrict(complexes, (c) => c.id);
+
+    AdminLog.data(
+      'Sports complexes → ${scoped.length}'
+      '${scoped.length == complexes.length ? '' : ' (of ${complexes.length}, venue-scoped)'}',
+    );
+    return scoped;
   }
 
   @override

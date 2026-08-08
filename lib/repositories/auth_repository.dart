@@ -1,6 +1,7 @@
 import '../core/config/api_config.dart';
 import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
+import '../core/services/app_caches.dart';
 import '../core/services/permission_service.dart';
 import '../core/storage/profile_cache.dart';
 import '../core/storage/token_storage.dart';
@@ -85,6 +86,12 @@ class AuthRepository {
     required String email,
     required String password,
   }) async {
+    // A sign-in starts a new session, and the account may be a different one
+    // with a different role and a different scope. Anything the previous
+    // session cached goes first, so no ADMIN list can be showing when a
+    // COMPLEX_ADMIN's console builds.
+    await AppCaches.clear();
+
     try {
       final response = await _api.post(
         ApiEndpoints.login,
@@ -229,6 +236,10 @@ class AuthRepository {
     required String credential,
     String portal = 'main',
   }) async {
+    // Same reason as [login]: a new session must not inherit the last one's
+    // caches.
+    await AppCaches.clear();
+
     try {
       final response = await _api.post(
         ApiEndpoints.googleLogin,
@@ -479,6 +490,13 @@ class AuthRepository {
     await _tokens.clear();
     await _cache.clear();
     PermissionService.instance.clear();
+
+    // Role, permissions and the assigned complex go with the profile above.
+    // This drops what a singleton would otherwise carry into the next session —
+    // the venue catalogue and the selected ground — so an ADMIN's data cannot
+    // surface in a COMPLEX_ADMIN's console, or the other way round.
+    await AppCaches.clear();
+
     AppLogger.debug('Session cleared', name: 'Auth');
   }
 

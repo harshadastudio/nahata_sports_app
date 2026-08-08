@@ -78,6 +78,7 @@ class AdminShellConfig {
           AdminDestination.coaches,
           AdminDestination.batches,
           AdminDestination.coachingEnquiries,
+          AdminDestination.contactEnquiries,
           AdminDestination.courts,
           AdminDestination.bookings,
           AdminDestination.events,
@@ -121,7 +122,12 @@ class AdminShellConfig {
         AdminNavSection(
           title: 'Access control',
           destinations: [
-            AdminDestination.users,
+            // Users, Roles & Permissions is deliberately absent. Accounts and
+            // the role/permission matrix are administered estate-wide, so a
+            // venue admin does not manage them — and the permissions route
+            // itself only recognises EMPLOYEE, COACH, SECURITY and USER.
+            // Leaving it out of the console is stronger than gating it on a
+            // permission the payload may not carry.
             AdminDestination.sportsComplexes,
           ],
         ),
@@ -131,6 +137,9 @@ class AdminShellConfig {
             AdminDestination.sports,
             AdminDestination.coaches,
             AdminDestination.batches,
+            // Shared endpoint, JWT-scoped: a venue admin sees its own venue's
+            // contact enquiries through the same route the ADMIN console uses.
+            AdminDestination.contactEnquiries,
             AdminDestination.courts,
             AdminDestination.bookings,
             AdminDestination.securityDashboard,
@@ -171,11 +180,28 @@ class AdminShellConfig {
   /// The module to open on launch — [home] when it is permitted, otherwise the
   /// first entry the user does have, so the console never starts on a blocked
   /// screen.
+  ///
+  /// A module that is only visible because the backend never mentioned its
+  /// permission key (see `AdminModules.unconfirmed`) is passed over while
+  /// anything explicitly granted remains: falling open is enough reason to show
+  /// a module in the sidebar, but not enough to make it the screen the console
+  /// opens on. It is still used if it is genuinely all there is.
   AdminDestination get initialDestination {
     if (allows(home)) return home;
+
+    AdminDestination? fallback;
+
     for (final section in visibleSections) {
-      if (section.destinations.isNotEmpty) return section.destinations.first;
+      for (final destination in section.destinations) {
+        final module = destination.permissionModule;
+        if (module != null && AdminModules.isUnconfirmed(module)) {
+          fallback ??= destination;
+          continue;
+        }
+        return destination;
+      }
     }
-    return home;
+
+    return fallback ?? home;
   }
 }

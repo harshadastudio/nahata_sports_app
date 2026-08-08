@@ -1,3 +1,4 @@
+import '../../../../core/api/role_api_map.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_response.dart';
@@ -13,16 +14,31 @@ class CoachRemoteDataSource {
 
   final ApiClient _api;
 
-  /// `GET /coaches?status=` — the only filter the list route takes. A null
-  /// value is dropped by `ApiClient._buildUri`, so an unset filter is simply
-  /// absent rather than sent as `status=`.
-  Future<ApiResponse> list({AdminUserStatus? status}) {
+  /// `GET /coaches?page=1&limit=100` — the confirmed Coaches URL.
+  ///
+  /// This is the route a COMPLEX_ADMIN's Coaches screen calls, with its own
+  /// `Authorization: Bearer` token; the backend decides the authorised scope
+  /// from the JWT, so no `sportComplexId` is appended here. ADMIN's Coaches
+  /// module has always used the same route. It is **never** `/admin/employees`
+  /// — employees and coaches are different modules on different endpoints.
+  ///
+  /// `status` stays the one optional filter; a null value is dropped by
+  /// `ApiClient._buildUri`, so an unset filter is absent rather than `status=`.
+  Future<ApiResponse> list({
+    AdminUserStatus? status,
+    int page = 1,
+    int limit = 100,
+  }) {
+    final route = RoleApiMap.require(ApiModule.coaches);
+
     final query = <String, dynamic>{
+      'page': page,
+      'limit': limit,
       if (status != null) 'status': status.slug,
     };
 
-    AdminLog.call('GET ${ApiEndpoints.coaches} $query');
-    return _api.get(ApiEndpoints.coaches, query: query);
+    AdminLog.call('GET ${route.path} $query');
+    return _api.get(route.path, query: query);
   }
 
   /// `GET /coaches/sport/{sportId}` — the sport filter is a route of its own,

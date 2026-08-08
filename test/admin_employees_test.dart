@@ -411,7 +411,7 @@ void main() {
       expect(captured.queryParameters['sortOrder'], 'desc');
     });
 
-    test('an unset filter is never sent as an empty parameter', () async {
+    test('the confirmed URL shape is sent even with no filters set', () async {
       late Uri captured;
 
       ApiClient.instance.overrideHttpClient(
@@ -423,7 +423,19 @@ void main() {
 
       await EmployeeRepositoryImpl().fetchEmployees(page: 1, limit: 20);
 
-      for (final key in ['search', 'status', 'department', 'shift', 'sortBy']) {
+      expect(captured.path, endsWith('/admin/employees'));
+
+      // `search`, `department` and `status` ride along empty rather than being
+      // omitted — that is the captured ADMIN Employees URL,
+      // `?page=1&limit=10&search=&department=&status=`, and it is the shape
+      // proven against the live backend.
+      for (final key in ['search', 'department', 'status']) {
+        expect(captured.queryParameters[key], '', reason: key);
+      }
+
+      // `shift` and the sort keys are ours, not the captured URL's, so they
+      // stay absent until something sets them.
+      for (final key in ['shift', 'sortBy', 'sortOrder', 'sportComplexId']) {
         expect(captured.queryParameters.containsKey(key), isFalse, reason: key);
       }
     });

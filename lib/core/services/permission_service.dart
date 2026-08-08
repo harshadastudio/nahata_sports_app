@@ -1,5 +1,6 @@
 import '../../models/profile_model.dart';
 import '../storage/profile_cache.dart';
+import '../utils/app_logger.dart';
 import 'app_session.dart';
 
 /// Well-known permission slugs returned by `/auth/profile`.
@@ -53,6 +54,45 @@ class CoachPermissions {
   static const String profile = 'profile';
 }
 
+/// Permission slugs granted to the `EMPLOYEE` role, as returned by
+/// `/auth/profile` and `/permissions/employee`.
+///
+/// These mirror the `EMPLOYEE` block of the website's `roleMenuConfig.ts`
+/// one-for-one, so the app and the web dashboard hide and show the same
+/// sections for the same employee.
+///
+/// The six "operations" slugs at the bottom are also enforced **on the API**
+/// by `employeePermission.js`, so hiding those entries is not merely cosmetic —
+/// an ungranted employee gets a 403 from the server as well.
+class EmployeePermissions {
+  const EmployeePermissions._();
+
+  static const String dashboard = 'employee_dashboard';
+  static const String bookings = 'employee_bookings';
+  static const String payments = 'employee_payments';
+  static const String attendance = 'employee_attendance';
+  static const String coaches = 'employee_coaches';
+  static const String coachingEnquiries = 'employee_coaching_enquiries';
+  static const String feesApproval = 'employee_fees_approval';
+  static const String users = 'employee_users';
+  static const String notifications = 'employee_notifications';
+
+  // ── Complex-scoped operations modules. Each shows only the employee's own
+  //    sports complex; the API enforces that, not the UI. ────────────────────
+  static const String blockedSlots = 'employee_blocked_slots';
+  static const String feesManagement = 'employee_fees_management';
+  static const String sports = 'employee_sports';
+  static const String courts = 'employee_courts';
+  static const String slots = 'employee_slots';
+  static const String batches = 'employee_batches';
+
+  static const String logout = 'employee_logout';
+
+  /// Not employee-specific — the website marks the profile entry `alwaysShow`,
+  /// so it is never filtered out even when the slug is absent.
+  static const String profile = 'profile';
+}
+
 /// Single source of truth for "may the current user do X?".
 ///
 /// Permissions arrive with the profile; [sync] is called whenever the profile
@@ -95,6 +135,41 @@ class PermissionService {
     _permissions = (effective?.permissions ?? const <String>[]).toSet();
     _role = effective?.roleKey ?? '';
     _matrix = effective?.permissionMatrix ?? const <String, Map<String, bool>>{};
+
+    _traceMatrix();
+  }
+
+  /// Prints what the payload actually granted.
+  ///
+  /// The console's sidebar is built from this and nothing else, so "why is
+  /// module X missing?" is answered here rather than by reading widget code.
+  /// Module names and booleans only — no token, no identifier, nothing secret.
+  void _traceMatrix() {
+    if (!AppLogger.enabled) return;
+
+    if (_matrix.isEmpty) {
+      AppLogger.debug(
+        'Permissions for role "$_role": no module matrix in the payload '
+        '(${_permissions.length} legacy slugs) — console gating falls open',
+        name: 'Permissions',
+      );
+      return;
+    }
+
+    final granted = <String>[];
+    final denied = <String>[];
+    for (final entry in _matrix.entries) {
+      (entry.value['view'] == true ? granted : denied).add(entry.key);
+    }
+    granted.sort();
+    denied.sort();
+
+    AppLogger.debug(
+      'Permissions for role "$_role" → viewable: '
+      '${granted.isEmpty ? '(none)' : granted.join(', ')}'
+      '${denied.isEmpty ? '' : ' | view:false: ${denied.join(', ')}'}',
+      name: 'Permissions',
+    );
   }
 
   /// Loads permissions from disk — used before the first profile fetch lands.
@@ -133,6 +208,7 @@ class PermissionService {
   bool get isAdmin => _role == 'admin';
   bool get isComplexAdmin => _role == 'complex_admin';
   bool get isCoach => _role == 'coach';
+  bool get isEmployee => _role == 'employee';
   bool get isSecurity => _role == 'security';
   bool get isUser => _role == 'user' || _role.isEmpty;
 

@@ -1,3 +1,4 @@
+import '../../../../core/api/role_api_map.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_response.dart';
@@ -13,14 +14,21 @@ class SportsComplexRemoteDataSource {
 
   final ApiClient _api;
 
-  /// The catalogue. `limit` is sent because the shared venue repository has
-  /// always sent it against this route; a backend that ignores it is unharmed.
-  Future<ApiResponse> list() {
-    AdminLog.call('GET ${ApiEndpoints.sportsComplexes}');
-    return _api.get(
-      ApiEndpoints.sportsComplexes,
-      query: const <String, dynamic>{'limit': 200},
-    );
+  /// `GET /sports-complexes?page=1&limit=100` — the confirmed URL.
+  ///
+  /// The route is the global catalogue for both roles. A COMPLEX_ADMIN is
+  /// restricted to its assigned complex by [ComplexScope] on the way out, not
+  /// by a different endpoint — there is no confirmed venue-scoped route here,
+  /// and inventing one would 404.
+  ///
+  /// The console consumes this as a catalogue, so the repository walks the
+  /// pages; see `fetchCatalogue`.
+  Future<ApiResponse> list({int page = 1, int limit = 100}) {
+    final route = RoleApiMap.require(ApiModule.sportsComplexes);
+    final query = <String, dynamic>{'page': page, 'limit': limit};
+
+    AdminLog.call('GET ${route.path} $query');
+    return _api.get(route.path, query: query);
   }
 
   Future<ApiResponse> listByCity(String city) {

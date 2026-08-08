@@ -14,6 +14,7 @@ import '../../data/repositories/booking_repository_impl.dart';
 import '../../data/repositories/coach_repository_impl.dart';
 import '../../data/repositories/coaching_enquiry_repository_impl.dart';
 import '../../data/repositories/complex_admin_repository_impl.dart';
+import '../../data/repositories/contact_enquiry_repository_impl.dart';
 import '../../data/repositories/coupons_repository_impl.dart';
 import '../../data/repositories/court_repository_impl.dart';
 import '../../data/repositories/court_slot_repository_impl.dart';
@@ -32,6 +33,7 @@ import '../../domain/repositories/booking_repository.dart';
 import '../../domain/repositories/coach_repository.dart';
 import '../../domain/repositories/coaching_enquiry_repository.dart';
 import '../../domain/repositories/complex_admin_repository.dart';
+import '../../domain/repositories/contact_enquiry_repository.dart';
 import '../../domain/repositories/coupons_repository.dart';
 import '../../domain/repositories/court_repository.dart';
 import '../../domain/repositories/court_slot_repository.dart';
@@ -54,6 +56,7 @@ import '../state/bookings_controller.dart';
 import '../state/coaches_controller.dart';
 import '../state/coaching_enquiries_controller.dart';
 import '../state/complex_admins_controller.dart';
+import '../state/contact_enquiries_controller.dart';
 import '../state/coupons_controller.dart';
 import '../state/courts_controller.dart';
 import '../state/dashboard_controller.dart';
@@ -74,6 +77,7 @@ import 'bookings_page.dart';
 import 'coaches_page.dart';
 import 'coaching_enquiries_page.dart';
 import 'complex_admins_page.dart';
+import 'contact_enquiries_page.dart';
 import 'coupons_page.dart';
 import 'courts_page.dart';
 import 'dashboard_home_page.dart';
@@ -124,6 +128,7 @@ class AdminDashboardScreen extends StatefulWidget {
     this.visitorPassRepository,
     this.couponsRepository,
     this.coachingEnquiryRepository,
+    this.contactEnquiryRepository,
   });
 
   /// Branding, sidebar layout and module access for this console.
@@ -148,6 +153,7 @@ class AdminDashboardScreen extends StatefulWidget {
   final VisitorPassRepository? visitorPassRepository;
   final CouponsRepository? couponsRepository;
   final CoachingEnquiryRepository? coachingEnquiryRepository;
+  final ContactEnquiryRepository? contactEnquiryRepository;
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -172,6 +178,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   late final VisitorPassRepository _visitorPassRepository;
   late final CouponsRepository _couponsRepository;
   late final CoachingEnquiryRepository _coachingEnquiryRepository;
+  late final ContactEnquiryRepository _contactEnquiryRepository;
 
   late final AdminShellController _shell;
   late final DashboardController _dashboard;
@@ -192,6 +199,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   late final VisitorPassesController _visitorPasses;
   late final CouponsController _coupons;
   late final CoachingEnquiriesController _coachingEnquiries;
+  late final ContactEnquiriesController _contactEnquiries;
   late final SecurityDashboardController _security;
 
   final _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -233,6 +241,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _couponsRepository = widget.couponsRepository ?? CouponsRepositoryImpl();
     _coachingEnquiryRepository =
         widget.coachingEnquiryRepository ?? CoachingEnquiryRepositoryImpl();
+    _contactEnquiryRepository =
+        widget.contactEnquiryRepository ?? ContactEnquiryRepositoryImpl();
 
     _shell = AdminShellController(initial: widget.config.initialDestination);
     _dashboard = DashboardController(_dashboardRepository);
@@ -255,6 +265,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _coachingEnquiries = CoachingEnquiriesController(
       _coachingEnquiryRepository,
     );
+    _contactEnquiries = ContactEnquiriesController(_contactEnquiryRepository);
     // Shares the visitor-pass repository with the Visitor Passes module: the
     // Security Dashboard reads the same passes, and writes through the same
     // controller, so the two can never disagree about a pass's status.
@@ -272,6 +283,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _notificationTimer?.cancel();
     _searchController.dispose();
     _security.dispose();
+    _contactEnquiries.dispose();
     _coachingEnquiries.dispose();
     _coupons.dispose();
     _visitorPasses.dispose();
@@ -370,6 +382,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         Provider<CoachingEnquiryRepository>.value(
           value: _coachingEnquiryRepository,
         ),
+        Provider<ContactEnquiryRepository>.value(
+          value: _contactEnquiryRepository,
+        ),
         ChangeNotifierProvider<AdminShellController>.value(value: _shell),
         ChangeNotifierProvider<DashboardController>.value(value: _dashboard),
         ChangeNotifierProvider<AdminUsersController>.value(value: _users),
@@ -400,6 +415,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ChangeNotifierProvider<CouponsController>.value(value: _coupons),
         ChangeNotifierProvider<CoachingEnquiriesController>.value(
           value: _coachingEnquiries,
+        ),
+        ChangeNotifierProvider<ContactEnquiriesController>.value(
+          value: _contactEnquiries,
         ),
         ChangeNotifierProvider<SecurityDashboardController>.value(
           value: _security,
@@ -578,6 +596,8 @@ class _Shell extends StatelessWidget {
         return const BatchesPage();
       case AdminDestination.coachingEnquiries:
         return const CoachingEnquiriesPage();
+      case AdminDestination.contactEnquiries:
+        return const ContactEnquiriesPage();
       case AdminDestination.courts:
         return const CourtsPage();
       case AdminDestination.events:

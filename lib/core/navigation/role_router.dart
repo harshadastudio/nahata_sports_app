@@ -7,6 +7,7 @@ import '../../features/complex_admin/presentation/pages/complex_admin_dashboard_
 import '../../features/security/presentation/pages/security_console_screen.dart';
 import '../services/app_session.dart';
 import 'security_routes.dart';
+import '../../features/employee/presentation/pages/employee_home_page.dart';
 
 /// Turns `data.user.role` into the screen that role starts on.
 ///
@@ -22,6 +23,8 @@ import 'security_routes.dart';
 /// | `COMPLEX_ADMIN`| `ComplexAdminDashboardScreen` |
 /// | `COACH`        | `CoachHomeScreen`             |
 /// | `SECURITY`     | `SecurityConsoleScreen`       |
+/// | `EMPLOYEE`     | `EmployeeHomeScreen`          |
+/// | `SECURITY`     | `SecurityGateScannerScreen`   |
 /// | anything else  | `CustomBottomNav` (student)   |
 class RoleRouter {
   const RoleRouter._();
@@ -76,6 +79,8 @@ class RoleRouter {
         return const ComplexAdminDashboardScreen();
       case 'coach':
         return const CoachHomeScreen();
+      case 'employee':
+        return const EmployeeHomeScreen();
       case 'security':
         // `/security/dashboard`: the guard console — eight live counters, the
         // four gate scanners and the scan log, with the camera one tap away.

@@ -87,9 +87,25 @@ class ApiEndpoints {
   /// returns a signed-in session straight away.
   static const String register = '/auth/register';
   static const String studentMe = '/students/me';
+
+  /// `GET /students?page=&limit=&search=` — the staff-facing student list.
+  /// Complex-scoped for EMPLOYEE, so it needs no complex filter of its own.
+  static const String students = '/students';
   static const String refresh = '/auth/refresh';
   static const String profile = '/auth/profile';
   static const String logout = '/auth/logout';
+
+  /// `GET /auth/staff-details` — the admin-entered record behind a staff login,
+  /// so an EMPLOYEE or COACH can see their own employment details.
+  ///
+  /// Answers `{role, sections: [{title, fields: [{label, value}]}]}` rather
+  /// than a fixed object: the shape differs per role, empty values are already
+  /// dropped server-side, and dates arrive pre-formatted. Read-only by design —
+  /// `PUT /auth/profile` answers 403 for these roles.
+  ///
+  /// Pay is deliberately excluded by the backend (`Employee.salary`,
+  /// `Coach.price`), so nothing here can surface compensation.
+  static const String staffDetails = '/auth/staff-details';
 
   static const String sportsComplexes = '/sports-complexes';
 
@@ -188,11 +204,33 @@ class ApiEndpoints {
   static String coachingEnquiryStatus(Object id) =>
       '/coaching-enquiries/$id/status';
 
+  /// `GET /coaching-enquiries/all?page=&limit=&status=&search=`
+  ///
+  /// The staff queue, granted to ADMIN, COMPLEX_ADMIN and EMPLOYEE. Distinct
+  /// from bare `GET /coaching-enquiries` (admin-wide) and from the coach's
+  /// `/coaching-enquiries/coach/my-enquiries`.
+  static const String coachingEnquiriesAll = '/coaching-enquiries/all';
+
   /// `GET /coaching-enquiries/stats` — the counters for the dashboard cards.
   ///
   /// Declared before [coachingEnquiry] would match it: `/stats` is a fixed
   /// segment, not an id, so it must never be built through that helper.
   static const String coachingEnquiryStats = '/coaching-enquiries/stats';
+
+  /// `GET /contact-us/admin?page=&limit=` — the "Contact Us" enquiries queue.
+  ///
+  /// **One route for both administrative roles.** No `/contact-us/complex-admin`
+  /// has been confirmed to exist, so none is called: the backend scopes the
+  /// rows from the bearer token, which is why nothing appends a
+  /// `sportComplexId` here.
+  ///
+  /// The answer is `{data: {inquiries, pagination, statusCounts}}` — three
+  /// siblings, unlike every other paginated route in this console.
+  ///
+  /// Only `page` and `limit` are confirmed. Status filtering and search are
+  /// **not** sent: their parameter names have never been documented or
+  /// captured, and guessing one would be silently ignored at best.
+  static const String contactUsAdmin = '/contact-us/admin';
 
   // ---------------------------------------------------------------------------
   // Coach dashboard.
@@ -286,11 +324,22 @@ class ApiEndpoints {
   /// `GET /fees/stats`
   static const String feesStats = '/fees/stats';
 
+  /// `GET /fees/retention-stats` — confirmed 2026-08-08. Takes no parameters.
+  static const String feesRetentionStats = '/fees/retention-stats';
+
   /// `PUT | DELETE /fees/{feeId}`
   static String fee(Object id) => '/fees/$id';
 
   /// `PATCH /fees/{feeId}/payment` — record a payment against a fee record.
   static String feePayment(Object id) => '/fees/$id/payment';
+
+  /// `PATCH /fees/{feeId}/approve` — ADMIN, COMPLEX_ADMIN and EMPLOYEE only.
+  /// Approving is what unlocks the student's gate pass, so it is deliberately
+  /// not granted to the coach who collected the money.
+  static String feeApprove(Object id) => '/fees/$id/approve';
+
+  /// `PATCH /fees/{feeId}/reject`
+  static String feeReject(Object id) => '/fees/$id/reject';
 
   /// `POST /fees/scan-pass` — scanning a student gate pass. For a COACH this
   /// **also marks the student Present for today**, so it must never be called
@@ -310,6 +359,12 @@ class ApiEndpoints {
 
   /// `GET /notifications/users` — the addressable audience.
   static const String notificationsUsers = '/notifications/users';
+
+  /// `GET /notifications/audience` — **EMPLOYEE only**. The coaches and
+  /// students of the caller's own complex, as `{coaches, students, userIds}`.
+  /// The send route intersects any client-supplied ids with this same set, so
+  /// an employee can never message outside their complex.
+  static const String notificationsAudience = '/notifications/audience';
 
   /// `GET /notifications` — the caller's own inbox.
   static const String notifications = '/notifications';
@@ -489,6 +544,13 @@ class ApiEndpoints {
   static const String createOrder = '/payments/create-order';
   static const String verifyPayment = '/payments/verify';
 
+  /// `GET /payments/all?page=&limit=&type=&status=&search=&dateFrom=&dateTo=`
+  ///
+  /// The unified ledger — court bookings, event passes and coaching fees
+  /// merged into one list. Not the `Payments` table, which is empty in
+  /// production. Answers `{data, stats, pagination}`.
+  static const String paymentsAll = '/payments/all';
+
   // Admin bookings.
 
   /// `GET | POST /bookings`
@@ -650,9 +712,20 @@ class ApiEndpoints {
   static String courtSlot(Object courtId, Object slotId) =>
       '/courts/$courtId/slots/$slotId';
 
-  /// `PATCH /courts/{courtId}/slots/{slotId}/toggle` — block / unblock.
+  /// `PATCH /courts/{courtId}/slots/{slotId}/toggle` — takes an explicit
+  /// `{status}`; a bodyless PATCH answers 400. This flips the slot **template**,
+  /// so it applies to every date — see [courtSlotBlock] for a one-day block.
   static String courtSlotToggle(Object courtId, Object slotId) =>
       '/courts/$courtId/slots/$slotId/toggle';
+
+  /// `POST /courts/{courtId}/slots/{slotId}/block` — `{date}`. Blocks the slot
+  /// for **that date only**, unlike [courtSlotToggle].
+  static String courtSlotBlock(Object courtId, Object slotId) =>
+      '/courts/$courtId/slots/$slotId/block';
+
+  /// `POST /courts/{courtId}/slots/{slotId}/unblock` — `{date}`.
+  static String courtSlotUnblock(Object courtId, Object slotId) =>
+      '/courts/$courtId/slots/$slotId/unblock';
 
   /// `GET /courts/{courtId}/available-slots?date=`
   static String courtAvailableSlots(Object courtId) =>

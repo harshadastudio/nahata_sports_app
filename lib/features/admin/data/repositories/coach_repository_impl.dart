@@ -1,3 +1,4 @@
+import '../../../../core/api/complex_scope.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../models/sports_complex_model.dart';
 import '../../../../repositories/sports_complex_repository.dart';
@@ -7,6 +8,7 @@ import '../../domain/entities/coach.dart';
 import '../../domain/entities/sport.dart';
 import '../../domain/repositories/coach_repository.dart';
 import '../../domain/repositories/sport_repository.dart';
+import '../catalogue_fetch.dart';
 import '../datasources/coach_remote_data_source.dart';
 import '../models/coach_model.dart';
 import 'sport_repository_impl.dart';
@@ -37,16 +39,33 @@ class CoachRepositoryImpl implements CoachRepository {
     int? sportId,
   }) async {
     // Filtering by sport is a separate route, so it wins when both are set and
-    // the controller narrows by status over the rows that come back.
-    final response = sportId != null
-        ? await _remote.listBySport(sportId)
-        : await _remote.list(status: status);
+    // the controller narrows by status over the rows that come back. That route
+    // documents no paging, so only the main list walks pages.
+    final List<Coach> coaches;
+    if (sportId != null) {
+      final response = await _remote.listBySport(sportId);
+      if (!response.isOk) throw response.toException();
+      coaches = CoachMapper.listFrom(response.data);
+    } else {
+      coaches = await fetchCatalogue<Coach>(
+        request: (page) => _remote.list(status: status, page: page),
+        parse: (response) => CoachMapper.listFrom(response.data),
+        identity: (coach) => coach.id,
+        label: 'coaches',
+      );
+    }
 
-    if (!response.isOk) throw response.toException();
+    // `GET /coaches` is scoped by the backend from the JWT, so nothing is
+    // appended to the URL. This is a second line of defence only, for a payload
+    // that turns out to be estate-wide: a row belonging to another venue is
+    // dropped, a row that reports no venue is kept.
+    final scoped = ComplexScope.restrict(coaches, (c) => c.sportComplexId);
 
-    final coaches = CoachMapper.listFrom(response.data);
-    AdminLog.data('Coaches → ${coaches.length}');
-    return coaches;
+    AdminLog.data(
+      'Coaches → ${scoped.length}'
+      '${scoped.length == coaches.length ? '' : ' (of ${coaches.length}, venue-scoped)'}',
+    );
+    return scoped;
   }
 
   @override

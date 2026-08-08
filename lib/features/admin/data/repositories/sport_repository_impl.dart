@@ -1,3 +1,4 @@
+import '../../../../core/api/complex_scope.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../models/sports_complex_model.dart';
 import '../../../../repositories/sports_complex_repository.dart';
@@ -5,6 +6,7 @@ import '../../core/admin_log.dart';
 import '../../domain/entities/admin_role.dart';
 import '../../domain/entities/sport.dart';
 import '../../domain/repositories/sport_repository.dart';
+import '../catalogue_fetch.dart';
 import '../datasources/sport_remote_data_source.dart';
 import '../models/sport_model.dart';
 
@@ -28,10 +30,23 @@ class SportRepositoryImpl implements SportRepository {
     AdminUserStatus? status,
     int? complexId,
   }) async {
-    final response = await _remote.list(status: status, complexId: complexId);
-    if (!response.isOk) throw response.toException();
+    // A venue-scoped session cannot browse another complex's sports, so the
+    // filter is pinned to its own; an ADMIN keeps whatever it picked, including
+    // "All". `sportComplexId` is a filter this route documents — it is not
+    // being bolted onto a URL that never had one.
+    final effectiveComplex = ComplexScope.pin(complexId);
 
-    final sports = SportMapper.listFrom(response.data);
+    final sports = await fetchCatalogue<Sport>(
+      request: (page) => _remote.list(
+        status: status,
+        complexId: effectiveComplex,
+        page: page,
+      ),
+      parse: (response) => SportMapper.listFrom(response.data),
+      identity: (sport) => sport.id,
+      label: 'sports',
+    );
+
     AdminLog.data('Sports → ${sports.length}');
     return sports;
   }
