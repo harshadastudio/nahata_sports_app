@@ -514,21 +514,23 @@ class CoachDashboardRepositoryImpl implements CoachDashboardRepository {
   @override
   Future<void> updateFeeRecord({
     required int id,
-    String? validTill,
-    String? notes,
+    required CoachFeeEdit edit,
   }) async {
-    final body = <String, dynamic>{
-      if (validTill != null) 'validTill': validTill.trim(),
-      if (notes != null) 'notes': notes.trim(),
-    };
-    if (body.isEmpty) {
+    if (edit.isEmpty) {
       throw const BadRequestException('Nothing to update.');
     }
+    if (edit.amountPaid != null && edit.amountPaid! < 0) {
+      throw const ValidationException('The amount cannot be negative.');
+    }
 
-    final response = await _remote.updateFee(id, body);
+    final response = await _remote.updateFee(id, edit.toJson());
     if (!response.isOk) throw response.toException();
 
-    CoachLog.success('Updated fee record $id');
+    // Same reason the payment write logs loudly: a coach's edit pushes the
+    // record back into the approval queue whatever it was before.
+    CoachLog.success(
+      'Updated fee record $id — approval reset to Pending',
+    );
   }
 
   // ---------------------------------------------------------------------------

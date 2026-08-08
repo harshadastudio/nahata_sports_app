@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nahata_app/auth/registration.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../core/navigation/role_router.dart';
+import '../core/services/app_navigator.dart';
 import '../core/services/permission_service.dart';
 import '../core/services/session_manager.dart';
 import '../core/storage/profile_cache.dart';
@@ -873,19 +874,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
       Widget screen = _getScreenForRole(role);
 
-      _showInfoDialog("Login Successful");
+      _showMessage("Login successful", tone: AppMessageTone.success);
 
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => screen),
-          );
-        }
-      });
+      // Straight through, no waiting: the snackbar belongs to the app-wide
+      // messenger, so it stays on screen over the dashboard. The two-second
+      // pause only ever existed to let the old dialog finish.
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => screen),
+      );
     } else {
       final msg = ApiService.lastErrorMessage ?? "Login failed. Please check your credentials.";
-      _showInfoDialog(msg);
+      _showMessage(msg, tone: AppMessageTone.error);
     }
 
 
@@ -980,8 +981,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final data = jsonDecode(res.body);
 
     if (res.statusCode == 200) {
-      _showInfoDialog("OTP sent to your email");
-      // _toast("OTP sent to your email");
+      _showMessage("OTP sent to your email", tone: AppMessageTone.success);
       _openOtpDialog(email);
     } else {
       _toast(data["message"] ?? "Failed to send OTP");
@@ -1072,21 +1072,16 @@ class _LoginScreenState extends State<LoginScreen> {
         Future.delayed(Duration(milliseconds: 300), () {
           _openResetPasswordDialog(email);
         });
-        _showInfoDialog("OTP Verified Successfully");
-        // ScaffoldMessenger.of(context).showSnackBar(
-        //   SnackBar(content: Text("OTP Verified Successfully")),
-        // );
+        _showMessage("OTP verified successfully", tone: AppMessageTone.success);
       } else {
-        _showInfoDialog(data["message"]?? "Invalid OTP");
-        // ScaffoldMessenger.of(context).showSnackBar(
-        //   SnackBar(content: Text(data["message"] ?? "Invalid OTP")),
-        // );
+        _showMessage(
+          data["message"] ?? "Invalid OTP",
+          tone: AppMessageTone.error,
+        );
       }
     } catch (e) {
       print("Error in _verifyOtp: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Something went wrong")),
-      );
+      _showMessage("Something went wrong", tone: AppMessageTone.error);
     }
   }
 
@@ -1202,7 +1197,10 @@ class _LoginScreenState extends State<LoginScreen> {
     final data = jsonDecode(res.body);
 
     if (res.statusCode == 200 && data["success"] == true) {
-      _showInfoDialog("Password Reset Successfully");
+      _showMessage(
+        "Password reset successfully",
+        tone: AppMessageTone.success,
+      );
 
       // 📌 Backend already sends email with new password
 
@@ -1219,34 +1217,27 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
 // ----------------- Helper -----------------------
-  void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+
+  /// Every message this screen shows — a snackbar along the bottom, not a
+  /// dialog in the middle of the page.
+  ///
+  /// It goes through [AppNavigator]'s messenger, which sits above the
+  /// navigator, so the bar outlives this screen: "Login successful" stays
+  /// readable while the dashboard replaces the login page underneath it.
+  ///
+  /// What this replaced was a blocking `AlertDialog` that closed itself on a
+  /// two-second timer. Besides looking wrong, that timer raced the navigation
+  /// timer beside it — whichever fired second decided whether the pop closed
+  /// the dialog or the screen the user had just landed on.
+  void _showMessage(
+    String message, {
+    AppMessageTone tone = AppMessageTone.info,
+  }) {
+    AppNavigator.showMessage(message, tone: tone, context: context);
   }
 
-
-  void _showInfoDialog(String message) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check, size: 50, color: Color(0xFF1A237E)),
-            const SizedBox(height: 16),
-            Text(message, textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) Navigator.pop(context);
-    });
-  }
+  /// Validation and failure lines from the forgot-password flow.
+  void _toast(String msg) => _showMessage(msg, tone: AppMessageTone.error);
   /// `POST /auth/google-login` — stores the tokens, caches the profile, syncs
   /// permissions and registers the FCM token, exactly like a password login.
   ///
@@ -1436,28 +1427,38 @@ class _LoginScreenState extends State<LoginScreen> {
                           final googleUser = await GoogleAuthService.signInWithGoogle();
 
                           if (googleUser == null) {
-                            _showInfoDialog("Google sign-in failed");
+                            _showMessage(
+                              "Google sign-in failed",
+                              tone: AppMessageTone.error,
+                            );
                             return;
                           }
 
-                          _showInfoDialog("Verifying your Google account...");
+                          _showMessage("Verifying your Google account…");
 
                           final success = await _googleLoginToBackend(googleUser["idToken"]);
 
                           if (!success) {
-                            _showInfoDialog("Google login failed. Try again.");
+                            _showMessage(
+                              "Google login failed. Try again.",
+                              tone: AppMessageTone.error,
+                            );
                             return;
                           }
 
                           final role = ApiService.currentUser?['role'] ?? 'user';
                           final screen = _getScreenForRole(role);
 
-                          Future.delayed(const Duration(seconds: 2), () {
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(builder: (_) => screen),
-                            );
-                          });
+                          _showMessage(
+                            "Login successful",
+                            tone: AppMessageTone.success,
+                          );
+
+                          if (!mounted) return;
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (_) => screen),
+                          );
                         },
                       ),
                     ),
@@ -1483,7 +1484,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ],
                                 );
 
-                                _showInfoDialog("Verifying your Apple account...");
+                                _showMessage("Verifying your Apple account…");
 
                                 // 2️⃣ Send ID Token to your backend API
                                 final response = await http.post(
@@ -1514,16 +1515,28 @@ class _LoginScreenState extends State<LoginScreen> {
                                       : profile.roleLabel;
                                   final screen = _getScreenForRole(role);
 
-                                  Future.delayed(const Duration(seconds: 2), () {
-                                    Navigator.pushReplacement(
-                                        context, MaterialPageRoute(builder: (_) => screen));
-                                  });
+                                  _showMessage(
+                                    "Login successful",
+                                    tone: AppMessageTone.success,
+                                  );
+
+                                  if (!mounted) return;
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => screen),
+                                  );
                                 } else {
-                                  _showInfoDialog("Apple login failed. Try again.");
+                                  _showMessage(
+                                    "Apple login failed. Try again.",
+                                    tone: AppMessageTone.error,
+                                  );
                                 }
                               } catch (e) {
                                 print("🍎 Apple Sign-In Error: $e");
-                                _showInfoDialog("Apple sign-in cancelled or failed.");
+                                _showMessage(
+                                  "Apple sign-in cancelled or failed.",
+                                  tone: AppMessageTone.error,
+                                );
                               }
                             },
                           ),

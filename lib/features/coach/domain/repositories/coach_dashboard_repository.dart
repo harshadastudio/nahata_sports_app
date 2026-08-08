@@ -191,12 +191,14 @@ abstract class CoachDashboardRepository {
     required CoachPaymentDraft draft,
   });
 
-  /// Edits the record itself — the validity date and the notes, as opposed to
-  /// the payment on it. [validTill] is `yyyy-MM-dd`.
+  /// Edits the record itself — the student, the amount, the status and the
+  /// dates — as opposed to recording a payment against it.
+  ///
+  /// ⚠️ For a coach this too resets the record's approval to `Pending` — see
+  /// [CoachFeeEdit].
   Future<void> updateFeeRecord({
     required int id,
-    String? validTill,
-    String? notes,
+    required CoachFeeEdit edit,
   });
 
   // ---------------------------------------------------------------------------

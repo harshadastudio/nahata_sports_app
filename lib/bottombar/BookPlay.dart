@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:nahata_app/bottombar/Custombottombar.dart';
 import '../core/services/selected_ground.dart';
+import '../core/widgets/app_shimmer.dart';
 import 'package:nahata_app/bottombar/viewgame.dart' hide Viewgame;
 
 import 'package:flutter/material.dart';
@@ -505,7 +506,9 @@ class _VenueListScreenState extends State<VenueListScreen> {
         centerTitle: true,
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator())
+          // Shaped like the venue list that is coming, rather than a spinner
+          // in the middle of an empty page.
+          ? AppShimmer.venueList()
           : venueSports.isEmpty
           ? const Center(child: Text("No venues available"))
           : SingleChildScrollView(
