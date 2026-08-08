@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:nahata_app/core/services/permission_service.dart';
@@ -154,6 +155,75 @@ void main() {
     });
   });
 
+  // The Fees Approval sheet is where the money, the edit form and the gate
+  // pass all live, and none of it is on screen until a card is tapped — so the
+  // pumps above would never have touched it.
+  group('Fees Approval — the record sheet', () {
+    /// The sheet's own route animation, pumped out by hand: the screen keeps a
+    /// LinearProgressIndicator in the tree at zero opacity, so pumpAndSettle
+    /// would wait on an animation that never ends.
+    Future<void> openSheet(WidgetTester t) async {
+      // The stats, the notice and the row itself push the button past the fold
+      // of an 800×600 test window, and a tap on an off-screen target lands on
+      // whatever happens to be at those coordinates instead.
+      final button = find.text('View details');
+      await t.ensureVisible(button);
+      await t.pump();
+
+      await t.tap(button);
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 400));
+    }
+
+    testWidgets('opens the details, and the edit form behind them', (t) async {
+      await pumpClean(
+        t,
+        CoachFeesPage(
+          mode: CoachFeesMode.approval,
+          repository: _StubCoachRepository(),
+        ),
+      );
+
+      await openSheet(t);
+      expect(t.takeException(), isNull);
+      expect(find.text('Record #1'), findsOneWidget);
+      // Not approved yet, so there is deliberately no pass to show.
+      expect(find.byType(QrImageView), findsNothing);
+
+      await t.tap(find.byIcon(Icons.edit_outlined));
+      await t.pump();
+      expect(find.text('Save changes'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('draws the gate pass once a record is approved', (t) async {
+      await pumpClean(
+        t,
+        CoachFeesPage(
+          mode: CoachFeesMode.approval,
+          repository: _StubCoachRepository(approved: true),
+        ),
+      );
+
+      await openSheet(t);
+      expect(t.takeException(), isNull);
+      // The hand-off sits in the sheet's footer, so it is on screen at once.
+      expect(find.text('Send gate pass on WhatsApp'), findsOneWidget);
+
+      // The pass itself is below the detail rows, and the sheet's list builds
+      // lazily — it has to be scrolled to before it exists.
+      await t.scrollUntilVisible(
+        find.byType(QrImageView),
+        300,
+        scrollable: find.byType(Scrollable).last,
+      );
+
+      expect(find.byType(QrImageView), findsOneWidget);
+      expect(find.textContaining('GATEPASS-'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  });
+
   group('empty — what a new coach account sees', () {
     final repo = _StubCoachRepository(empty: true);
 
@@ -206,10 +276,18 @@ void main() {
 /// [empty] returns nothing everywhere; [failing] throws on every read, which
 /// is what an expired session or a coach with no linked Coach row produces.
 class _StubCoachRepository implements CoachDashboardRepository {
-  _StubCoachRepository({this.empty = false, this.failing = false});
+  _StubCoachRepository({
+    this.empty = false,
+    this.failing = false,
+    this.approved = false,
+  });
 
   final bool empty;
   final bool failing;
+
+  /// Flips the fee record to signed-off, which is the only state that draws a
+  /// gate pass.
+  final bool approved;
 
   void _guard() {
     if (failing) throw Exception('stub failure');
@@ -416,7 +494,7 @@ class _StubCoachRepository implements CoachDashboardRepository {
   }) async {
     _guard();
     return _page([
-      const CoachFee(
+      CoachFee(
         id: 1,
         studentId: 1,
         studentName: 'Asha Rao',
@@ -427,10 +505,11 @@ class _StubCoachRepository implements CoachDashboardRepository {
         enrollmentDate: '2026-08-01',
         validTill: '2026-08-31',
         paymentStatusRaw: 'Paid',
-        approvalStatusRaw: 'Pending',
+        approvalStatusRaw: approved ? 'Approved' : 'Pending',
         paymentModeRaw: 'Cash',
         amountPaid: 1500,
         batchFees: 1500,
+        approvedAt: approved ? DateTime(2026, 8, 7, 10, 30) : null,
       ),
     ]);
   }
@@ -542,8 +621,7 @@ class _StubCoachRepository implements CoachDashboardRepository {
   @override
   Future<void> updateFeeRecord({
     required int id,
-    String? validTill,
-    String? notes,
+    required CoachFeeEdit edit,
   }) async {}
   @override
   Future<void> markNotificationRead(int id) async {}

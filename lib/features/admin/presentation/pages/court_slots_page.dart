@@ -5,6 +5,7 @@ import '../../core/admin_log.dart';
 import '../../domain/entities/court.dart';
 import '../../domain/entities/court_slot.dart';
 import '../../domain/repositories/court_slot_repository.dart';
+import '../navigation/admin_module.dart';
 import '../state/court_slots_controller.dart';
 import '../state/view_state.dart';
 import '../theme/admin_theme.dart';
@@ -113,14 +114,19 @@ class _SlotsScaffold extends StatelessWidget {
             tooltip: 'Refresh',
             color: tokens.textSecondary,
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: AdminTokens.space4),
-            child: FilledButton.icon(
-              onPressed: () => _openForm(context, controller),
-              icon: const Icon(Icons.add_rounded, size: 19),
-              label: const Text('Add Slot'),
+          // Slots belong to the Courts module, so `permissions.courts.create`
+          // decides whether a slot can be added. This screen is pushed from
+          // Courts, which a COMPLEX_ADMIN does reach — without the gate a venue
+          // admin granted view-only would be offered a button the API refuses.
+          if (AdminAccess.canCreate(AdminModules.courts))
+            Padding(
+              padding: const EdgeInsets.only(right: AdminTokens.space4),
+              child: FilledButton.icon(
+                onPressed: () => _openForm(context, controller),
+                icon: const Icon(Icons.add_rounded, size: 19),
+                label: const Text('Add Slot'),
+              ),
             ),
-          ),
         ],
       ),
       body: SafeArea(

@@ -27,6 +27,59 @@ class AdminModules {
   static const String students = 'students';
   static const String bookings = 'bookings';
   static const String settings = 'settings';
+
+  /// Contact Us enquiries.
+  ///
+  /// **No captured login payload has ever carried a key for this module.** The
+  /// name below is the one the backend is most likely to use, and [spellingsOf]
+  /// lists the alternatives that are checked alongside it — whichever the API
+  /// actually sends is the one that decides access.
+  ///
+  /// Until one of them appears, the module is treated as ungoverned rather than
+  /// denied; see [unconfirmed].
+  static const String contactEnquiries = 'contactEnquiries';
+
+  /// Alternative spellings to accept for a module key, most likely first.
+  ///
+  /// Only Contact Enquiries has any: every other key here has been seen in a
+  /// real `data.user.permissions` object, so widening them would risk matching
+  /// something the backend meant differently.
+  static const Map<String, List<String>> _aliases = <String, List<String>>{
+    contactEnquiries: <String>[
+      'contactEnquiries',
+      'contactInquiries',
+      'contactUs',
+      'contact_enquiries',
+      'contact_inquiries',
+      'contact_us',
+      'contacts',
+    ],
+  };
+
+  /// Modules the login payload is not known to carry a key for.
+  ///
+  /// A key the backend has simply never mentioned means "this API says nothing
+  /// about the module", which is not the same as `view: false`. These therefore
+  /// fall **open**, exactly as the console already does when the whole matrix is
+  /// absent. An explicit `false` under any of the module's spellings still hides
+  /// it, so the backend keeps the final say — it just has to say it.
+  ///
+  ///  * [contactEnquiries] — no captured payload has ever carried a key for it.
+  ///
+  /// Membership here is a statement about the *payload*, not about how
+  /// important a module is. Remove an entry as soon as the backend is confirmed
+  /// to send its key, so the module goes back to deny-by-default.
+  ///
+  /// [users] is deliberately **not** a member: the COMPLEX_ADMIN console does
+  /// not carry that module at all (see `AdminShellConfig.complexAdmin`), so it
+  /// is excluded by the sidebar rather than gated by a permission.
+  static const Set<String> unconfirmed = <String>{contactEnquiries};
+
+  /// Every spelling to check for [module], in order.
+  static List<String> spellingsOf(String module) =>
+      _aliases[module] ?? <String>[module];
+
+  static bool isUnconfirmed(String module) => unconfirmed.contains(module);
 }
 
 /// Which permission module gates which sidebar entry.
@@ -52,6 +105,8 @@ extension AdminDestinationPermission on AdminDestination {
         return AdminModules.batches;
       case AdminDestination.coachingEnquiries:
         return AdminModules.students;
+      case AdminDestination.contactEnquiries:
+        return AdminModules.contactEnquiries;
       case AdminDestination.courts:
         return AdminModules.courts;
       case AdminDestination.events:
@@ -94,7 +149,21 @@ class AdminAccess {
 
   static bool can(String? module, String action) {
     if (module == null || _unrestricted) return true;
-    return _service.can(module, action);
+
+    // The first spelling the payload actually uses decides. For every module
+    // but Contact Enquiries there is exactly one, so this is the same lookup it
+    // always was.
+    final matrix = _service.matrix;
+    for (final key in AdminModules.spellingsOf(module)) {
+      if (matrix.containsKey(key)) return _service.can(key, action);
+    }
+
+    // Legacy flat slug (`students.view`), still honoured.
+    if (_service.can(module, action)) return true;
+
+    // The backend never mentioned this module at all — see
+    // [AdminModules.unconfirmed] for why silence is not denial.
+    return AdminModules.isUnconfirmed(module);
   }
 
   static bool canView(String? module) => can(module, 'view');

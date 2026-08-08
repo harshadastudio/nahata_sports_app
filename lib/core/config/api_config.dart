@@ -217,6 +217,21 @@ class ApiEndpoints {
   /// segment, not an id, so it must never be built through that helper.
   static const String coachingEnquiryStats = '/coaching-enquiries/stats';
 
+  /// `GET /contact-us/admin?page=&limit=` — the "Contact Us" enquiries queue.
+  ///
+  /// **One route for both administrative roles.** No `/contact-us/complex-admin`
+  /// has been confirmed to exist, so none is called: the backend scopes the
+  /// rows from the bearer token, which is why nothing appends a
+  /// `sportComplexId` here.
+  ///
+  /// The answer is `{data: {inquiries, pagination, statusCounts}}` — three
+  /// siblings, unlike every other paginated route in this console.
+  ///
+  /// Only `page` and `limit` are confirmed. Status filtering and search are
+  /// **not** sent: their parameter names have never been documented or
+  /// captured, and guessing one would be silently ignored at best.
+  static const String contactUsAdmin = '/contact-us/admin';
+
   // ---------------------------------------------------------------------------
   // Coach dashboard.
   //
@@ -308,6 +323,9 @@ class ApiEndpoints {
 
   /// `GET /fees/stats`
   static const String feesStats = '/fees/stats';
+
+  /// `GET /fees/retention-stats` — confirmed 2026-08-08. Takes no parameters.
+  static const String feesRetentionStats = '/fees/retention-stats';
 
   /// `PUT | DELETE /fees/{feeId}`
   static String fee(Object id) => '/fees/$id';

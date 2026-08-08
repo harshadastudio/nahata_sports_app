@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/navigation/role_router.dart';
+import '../core/services/app_navigator.dart';
 import '../models/sports_complex_model.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/sports_complex_repository.dart';
@@ -200,28 +201,38 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         final googleUser = await GoogleAuthService.signInWithGoogle();
 
                         if (googleUser == null) {
-                          _showInfoDialog("Google sign-in failed");
+                          _showMessage(
+                            "Google sign-in failed",
+                            tone: AppMessageTone.error,
+                          );
                           return;
                         }
 
-                        _showInfoDialog("Verifying your Google account...");
+                        _showMessage("Verifying your Google account…");
 
                         final success = await _googleLoginToBackend(googleUser["idToken"]);
 
                         if (!success) {
-                          _showInfoDialog("Google login failed. Try again.");
+                          _showMessage(
+                            "Google login failed. Try again.",
+                            tone: AppMessageTone.error,
+                          );
                           return;
                         }
 
                         final role = ApiService.currentUser?['role'] ?? 'user';
                         final screen = _getScreenForRole(role);
 
-                        Future.delayed(const Duration(seconds: 2), () {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(builder: (_) => screen),
-                          );
-                        });
+                        _showMessage(
+                          "Login successful",
+                          tone: AppMessageTone.success,
+                        );
+
+                        if (!mounted) return;
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (_) => screen),
+                        );
                       },
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -521,7 +532,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     final complex = _selectedComplex;
     if (complex == null) {
-      _showInfoDialog("Please select a sports complex");
+      _showMessage(
+        "Please select a sports complex",
+        tone: AppMessageTone.error,
+      );
       return;
     }
 
@@ -548,9 +562,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     Navigator.pop(context); // Close loading indicator
 
     if (!result.success) {
-      _showInfoDialog(result.firstFieldError ??
-          result.message ??
-          "Registration failed. Please try again.");
+      _showMessage(
+        result.firstFieldError ??
+            result.message ??
+            "Registration failed. Please try again.",
+        tone: AppMessageTone.error,
+      );
       return;
     }
 
@@ -558,37 +575,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
     await prefs.setString('userEmail', emailController.text.trim());
 
     if (!mounted) return;
-    _showInfoDialog(result.message ?? "Registered Successfully");
-
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
-    });
-  }
-
-  void _showInfoDialog(String message) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        // title: const Text("Hello"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check, size: 50, color:  Color(0xFF1A237E)),
-            const SizedBox(height: 16),
-            Text(message, textAlign: TextAlign.center),
-          ],
-        ),
-      ),
+    _showMessage(
+      result.message ?? "Registered successfully",
+      tone: AppMessageTone.success,
     );
 
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) Navigator.pop(context); // Close dialog after 2 sec
-    });
+    // Straight to the sign-in screen; the snackbar rides over it rather than
+    // being popped by a timer that raced this one.
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+    );
+  }
+
+  /// The same bottom snackbar the sign-in screen uses, for the same reasons —
+  /// see `_showMessage` in `login.dart`.
+  void _showMessage(
+    String message, {
+    AppMessageTone tone = AppMessageTone.info,
+  }) {
+    AppNavigator.showMessage(message, tone: tone, context: context);
   }
 }

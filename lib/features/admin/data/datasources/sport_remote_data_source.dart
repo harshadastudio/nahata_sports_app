@@ -1,3 +1,4 @@
+import '../../../../core/api/role_api_map.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_response.dart';
@@ -13,17 +14,33 @@ class SportRemoteDataSource {
 
   final ApiClient _api;
 
-  /// `GET /sports?status=&sportComplexId=` — the only two filters the route
-  /// takes. Null values are dropped by `ApiClient._buildUri`, so an unset
-  /// filter is simply absent rather than sent as `status=`.
-  Future<ApiResponse> list({AdminUserStatus? status, int? complexId}) {
+  /// `GET /sports?page=1&limit=100&status=Active` — the confirmed URL, shared
+  /// by ADMIN and COMPLEX_ADMIN. The route is the same for both roles; the
+  /// backend answers within the caller's authorised scope, which is why nothing
+  /// here appends `sportComplexId` on a complex admin's behalf.
+  ///
+  /// `status` and `sportComplexId` remain the two filters the route takes, and
+  /// stay optional: null values are dropped by `ApiClient._buildUri`, so an
+  /// unset filter is absent rather than sent as `status=`. `complexId` is only
+  /// ever a filter the user chose — for a venue-scoped session it is pinned to
+  /// the session's own complex by [ComplexScope], never picked freely.
+  Future<ApiResponse> list({
+    AdminUserStatus? status,
+    int? complexId,
+    int page = 1,
+    int limit = 100,
+  }) {
+    final route = RoleApiMap.require(ApiModule.sports);
+
     final query = <String, dynamic>{
+      'page': page,
+      'limit': limit,
       if (status != null) 'status': status.slug,
       if (complexId != null) 'sportComplexId': complexId,
     };
 
-    AdminLog.call('GET ${ApiEndpoints.sports} $query');
-    return _api.get(ApiEndpoints.sports, query: query);
+    AdminLog.call('GET ${route.path} $query');
+    return _api.get(route.path, query: query);
   }
 
   Future<ApiResponse> detail(int id) {

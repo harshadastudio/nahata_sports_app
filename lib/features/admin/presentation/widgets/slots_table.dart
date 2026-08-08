@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/court.dart';
 import '../../domain/entities/court_slot.dart';
+import '../navigation/admin_module.dart';
 import '../theme/admin_theme.dart';
 import '../utils/admin_format.dart';
 
@@ -462,7 +463,11 @@ class SlotBookableSwitch extends StatelessWidget {
             fit: BoxFit.fitHeight,
             child: Switch(
               value: bookable,
-              onChanged: busy ? null : (_) => onChanged(),
+              // Blocking a slot is an edit. Disabled rather than hidden, so a
+              // view-only admin still sees whether the slot is bookable.
+              onChanged: busy || !AdminAccess.canEdit(AdminModules.courts)
+                  ? null
+                  : (_) => onChanged(),
               activeThumbColor: Colors.white,
               activeTrackColor: tokens.success,
             ),
@@ -518,22 +523,26 @@ class SlotRowActions extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton(
-            onPressed: () => onAction(SlotAction.edit, slot),
-            icon: const Icon(Icons.edit_outlined, size: 17),
-            tooltip: 'Edit slot',
-            color: tokens.textMuted,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-          ),
-          IconButton(
-            onPressed: () => onAction(SlotAction.delete, slot),
-            icon: const Icon(Icons.delete_outline_rounded, size: 17),
-            tooltip: 'Delete slot',
-            color: tokens.danger,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-          ),
+          // A slot is part of the Courts module, so it is gated on
+          // `permissions.courts.edit` / `.delete` — not on the role.
+          if (AdminAccess.canEdit(AdminModules.courts))
+            IconButton(
+              onPressed: () => onAction(SlotAction.edit, slot),
+              icon: const Icon(Icons.edit_outlined, size: 17),
+              tooltip: 'Edit slot',
+              color: tokens.textMuted,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+            ),
+          if (AdminAccess.canDelete(AdminModules.courts))
+            IconButton(
+              onPressed: () => onAction(SlotAction.delete, slot),
+              icon: const Icon(Icons.delete_outline_rounded, size: 17),
+              tooltip: 'Delete slot',
+              color: tokens.danger,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+            ),
         ],
       ),
     );

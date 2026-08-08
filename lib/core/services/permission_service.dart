@@ -1,5 +1,6 @@
 import '../../models/profile_model.dart';
 import '../storage/profile_cache.dart';
+import '../utils/app_logger.dart';
 import 'app_session.dart';
 
 /// Well-known permission slugs returned by `/auth/profile`.
@@ -134,6 +135,41 @@ class PermissionService {
     _permissions = (effective?.permissions ?? const <String>[]).toSet();
     _role = effective?.roleKey ?? '';
     _matrix = effective?.permissionMatrix ?? const <String, Map<String, bool>>{};
+
+    _traceMatrix();
+  }
+
+  /// Prints what the payload actually granted.
+  ///
+  /// The console's sidebar is built from this and nothing else, so "why is
+  /// module X missing?" is answered here rather than by reading widget code.
+  /// Module names and booleans only — no token, no identifier, nothing secret.
+  void _traceMatrix() {
+    if (!AppLogger.enabled) return;
+
+    if (_matrix.isEmpty) {
+      AppLogger.debug(
+        'Permissions for role "$_role": no module matrix in the payload '
+        '(${_permissions.length} legacy slugs) — console gating falls open',
+        name: 'Permissions',
+      );
+      return;
+    }
+
+    final granted = <String>[];
+    final denied = <String>[];
+    for (final entry in _matrix.entries) {
+      (entry.value['view'] == true ? granted : denied).add(entry.key);
+    }
+    granted.sort();
+    denied.sort();
+
+    AppLogger.debug(
+      'Permissions for role "$_role" → viewable: '
+      '${granted.isEmpty ? '(none)' : granted.join(', ')}'
+      '${denied.isEmpty ? '' : ' | view:false: ${denied.join(', ')}'}',
+      name: 'Permissions',
+    );
   }
 
   /// Loads permissions from disk — used before the first profile fetch lands.

@@ -78,6 +78,14 @@ enum AdminDestination {
     subtitle: 'Prospects, follow-up and coach assignment',
     ready: true,
   ),
+  contactEnquiries(
+    label: 'Contact Enquiries',
+    shortLabel: 'Contact Us',
+    icon: Icons.mark_email_unread_outlined,
+    activeIcon: Icons.mark_email_read_rounded,
+    subtitle: 'Messages sent through the website contact form',
+    ready: true,
+  ),
   courts(
     label: 'Courts',
     icon: Icons.grid_view_outlined,

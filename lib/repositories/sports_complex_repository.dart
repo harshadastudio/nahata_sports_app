@@ -1,3 +1,4 @@
+import '../core/api/complex_scope.dart';
 import '../core/config/api_config.dart';
 import '../core/network/api_client.dart';
 import '../core/utils/app_logger.dart';
@@ -38,7 +39,7 @@ class SportsComplexRepository {
     bool includeHidden = false,
   }) async {
     final cached = includeHidden ? _adminCache : _cache;
-    if (cached != null && !refresh) return cached;
+    if (cached != null && !refresh) return _scoped(cached);
 
     try {
       final response = await _api.get(
@@ -61,7 +62,7 @@ class SportsComplexRepository {
       } else {
         _cache = parsed;
       }
-      return parsed;
+      return _scoped(parsed);
     } catch (e) {
       AppLogger.error(
         'Could not load sports complexes',
@@ -71,6 +72,16 @@ class SportsComplexRepository {
       return const <SportsComplex>[];
     }
   }
+
+  /// The venues the signed-in session may choose from.
+  ///
+  /// For a COMPLEX_ADMIN that is its assigned complex and nothing else, so no
+  /// venue picker anywhere in the app — staff forms, the sports filter, the
+  /// events picker — can offer another complex. Every other role gets the list
+  /// unchanged. The **cache stays unscoped**, so the filter follows whoever is
+  /// signed in rather than whoever warmed it.
+  List<SportsComplex> _scoped(List<SportsComplex> complexes) =>
+      ComplexScope.restrict(complexes, (complex) => complex.id);
 
   /// Venue id for [name], matched case-insensitively.
   Future<int?> idFor(String name) async {

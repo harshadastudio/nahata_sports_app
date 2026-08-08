@@ -267,6 +267,43 @@ void main() {
       expect(AdminAccess.canView(AdminModules.bookings), isTrue);
     });
 
+    test('Users, Roles & Permissions is not in the complex admin console', () {
+      // Accounts and the role matrix are administered estate-wide. This is a
+      // property of the console, not of the payload, so it must hold even for a
+      // COMPLEX_ADMIN whose permissions explicitly grant `users`.
+      for (final permissions in <Map<String, dynamic>>[
+        {
+          'dashboard': {'view': true},
+          'bookings': {'view': true},
+        },
+        {
+          'users': {'view': true, 'create': true, 'delete': true},
+        },
+      ]) {
+        PermissionService.instance.sync(
+          ProfileModel.fromJson(_complexAdminUser(permissions: permissions)),
+        );
+
+        final config = AdminShellConfig.complexAdmin();
+        expect(
+          config.sections.expand((section) => section.destinations),
+          isNot(contains(AdminDestination.users)),
+        );
+        expect(config.allowedDestinations, isNot(contains(AdminDestination.users)));
+        expect(config.allows(AdminDestination.users), isFalse);
+      }
+    });
+
+    test('the ADMIN console still has it', () {
+      // Removing it from one console must not remove it from the other.
+      expect(
+        AdminShellConfig.admin.sections
+            .expand((section) => section.destinations),
+        contains(AdminDestination.users),
+      );
+      expect(AdminShellConfig.admin.allows(AdminDestination.users), isTrue);
+    });
+
     test('is branded with the complex', () {
       PermissionService.instance.sync(
         ProfileModel.fromJson(_complexAdminUser()),

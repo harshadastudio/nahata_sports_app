@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
+import '../api/api_trace.dart';
 import '../config/api_config.dart';
 import '../storage/token_storage.dart';
 import '../utils/app_logger.dart';
@@ -312,6 +313,12 @@ class ApiClient {
       extra: headers,
       isMultipart: isMultipart,
     );
+
+    // Who is calling, and which module — printed for every request, so a
+    // role-mapped console can be read off the log rather than guessed at.
+    // Nothing here can carry a credential: it prints the role, the module and
+    // the venue id only.
+    ApiTrace.context(uri.path);
 
     AppLogger.request(
       method,

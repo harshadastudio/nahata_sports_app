@@ -20,6 +20,7 @@ import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:nahata_app/auth/login.dart';
 import 'package:nahata_app/bottombar/Viewgame.dart' hide ApiService;
 import 'package:nahata_app/bottombar/bkpayment.dart';
+import 'package:nahata_app/core/widgets/app_shimmer.dart';
 
 
 
@@ -2958,9 +2959,9 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
 
   Widget _buildBody() {
     if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: brandBlue),
-      );
+      // Shaped like the calendar / courts / slots below it, so the screen fills
+      // in place instead of snapping from a spinner to a full page.
+      return AppShimmer.slotBooking();
     }
     if (error != null) {
       return Center(

@@ -1,3 +1,4 @@
+import '../../../../core/api/role_api_map.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_response.dart';
@@ -12,6 +13,14 @@ class EmployeeRemoteDataSource {
 
   final ApiClient _api;
 
+  /// `GET /admin/employees?page=1&limit=10&search=&department=&status=` — the
+  /// confirmed ADMIN Employees URL, sent with those four filter keys present
+  /// even when empty, exactly as captured.
+  ///
+  /// This is an ADMIN-side route and stays one: [RoleApiMap] has no
+  /// COMPLEX_ADMIN binding for the Employees module, so a venue-scoped session
+  /// reaching this method fails loudly rather than being quietly redirected to
+  /// `/coaches`. Employees are not coaches.
   Future<ApiResponse> list({
     required int page,
     required int limit,
@@ -23,14 +32,18 @@ class EmployeeRemoteDataSource {
     String? sortBy,
     bool descending = false,
   }) {
-    // Null and blank values are dropped by `ApiClient._buildUri`, so an unset
-    // filter is simply absent rather than sent as `department=`.
+    final route = RoleApiMap.require(ApiModule.employees);
+
+    // `search`, `department` and `status` are always present — the confirmed
+    // URL sends them empty rather than omitting them. `shift`, the complex and
+    // the sort keys are ours, not the captured URL's, so those stay optional
+    // and are dropped when unset.
     final query = <String, dynamic>{
       'page': page,
       'limit': limit,
-      if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
-      if (status != null) 'status': status.slug,
-      if (department != null) 'department': department.slug,
+      'search': search?.trim() ?? '',
+      'department': department?.slug ?? '',
+      'status': status?.slug ?? '',
       if (shift != null) 'shift': shift.slug,
       if (sportComplexId != null) 'sportComplexId': sportComplexId,
       if (sortBy != null && sortBy.isNotEmpty) ...{
@@ -39,8 +52,8 @@ class EmployeeRemoteDataSource {
       },
     };
 
-    AdminLog.call('GET ${ApiEndpoints.employees} $query');
-    return _api.get(ApiEndpoints.employees, query: query);
+    AdminLog.call('GET ${route.path} $query');
+    return _api.get(route.path, query: query);
   }
 
   Future<ApiResponse> detail(String id) {

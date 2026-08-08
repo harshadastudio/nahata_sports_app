@@ -13,11 +13,15 @@ class CourtRemoteDataSource {
 
   final ApiClient _api;
 
-  /// `GET /courts?sportComplexId=&sportId=` — the only two filters the route
-  /// takes. Null values are dropped by `ApiClient._buildUri`, so an unset
-  /// filter is simply absent rather than sent empty.
-  Future<ApiResponse> list({int? complexId, int? sportId}) {
+  /// `GET /courts?limit=100` — the confirmed URL, shared by both roles.
+  ///
+  /// The route is unpaginated, so it takes `limit` but no `page`; the module
+  /// consumes the whole catalogue and filters locally. `sportComplexId` and
+  /// `sportId` are the two filters it accepts, and null values are dropped by
+  /// `ApiClient._buildUri`, so an unset filter is absent rather than sent empty.
+  Future<ApiResponse> list({int? complexId, int? sportId, int limit = 100}) {
     final query = <String, dynamic>{
+      'limit': limit,
       if (complexId != null) 'sportComplexId': complexId,
       if (sportId != null) 'sportId': sportId,
     };
