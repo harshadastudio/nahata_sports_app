@@ -322,14 +322,48 @@ class AppShimmer {
   // Events
   // ---------------------------------------------------------------------------
 
-  /// The Events tab's poster grid — tall cards, so the aspect ratio matters
-  /// more here than anywhere else.
-  static Widget eventGrid({int tiles = 4}) => tileGrid(
-        tiles: tiles,
+  /// The Events tab's poster grid: artwork on top, title / venue / price
+  /// underneath — the same card the real grid builds, and the same 0.60 aspect
+  /// ratio, so the posters land exactly where the placeholders were.
+  static Widget eventGrid({int tiles = 4}) {
+    return GridView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
         crossAxisSpacing: 12,
         mainAxisSpacing: 16,
-        childAspectRatio: 0.7,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        radius: 12,
-      );
+        childAspectRatio: 0.60,
+      ),
+      itemCount: tiles,
+      itemBuilder: (context, index) => Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: box(radius: 0)),
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  box(height: 12),
+                  const SizedBox(height: 6),
+                  box(width: 70, height: 10),
+                  const SizedBox(height: 8),
+                  box(width: 88, height: 12),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

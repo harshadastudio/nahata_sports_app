@@ -327,17 +327,28 @@ class _EventsScreenState extends State<EventsScreen>
     super.dispose();
   }
 
+  /// Reloads the current tab. Errors stay on [_futureEvents] for the builder
+  /// to render — swallowed here only so the refresh gesture completes.
+  Future<void> _refresh() async {
+    final future = _loadEvents(selectedTab == 0 ? "active" : "upcoming");
+    setState(() => _futureEvents = future);
+    try {
+      await future;
+    } catch (_) {
+      // Shown by the FutureBuilder's error state.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: _canvas,
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnimation,
           child: Column(
             children: [
               _buildHeader(),
-              _buildCinemaBanner(),
               _buildTabSection(),
               Expanded(child: _buildEventGrid()),
             ],
@@ -347,22 +358,45 @@ class _EventsScreenState extends State<EventsScreen>
     );
   }
 
+  // ── Palette ───────────────────────────────────────────────────────────────
+  static const Color _brand = Color(0xFF1A237E);
+  static const Color _canvas = Color(0xFFF8FAFC);
+  static const Color _border = Color(0xFFE5E7EB);
+  static const Color _muted = Color(0xFF6B7280);
+
+  /// Title, one line of context, and the venue filter.
+  ///
+  /// The title used to be centred by an `Expanded` while the picker sat beside
+  /// it, so it was never actually centred — it drifted with the picker's width.
+  /// Left-aligned settles that and leaves room for the subtitle.
   Widget _buildHeader() {
     return Padding(
-      padding: EdgeInsets.all(16.0),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Expanded(
-            child: Text(
-              'Events',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-              textAlign: TextAlign.center,
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Events',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.4,
+                    color: Colors.black87,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  "What's on at the complex",
+                  style: TextStyle(fontSize: 12.5, color: _muted),
+                ),
+              ],
             ),
           ),
+          const SizedBox(width: 12),
           _buildVenuePicker(),
         ],
       ),
@@ -462,157 +496,62 @@ class _EventsScreenState extends State<EventsScreen>
     );
   }
 
-  Widget _buildCinemaBanner() {
+  /// Active / Upcoming, as one segmented control.
+  ///
+  /// The old row was two pills of different widths — one `Expanded`, one sized
+  /// to its label — with a stray forward-arrow icon after them that did
+  /// nothing. Equal segments in a single track read as a switch, which is what
+  /// this actually is.
+  Widget _buildTabSection() {
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      height: 120,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF1a237e), Color(0xFF3949ab)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 8,
-            offset: Offset(0, 4),
-          ),
-        ],
+        color: const Color(0xFFF1F3F9),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _border),
       ),
-      child: Stack(
+      child: Row(
         children: [
-          Positioned(
-            right: 16,
-            top: 16,
-            child: Icon(
-              Icons.local_movies,
-              size: 60,
-              color: Colors.white.withOpacity(0.7),
-            ),
-          ),
-          Positioned(
-            right: 20,
-            top: 20,
-            child: Container(
-              width: 50,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.movie,
-                  color: Colors.white,
-                  size: 24,
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Nahata',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  'Sports',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w300,
-                    letterSpacing: 2,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Discover amazing events',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _buildTab(0, 'Active', "active"),
+          _buildTab(1, 'Upcoming', "upcoming"),
         ],
       ),
     );
   }
 
-  Widget _buildTabSection() {
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-      child: Row(
-        children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () {
+  Widget _buildTab(int index, String label, String status) {
+    final selected = selectedTab == index;
+
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: selected
+            ? null
+            : () {
                 setState(() {
-                  selectedTab = 0;
-                  _futureEvents = _loadEvents("active");
+                  selectedTab = index;
+                  _futureEvents = _loadEvents(status);
                 });
               },
-              child: AnimatedContainer(
-                duration: Duration(milliseconds: 300),
-                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                decoration: BoxDecoration(
-                  color:
-                  selectedTab == 0 ? Color(0xFF1a237e) : Colors.grey[200],
-                  borderRadius: BorderRadius.circular(25),
-                ),
-                child: Text(
-                  'Active Events',
-                  style: TextStyle(
-                    color: selectedTab == 0
-                        ? Colors.white
-                        : Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? _brand : Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              color: selected ? Colors.white : _muted,
             ),
           ),
-          SizedBox(width: 12),
-          GestureDetector(
-            onTap: () {
-              setState(() {
-                selectedTab = 1;
-                _futureEvents = _loadEvents("upcoming");
-              });
-            },
-            child: AnimatedContainer(
-              duration: Duration(milliseconds: 300),
-              padding: EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-              decoration: BoxDecoration(
-                color:
-                selectedTab == 1 ? Color(0xFF1a237e) : Colors.grey[200],
-                borderRadius: BorderRadius.circular(25),
-              ),
-              child: Text(
-                'Explore Upcoming Shows',
-                style: TextStyle(
-                  color: selectedTab == 1
-                      ? Colors.white
-                      : Colors.grey[600],
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
-          Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
-        ],
+        ),
       ),
     );
   }
@@ -622,97 +561,233 @@ class _EventsScreenState extends State<EventsScreen>
       future: _futureEvents,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          // Poster-shaped, same 0.7 aspect ratio as the cards below.
+          // Poster-shaped, same aspect ratio as the cards below.
           return AppShimmer.eventGrid();
-        } else if (snapshot.hasError) {
-          return Center(child: Text('Error loading events'));
-        } else {
-          final events = snapshot.data ?? [];
-          if (events.isEmpty) {
-            return Center(child: Text('No events available'));
-          }
-          return Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0),
-            child: GridView.builder(
-              physics: BouncingScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 16,
-                childAspectRatio: 0.7,
-              ),
-              itemCount: events.length,
-              itemBuilder: (context, index) {
-                final event = events[index];
-                return _buildEventCard(event);
-              },
-            ),
+        }
+
+        if (snapshot.hasError) {
+          return _buildMessage(
+            icon: Icons.wifi_off_rounded,
+            title: 'Could not load events',
+            message: 'Check your connection and try again.',
           );
         }
+
+        final events = snapshot.data ?? [];
+        if (events.isEmpty) {
+          return _buildMessage(
+            icon: Icons.event_busy_rounded,
+            title: selectedTab == 0
+                ? 'Nothing on right now'
+                : 'No upcoming events yet',
+            message: selectedTab == 0
+                ? 'Check the Upcoming tab for what is being planned.'
+                : 'New events show up here as soon as they are announced.',
+          );
+        }
+
+        return RefreshIndicator(
+          color: _brand,
+          onRefresh: _refresh,
+          child: GridView.builder(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 16,
+              // Poster plus the info block under it.
+              childAspectRatio: 0.60,
+            ),
+            itemCount: events.length,
+            itemBuilder: (context, index) => _buildEventCard(events[index]),
+          ),
+        );
       },
     );
   }
 
-  Widget _buildEventCard(EventModel event) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => EventDetailsPage(event: event),
-          ),
-        );
-      },
-      child: AnimatedContainer(
-        duration: Duration(milliseconds: 300),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 8,
-              offset: Offset(0, 4),
+  /// Empty and error states — both scrollable, so pull-to-refresh still works
+  /// when there is nothing on screen to pull.
+  Widget _buildMessage({
+    required IconData icon,
+    required String title,
+    required String message,
+  }) {
+    return RefreshIndicator(
+      color: _brand,
+      onRefresh: _refresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 90),
+          Icon(icon, size: 52, color: Colors.black26),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
             ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Stack(
-            children: [
-              Image.network(
-                event.image,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 48),
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: _muted,
               ),
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.7),
-                    ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Center(
+            child: OutlinedButton.icon(
+              onPressed: _refresh,
+              icon: const Icon(Icons.refresh_rounded, size: 17),
+              label: const Text('Refresh'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _brand,
+                side: const BorderSide(color: _border),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
                 ),
               ),
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding: EdgeInsets.all(12),
-                  child: Text(
-                    event.title,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEventCard(EventModel event) {
+    return EventCard(
+      event: event,
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => EventDetailsPage(event: event)),
+      ),
+    );
+  }
+}
+
+/// One event in the Events grid: poster on top, details underneath.
+///
+/// The title used to sit *on* the poster over a gradient, which is only
+/// legible if the poster happens to be dark at the bottom. Moving it onto a
+/// white block below makes it readable whatever the artwork is, and leaves room
+/// for the two facts that decide whether someone taps: when it is, and what it
+/// costs.
+class EventCard extends StatelessWidget {
+  const EventCard({super.key, required this.event, required this.onTap});
+
+  final EventModel event;
+  final VoidCallback onTap;
+
+  static const Color _brand = Color(0xFF1A237E);
+  static const Color _border = Color(0xFFE5E7EB);
+  static const Color _muted = Color(0xFF6B7280);
+
+  @override
+  Widget build(BuildContext context) {
+    final date = _earliestDate(event);
+    final price = _lowestPrice(event);
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      elevation: 0,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _poster(event.image),
+                    if (date != null)
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: _pill(DateFormat('dd MMM').format(date)),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      event.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                    if (event.location.trim().isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.place_outlined,
+                            size: 12,
+                            color: _muted,
+                          ),
+                          const SizedBox(width: 3),
+                          Expanded(
+                            child: Text(
+                              event.location.trim(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: _muted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Text(
+                      price == null
+                          ? 'View details'
+                          : price == 0
+                              ? 'Free entry'
+                              : '₹${price.round()} onwards',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: _brand,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -720,6 +795,73 @@ class _EventsScreenState extends State<EventsScreen>
         ),
       ),
     );
+  }
+
+  /// The poster, with something sensible in place of a broken or missing one —
+  /// the old card called `Image.network` bare, so a dead URL showed the grey
+  /// exception box.
+  static Widget _poster(String url) {
+    if (url.trim().isEmpty || !url.startsWith('http')) return _posterFallback();
+
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _posterFallback(),
+      loadingBuilder: (context, child, progress) =>
+          progress == null ? child : Container(color: const Color(0xFFEFF1F6)),
+    );
+  }
+
+  static Widget _posterFallback() {
+    return Container(
+      color: const Color(0xFFEFF1F6),
+      child: const Center(
+        child: Icon(Icons.confirmation_number_outlined,
+            size: 30, color: Colors.black26),
+      ),
+    );
+  }
+
+  Widget _pill(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: Colors.black87,
+        ),
+      ),
+    );
+  }
+
+  /// Earliest slot date on the event, for the poster's date pill.
+  DateTime? _earliestDate(EventModel event) {
+    DateTime? earliest;
+    for (final slot in event.slots) {
+      final parsed = DateTime.tryParse((slot['date'] ?? '').toString());
+      if (parsed == null) continue;
+      if (earliest == null || parsed.isBefore(earliest)) earliest = parsed;
+    }
+    return earliest;
+  }
+
+  /// Cheapest slot price — what the card advertises as "from". Null when no
+  /// slot carries a readable price, in which case the card says nothing about
+  /// money rather than guessing zero.
+  num? _lowestPrice(EventModel event) {
+    num? lowest;
+    for (final slot in event.slots) {
+      final parsed = num.tryParse((slot['price'] ?? '').toString());
+      if (parsed == null) continue;
+      if (lowest == null || parsed < lowest) lowest = parsed;
+    }
+    return lowest;
   }
 }
 
