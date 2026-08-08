@@ -14,12 +14,16 @@ import 'coach_view_state.dart';
 /// One controller serves both fee screens, because they are the same list
 /// under different filters:
 ///
-/// * **Fees Management** — everything, filterable by payment status.
-/// * **Fees Approval** — pinned to `approvalStatus == Pending`, and read-only:
-///   a coach cannot approve or reject (403), only see what is waiting.
+/// * **Fees Management** — everything, filterable by payment status, with the
+///   payment actions.
+/// * **Fees Approval** — the same list as the website's coach Fees Approval
+///   page: every record, filtered by *payment* status (All / Pending / Paid),
+///   opened for editing and for issuing the gate pass. A coach still cannot
+///   approve or reject — those answer 403 — so the screen carries no
+///   approve button.
 ///
-/// [approvalLocked] is what tells the two apart, so the approval queue's
-/// filter cannot be cleared out from under it.
+/// [lockedApproval] pins the approval filter for a caller that wants a fixed
+/// queue; both screens currently leave it open, matching the website.
 class CoachFeesController extends ChangeNotifier {
   CoachFeesController(
     this._repository, {
@@ -242,17 +246,16 @@ class CoachFeesController extends ChangeNotifier {
     await load(silent: true);
   }
 
-  /// Edits the record itself — validity and notes, not the payment.
+  /// Edits the record itself — student, amount, status and dates.
+  ///
+  /// Reloads for the same reason [recordPayment] does: the server sends the
+  /// record back to `Pending` approval on a coach's edit, so a locally-patched
+  /// row would keep claiming the student's gate pass still works.
   Future<void> updateRecord({
     required int id,
-    String? validTill,
-    String? notes,
+    required CoachFeeEdit edit,
   }) async {
-    await _repository.updateFeeRecord(
-      id: id,
-      validTill: validTill,
-      notes: notes,
-    );
+    await _repository.updateFeeRecord(id: id, edit: edit);
     await load(silent: true);
   }
 

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:nahata_app/bottombar/slotbook.dart';
 
+import '../core/widgets/app_shimmer.dart';
 import 'Custombottombar.dart';
 
 
@@ -209,7 +210,9 @@ class _ViewgameState extends State<Viewgame>
                   future: _sportsFuture,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
+                      // Same 2-column geometry as the grid below, so the tiles
+                      // land where the placeholders already were.
+                      return AppShimmer.sportsGrid();
                     }
                     else if (snapshot.hasError) {
                       return AnimatedSwitcher(

@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:html_unescape/html_unescape.dart';
 import 'package:nahata_app/core/network/http_logged.dart' as http;
+import 'package:nahata_app/core/widgets/app_shimmer.dart';
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -621,7 +622,8 @@ class _EventsScreenState extends State<EventsScreen>
       future: _futureEvents,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
+          // Poster-shaped, same 0.7 aspect ratio as the cards below.
+          return AppShimmer.eventGrid();
         } else if (snapshot.hasError) {
           return Center(child: Text('Error loading events'));
         } else {

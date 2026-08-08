@@ -7,6 +7,8 @@ import '../../domain/repositories/coach_dashboard_repository.dart';
 import '../state/coach_fees_controller.dart';
 import '../state/coach_view_state.dart';
 import '../theme/coach_theme.dart';
+import '../utils/coach_gate_pass.dart';
+import '../widgets/coach_fee_detail_sheet.dart';
 import '../widgets/coach_payment_sheet.dart';
 import '../widgets/coach_states.dart';
 
@@ -16,12 +18,15 @@ enum CoachFeesMode {
   /// payment actions.
   management,
 
-  /// Fees Approval — the records waiting on an admin's sign-off.
+  /// Fees Approval — the website's coach Fees Approval page.
   ///
-  /// **Read-only.** `PATCH /fees/{id}/approve` and `/reject` are ADMIN /
-  /// COMPLEX_ADMIN / EMPLOYEE only and answer 403 for a coach, so this screen
-  /// shows the queue and explains who has to act, rather than offering buttons
-  /// that would fail.
+  /// Every fee record, filtered by payment status, opened for editing, and —
+  /// once an admin has signed a record off — carrying the student's gate pass
+  /// and the WhatsApp hand-off.
+  ///
+  /// A coach still cannot approve or reject: `PATCH /fees/{id}/approve` and
+  /// `/reject` are ADMIN / COMPLEX_ADMIN / EMPLOYEE only and answer 403, so
+  /// the screen says who has to act instead of offering a button that fails.
   approval,
 }
 
@@ -44,19 +49,23 @@ class CoachFeesPage extends StatefulWidget {
 }
 
 class _CoachFeesPageState extends State<CoachFeesPage> {
+  // Neither screen pins the approval filter: the website's Fees Approval page
+  // lists every record and filters by *payment* status, so the coach can find
+  // an approved record again to re-issue its gate pass.
   late final CoachFeesController _controller = CoachFeesController(
     widget.repository ?? CoachDashboardRepositoryImpl(),
-    // The approval screen is the pending queue, and that filter is not the
-    // coach's to clear.
-    lockedApproval: widget.mode == CoachFeesMode.approval
-        ? CoachApprovalStatus.pending
-        : null,
   );
 
   final _scroll = ScrollController();
   final _search = TextEditingController();
 
   bool get _isApproval => widget.mode == CoachFeesMode.approval;
+
+  /// The website's Fees Approval dropdown offers All / Pending / Paid; the
+  /// management screen keeps all four.
+  List<CoachPaymentStatus> get _statusFilters => _isApproval
+      ? const [CoachPaymentStatus.pending, CoachPaymentStatus.paid]
+      : CoachPaymentStatus.values;
 
   @override
   void initState() {
@@ -101,6 +110,40 @@ class _CoachFeesPageState extends State<CoachFeesPage> {
         content: Text('Payment recorded — sent for admin approval'),
         backgroundColor: CoachTokens.success,
         duration: Duration(seconds: 4),
+      ),
+    );
+  }
+
+  /// The record's details, its edit form, and — once approved — its gate pass.
+  Future<void> _openDetail(CoachFee fee) async {
+    CoachLog.ui('Open fee record ${fee.id}');
+
+    final saved = await showCoachFeeDetailSheet(
+      context: context,
+      fee: fee,
+      onSave: (edit) => _controller.updateRecord(id: fee.id, edit: edit),
+    );
+
+    if (!mounted || !saved) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Record updated — sent for admin approval'),
+        backgroundColor: CoachTokens.success,
+        duration: Duration(seconds: 4),
+      ),
+    );
+  }
+
+  Future<void> _sendGatePass(CoachFee fee) async {
+    final message = await CoachGatePass.sendToWhatsApp(fee);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: message == CoachGatePass.opening
+            ? CoachTokens.success
+            : CoachTokens.danger,
       ),
     );
   }
@@ -207,7 +250,7 @@ class _CoachFeesPageState extends State<CoachFeesPage> {
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
-                for (final status in CoachPaymentStatus.values)
+                for (final status in _statusFilters)
                   Padding(
                     padding: const EdgeInsets.only(right: CoachTokens.space2),
                     child: FilterChip(
@@ -305,10 +348,10 @@ class _CoachFeesPageState extends State<CoachFeesPage> {
           else if (_isApproval)
             const CoachEmptyView(
               icon: Icons.verified_outlined,
-              title: 'Nothing awaiting approval',
+              title: 'No fee records',
               message:
-                  'Every fee you have collected has been signed off by an '
-                  'admin.',
+                  'Records appear here as students enrol in your batches and '
+                  'their fees are collected.',
             )
           else
             const CoachEmptyView(
@@ -346,7 +389,12 @@ class _CoachFeesPageState extends State<CoachFeesPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_isApproval) _approvalNotice() else _statsGrid(stats),
+        if (_isApproval) ...[
+          _approvalStats(stats),
+          const SizedBox(height: CoachTokens.space4),
+          _approvalNotice(),
+        ] else
+          _statsGrid(stats),
         const SizedBox(height: CoachTokens.space4),
         Text(
           'Showing ${_controller.fees.length} of ${_controller.total} '
@@ -355,6 +403,87 @@ class _CoachFeesPageState extends State<CoachFeesPage> {
         ),
         const SizedBox(height: CoachTokens.space3),
       ],
+    );
+  }
+
+  /// The website's three approval cards — pending payments, total paid, total
+  /// students — in the same order, over the same numbers.
+  Widget _approvalStats(CoachFeeStats stats) {
+    // IntrinsicHeight, not CrossAxisAlignment.stretch: these sit in a
+    // ListView, where the incoming height is unbounded and stretch would ask
+    // each tile to be infinitely tall. The intrinsic pass measures the tallest
+    // tile first, so all three end up level and the accent stripes run the
+    // full height.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _compactTile(
+              'Pending payments',
+              '${stats.unpaid}',
+              Icons.error_outline_rounded,
+              CoachTokens.danger,
+            ),
+          ),
+          const SizedBox(width: CoachTokens.space3),
+          Expanded(
+            child: _compactTile(
+              'Total paid',
+              '${stats.paid}',
+              Icons.check_circle_outline_rounded,
+              CoachTokens.success,
+            ),
+          ),
+          const SizedBox(width: CoachTokens.space3),
+          Expanded(
+            child: _compactTile(
+              'Total students',
+              '${stats.total}',
+              Icons.people_alt_outlined,
+              CoachTokens.info,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _compactTile(String label, String value, IconData icon, Color tone) {
+    return CoachCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: CoachTokens.space2,
+        vertical: CoachTokens.space4,
+      ),
+      accentColor: tone,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 21, color: tone),
+          const SizedBox(height: CoachTokens.space2),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 20,
+              height: 1.1,
+              fontWeight: FontWeight.w800,
+              color: CoachTokens.textDark,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10.5,
+              height: 1.25,
+              color: CoachTokens.textMuted,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -421,34 +550,57 @@ class _CoachFeesPageState extends State<CoachFeesPage> {
     );
   }
 
-  /// Explains why there are no buttons on this screen.
+  /// How many records are still waiting, and why this screen has no approve
+  /// button on it.
   Widget _approvalNotice() {
+    final waiting = _controller.stats.pendingApproval;
+    final tone = waiting > 0 ? CoachTokens.warning : CoachTokens.info;
+
     return Container(
       padding: const EdgeInsets.all(CoachTokens.space4),
       decoration: BoxDecoration(
-        color: CoachTokens.info.withValues(alpha: 0.09),
+        color: tone.withValues(alpha: 0.09),
         borderRadius: BorderRadius.circular(CoachTokens.radiusMd),
-        border: Border.all(color: CoachTokens.info.withValues(alpha: 0.3)),
+        border: Border.all(color: tone.withValues(alpha: 0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.info_outline_rounded,
+          Icon(
+            waiting > 0
+                ? Icons.pending_actions_rounded
+                : Icons.info_outline_rounded,
             size: 19,
-            color: CoachTokens.info,
+            color: tone,
           ),
           const SizedBox(width: CoachTokens.space3),
-          const Expanded(
-            child: Text(
-              'These payments are waiting on an admin. Only an admin or '
-              "employee can approve them, and until they do the student's "
-              'gate pass will not open.',
-              style: TextStyle(
-                fontSize: 12.5,
-                height: 1.45,
-                color: CoachTokens.textBody,
-              ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (waiting > 0) ...[
+                  Text(
+                    '$waiting payment${waiting == 1 ? '' : 's'} awaiting '
+                    'approval',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: tone,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                ],
+                const Text(
+                  'Only an admin or employee can approve a payment, and until '
+                  "they do the student's gate pass will not open. Open a "
+                  'record to edit it, or to send an approved pass on WhatsApp.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.45,
+                    color: CoachTokens.textBody,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -496,6 +648,7 @@ class _CoachFeesPageState extends State<CoachFeesPage> {
     return CoachCard(
       margin: const EdgeInsets.only(bottom: CoachTokens.space3),
       accentColor: tone,
+      onTap: () => _openDetail(fee),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -603,35 +756,69 @@ class _CoachFeesPageState extends State<CoachFeesPage> {
               ),
             ),
           ],
-          // Approval is admin-only, so the queue offers nothing to press.
-          if (!_isApproval) ...[
-            const SizedBox(height: CoachTokens.space3),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _recordPayment(fee),
-                icon: const Icon(Icons.payments_outlined, size: 17),
-                label: Text(
-                  fee.isPaid ? 'Update payment' : 'Record payment',
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: CoachTokens.brand,
-                  side: const BorderSide(color: CoachTokens.border),
-                  padding: const EdgeInsets.symmetric(
-                    vertical: CoachTokens.space3,
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(CoachTokens.radiusSm),
+          const SizedBox(height: CoachTokens.space3),
+          // Approving is admin-only, so the approval screen offers what a coach
+          // *can* do with a record: open it, and hand an approved pass over.
+          if (_isApproval)
+            Row(
+              children: [
+                Expanded(
+                  child: _cardAction(
+                    label: 'View details',
+                    icon: Icons.visibility_outlined,
+                    tone: CoachTokens.brand,
+                    onPressed: () => _openDetail(fee),
                   ),
                 ),
-              ),
+                if (fee.isApproved) ...[
+                  const SizedBox(width: CoachTokens.space2),
+                  Expanded(
+                    child: _cardAction(
+                      label: 'Send pass',
+                      icon: Icons.chat_rounded,
+                      tone: const Color(0xFF25D366),
+                      onPressed: () => _sendGatePass(fee),
+                    ),
+                  ),
+                ],
+              ],
+            )
+          else
+            _cardAction(
+              label: fee.isPaid ? 'Update payment' : 'Record payment',
+              icon: Icons.payments_outlined,
+              tone: CoachTokens.brand,
+              onPressed: () => _recordPayment(fee),
             ),
-          ],
         ],
+      ),
+    );
+  }
+
+  Widget _cardAction({
+    required String label,
+    required IconData icon,
+    required Color tone,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 17),
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: tone,
+          side: const BorderSide(color: CoachTokens.border),
+          padding: const EdgeInsets.symmetric(vertical: CoachTokens.space3),
+          textStyle: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(CoachTokens.radiusSm),
+          ),
+        ),
       ),
     );
   }

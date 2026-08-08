@@ -207,6 +207,31 @@ class CoachFee {
         if (batchName.trim().isNotEmpty) batchName.trim(),
       ].join(' · ');
 
+  /// The gate-pass code the student shows at the gate.
+  ///
+  /// Derived, not stored — a function of the record id and the current year,
+  /// built exactly as the website's `FeesApproval.tsx` builds it so a pass
+  /// issued from the phone scans the same as one issued from the web.
+  String get gatePassCode =>
+      'GATEPASS-${DateTime.now().year}-${id.toString().padLeft(6, '0')}';
+
+  /// The QR image the website links in the WhatsApp message. Sent as a link
+  /// rather than an attachment because `wa.me` carries text only.
+  String get gatePassQrUrl =>
+      'https://api.qrserver.com/v1/create-qr-code/?size=300x300'
+      '&data=${Uri.encodeComponent(gatePassCode)}&format=png&margin=10';
+
+  /// The student's number in `wa.me` form — digits only, with India's 91
+  /// prepended to a bare 10-digit mobile. Empty when there is no number to
+  /// message.
+  String get whatsappNumber {
+    final digits = studentPhone.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return '';
+    return digits.startsWith('91') ? digits : '91$digits';
+  }
+
+  bool get canWhatsApp => whatsappNumber.isNotEmpty;
+
   @override
   String toString() =>
       'CoachFee($id, $studentName, $paymentLabel/$approvalLabel)';
@@ -280,4 +305,61 @@ class CoachPaymentDraft {
   String toString() =>
       'CoachPaymentDraft(${paymentStatus?.slug}, $amountPaid, '
       '${paymentMode?.slug})';
+}
+
+/// An edit to the fee record itself, sent to `PUT /fees/{id}`.
+///
+/// This is the website's Fees Approval "Edit" form: the student's name, what
+/// was collected, the payment status, and the two dates.
+///
+/// ⚠️ **A coach's edit also re-queues the record for approval.** `PUT /fees/:id`
+/// stamps `receivedBy` and forces `approvalStatus` back to `Pending` whenever
+/// the caller is a COACH, exactly as recording a payment does — so editing an
+/// already-approved record locks the student's gate pass again until an admin
+/// signs it off.
+class CoachFeeEdit {
+  const CoachFeeEdit({
+    this.studentName,
+    this.amountPaid,
+    this.paymentStatus,
+    this.enrollmentDate,
+    this.validTill,
+    this.notes,
+  });
+
+  /// Renames the linked user account, not just this row — the same thing the
+  /// website's field does.
+  final String? studentName;
+
+  final num? amountPaid;
+  final CoachPaymentStatus? paymentStatus;
+
+  /// `yyyy-MM-dd`.
+  final String? enrollmentDate;
+
+  /// `yyyy-MM-dd`, or `''` to clear it — the backend stores an empty string as
+  /// NULL, meaning an enrollment with no expiry.
+  final String? validTill;
+
+  final String? notes;
+
+  /// [validTill] and [notes] are sent whenever non-null, empty string included,
+  /// because clearing either is a legitimate edit.
+  Map<String, dynamic> toJson() => {
+        if ((studentName ?? '').trim().isNotEmpty)
+          'studentName': studentName!.trim(),
+        if (amountPaid != null) 'amountPaid': amountPaid,
+        if (paymentStatus != null) 'paymentStatus': paymentStatus!.slug,
+        if ((enrollmentDate ?? '').trim().isNotEmpty)
+          'enrollmentDate': enrollmentDate!.trim(),
+        if (validTill != null) 'validTill': validTill!.trim(),
+        if (notes != null) 'notes': notes!.trim(),
+      };
+
+  bool get isEmpty => toJson().isEmpty;
+
+  @override
+  String toString() =>
+      'CoachFeeEdit($studentName, $amountPaid, ${paymentStatus?.slug}, '
+      '$enrollmentDate → $validTill)';
 }

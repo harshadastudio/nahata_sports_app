@@ -873,6 +873,7 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:nahata_app/auth/login.dart';
 import '../core/network/api_exception.dart';
 import '../core/services/selected_ground.dart';
+import '../core/widgets/app_shimmer.dart';
 import '../models/batch_model.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/coaching_repository.dart';
@@ -1662,7 +1663,9 @@ class _SportsScreenState extends State<SportsScreen> {
               future: futureSports,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  // Same columns, spacing and aspect ratio as the sports grid
+                  // below, so the tiles land where the placeholders were.
+                  return AppShimmer.coachingSports();
                 } else if (snapshot.hasError) {
                   return Center(
                     child: Column(
@@ -2040,7 +2043,8 @@ class _BatchScreenState extends State<BatchScreen> {
         future: futureBatches,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            // Card-shaped, like the batch list it stands in for.
+            return AppShimmer.batchList();
           } else if (snapshot.hasError) {
             return Center(
               child: Column(
