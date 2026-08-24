@@ -1,0 +1,301 @@
+{
+  "module": "Court Booking - Coupons / Offers",
+  "baseUrl": "https://<host>/api",
+  "auth": {
+    "type": "Bearer JWT",
+    "header": "Authorization: Bearer <token>",
+    "note": "All 3 booking-flow endpoints below require a logged-in user (any role, USER included)."
+  },
+  "platformDetection": {
+    "note": "Web-only / App-only coupons are gated server-side. The client CANNOT bypass it - the server resolves the platform from the request itself.",
+    "header": "X-Client-Platform: android | ios | app | web",
+    "fallback": "If the header is missing it is resolved from User-Agent / Origin. Default = Web."
+  },
+
+  "endpoints": [
+    {
+      "no": 1,
+      "name": "Get Active Offers (OFFERS & COUPONS panel)",
+      "usedBy": "The offers list shown in the booking screen",
+      "method": "GET",
+      "url": "/api/coupons/active",
+      "headers": {
+        "Authorization": "Bearer <token>",
+        "X-Client-Platform": "android"
+      },
+      "queryParams": {
+        "appliesTo": "Court  (send this for the court booking flow)",
+        "sportComplexId": "9     (selected venue id, optional)",
+        "sportId": "4     (selected sport id, optional)"
+      },
+      "sampleRequest": "GET /api/coupons/active?appliesTo=Court&sportComplexId=9&sportId=4",
+      "requestBody": null,
+
+      "successResponse": {
+        "httpStatus": 200,
+        "body": {
+          "success": true,
+          "data": [
+            {
+              "id": 12,
+              "code": "FIRST20",
+              "discountType": "Percentage",
+              "discountValue": "20.00",
+              "maxDiscount": "150.00",
+              "description": "20% off on your first court booking",
+              "validUntil": "2026-12-31T18:29:59.000Z",
+              "usageLimit": 500,
+              "usedCount": 137,
+              "appliesTo": "Court",
+              "sportComplexId": 9,
+              "sportId": 4,
+              "eventPassId": null,
+              "platform": "All"
+            },
+            {
+              "id": 15,
+              "code": "FLAT100",
+              "discountType": "Flat",
+              "discountValue": "100.00",
+              "maxDiscount": null,
+              "description": "Flat Rs.100 off",
+              "validUntil": "2026-09-30T18:29:59.000Z",
+              "usageLimit": 200,
+              "usedCount": 12,
+              "appliesTo": "Court",
+              "sportComplexId": null,
+              "sportId": null,
+              "eventPassId": null,
+              "platform": "App"
+            }
+          ]
+        }
+      },
+
+      "emptyResponse": {
+        "note": "This is what makes the UI show 'No active offers right now'",
+        "httpStatus": 200,
+        "body": { "success": true, "data": [] }
+      },
+
+      "errorResponse": {
+        "httpStatus": 500,
+        "body": {
+          "success": false,
+          "message": "Internal server error",
+          "error": "<reason>"
+        }
+      },
+
+      "filterLogic": [
+        "status = 'Active'",
+        "validUntil > now()",
+        "usedCount < usageLimit",
+        "appliesTo = 'Court'",
+        "sportComplexId IS NULL (all venues) OR = requested sportComplexId",
+        "sportId IS NULL (all sports) OR = requested sportId",
+        "platform = 'All' OR platform = detected platform"
+      ]
+    },
+
+    {
+      "no": 2,
+      "name": "Validate / Apply Coupon Code",
+      "usedBy": "The APPLY button next to the COUPON CODE box",
+      "method": "POST",
+      "url": "/api/coupons/validate",
+      "headers": {
+        "Authorization": "Bearer <token>",
+        "Content-Type": "application/json",
+        "X-Client-Platform": "android"
+      },
+
+      "requestBody": {
+        "code": "FIRST20",
+        "amount": 800,
+        "appliesTo": "Court",
+        "sportComplexId": 9,
+        "sportId": 4,
+        "eventPassId": null
+      },
+
+      "requestFields": {
+        "code": "string | REQUIRED | case-insensitive, uppercased server-side",
+        "amount": "number | optional | booking amount before discount. If omitted, discountAmount / finalAmount / originalAmount are NOT returned",
+        "appliesTo": "string | optional but send 'Court' | blocks event-only coupons",
+        "sportComplexId": "number | optional | selected venue id",
+        "sportId": "number | optional | selected sport id",
+        "eventPassId": "null   | not used in the court booking flow"
+      },
+
+      "successResponse": {
+        "httpStatus": 200,
+        "body": {
+          "success": true,
+          "message": "Coupon is valid",
+          "data": {
+            "id": 12,
+            "code": "FIRST20",
+            "discountType": "Percentage",
+            "discountValue": 20,
+            "maxDiscount": 150,
+            "description": "20% off on your first court booking",
+            "validUntil": "2026-12-31T18:29:59.000Z",
+            "discountAmount": 150,
+            "finalAmount": 650,
+            "originalAmount": 800
+          }
+        }
+      },
+
+      "responseFields": {
+        "discountAmount": "Calculated discount. Percentage is capped by maxDiscount; Flat is capped at amount",
+        "finalAmount": "amount - discountAmount (never below 0)",
+        "originalAmount": "echo of the amount sent",
+        "note": "These 3 fields appear ONLY when 'amount' is sent in the request"
+      },
+
+      "errorResponses": [
+        { "httpStatus": 400, "body": { "success": false, "message": "Coupon code is required" } },
+        { "httpStatus": 400, "body": { "success": false, "message": "Invalid coupon code" } },
+        { "httpStatus": 400, "body": { "success": false, "message": "Coupon is not active" } },
+        { "httpStatus": 400, "body": { "success": false, "message": "Coupon has expired" } },
+        { "httpStatus": 400, "body": { "success": false, "message": "Coupon usage limit reached" } },
+        { "httpStatus": 400, "body": { "success": false, "message": "This coupon can only be used on the website" } },
+        { "httpStatus": 400, "body": { "success": false, "message": "This coupon can only be used on the mobile app" } },
+        { "httpStatus": 400, "body": { "success": false, "message": "This coupon is only valid for event bookings" } },
+        { "httpStatus": 400, "body": { "success": false, "message": "This coupon is not valid for the selected sports complex" } },
+        { "httpStatus": 400, "body": { "success": false, "message": "This coupon is only valid for Badminton bookings" } },
+        { "httpStatus": 401, "body": { "success": false, "message": "Unauthorized" } }
+      ],
+      "importantNote": "Every failure is HTTP 400 (not 404). Show 'message' directly to the user - it is already user-friendly."
+    },
+
+    {
+      "no": 3,
+      "name": "Create Court Booking WITH Coupon (final redemption)",
+      "usedBy": "The PAY / CONFIRM button - this is where usedCount is incremented",
+      "method": "POST",
+      "url": "/api/courts/bookings/create",
+      "headers": {
+        "Authorization": "Bearer <token>",
+        "Content-Type": "application/json",
+        "X-Client-Platform": "android"
+      },
+
+      "requestBody": {
+        "sportComplexId": 9,
+        "sportId": 4,
+        "date": "2026-08-28",
+        "startTime": "18:00:00",
+        "endTime": "19:00:00",
+        "totalAmount": 800,
+        "couponCode": "FIRST20"
+      },
+
+      "requestFields": {
+        "totalAmount": "ORIGINAL price BEFORE discount. Do NOT send the discounted amount - the backend re-applies the coupon itself, so sending the discounted value discounts it twice.",
+        "couponCode": "string | optional | send null when no coupon is applied",
+        "note": "Court is auto-selected by the server (auto-shift). Legacy payload also supported: { courtId, date, startTime, endTime, totalAmount, couponCode }"
+      },
+
+      "successResponse": {
+        "httpStatus": 201,
+        "body": {
+          "success": true,
+          "message": "Court reserved",
+          "data": {
+            "bookings": [
+              {
+                "id": 4821,
+                "userId": 305,
+                "sportId": 4,
+                "courtId": 17,
+                "date": "2026-08-28",
+                "startTime": "18:00:00",
+                "endTime": "19:00:00",
+                "bookingSource": "Website",
+                "bookingStatus": "Pending",
+                "paymentStatus": "Pending",
+                "holdExpiresAt": "2026-08-24T12:40:00.000Z",
+                "originalAmount": "800.00",
+                "discountAmount": "150.00",
+                "totalAmount": "650.00",
+                "couponCode": "FIRST20",
+                "maxPersons": 4
+              }
+            ],
+            "combinedTotal": 650
+          }
+        }
+      },
+
+      "errorResponses": [
+        { "httpStatus": 400, "body": { "success": false, "message": "Invalid coupon code" } },
+        { "httpStatus": 400, "body": { "success": false, "message": "Coupon usage limit reached" } },
+        { "httpStatus": 400, "body": { "success": false, "message": "date, startTime and endTime are required" } },
+        { "httpStatus": 401, "body": { "success": false, "message": "Login required to book a court" } },
+        { "httpStatus": 409, "body": { "success": false, "message": "Slot already booked: courtId 17 on 2026-08-28 from 18:00:00 to 19:00:00" } },
+        { "httpStatus": 500, "body": { "success": false, "message": "<reason>" } }
+      ],
+
+      "couponLifecycle": [
+        "usedCount is incremented at booking creation, inside the DB transaction",
+        "Booking is created as Pending with a holdExpiresAt hold",
+        "On successful payment -> booking Confirmed + QR pass issued",
+        "On cancel / abandoned checkout / expired hold -> the coupon use is given back (usedCount decremented)"
+      ]
+    }
+  ],
+
+  "adminCrud": {
+    "note": "Coupon master. ADMIN / COMPLEX_ADMIN / permitted EMPLOYEE only. The same router is mounted at both /api/coupons and /api/admin/coupons.",
+    "endpoints": [
+      { "method": "GET", "url": "/api/admin/coupons?page=1&limit=10&search=FIRST&status=Active", "returns": "{ success, data: [...], pagination: { currentPage, totalPages, total, itemsPerPage } }" },
+      { "method": "GET", "url": "/api/admin/coupons/:id", "returns": "{ success, data: {coupon} } | 404 Coupon not found" },
+      { "method": "GET", "url": "/api/admin/coupons/code/:code", "returns": "{ success, data: {coupon} } | 404 Coupon not found" },
+      { "method": "POST", "url": "/api/admin/coupons", "returns": "201 { success, data: {coupon}, message: 'Coupon created successfully' }" },
+      { "method": "PUT", "url": "/api/admin/coupons/:id", "returns": "200 { success, data: {coupon}, message: 'Coupon updated successfully' }" },
+      { "method": "DELETE", "url": "/api/admin/coupons/:id", "returns": "200 { success, message: 'Coupon deleted successfully' }" }
+    ],
+    "createRequestBody": {
+      "code": "FIRST20",
+      "discountType": "Percentage",
+      "discountValue": 20,
+      "maxDiscount": 150,
+      "description": "20% off on your first court booking",
+      "validUntil": "2026-12-31",
+      "usageLimit": 500,
+      "status": "Active",
+      "appliesTo": "Court",
+      "sportComplexId": 9,
+      "sportId": 4,
+      "eventPassId": null,
+      "platform": "All"
+    },
+    "createRequiredFields": ["code", "discountType", "discountValue", "validUntil"],
+    "createErrors": [
+      { "httpStatus": 400, "message": "Missing required fields: code, discountType, discountValue, validUntil" },
+      { "httpStatus": 400, "message": "Coupon code already exists" },
+      { "httpStatus": 400, "message": "Selected sport not found" },
+      { "httpStatus": 400, "message": "Selected sport does not belong to the selected sports complex" },
+      { "httpStatus": 400, "message": "Selected event not found" }
+    ],
+    "rules": [
+      "code is uppercased and unique; code CANNOT be changed on update",
+      "appliesTo = 'Court' -> eventPassId is forced to null",
+      "appliesTo = 'Event' -> sportComplexId and sportId are forced to null",
+      "sportId sent without sportComplexId -> the complex is derived from the sport",
+      "COMPLEX_ADMIN is forced to appliesTo = 'Court' and its own sportComplexId"
+    ]
+  },
+
+  "enums": {
+    "discountType": ["Percentage", "Flat"],
+    "status": ["Active", "Expired"],
+    "appliesTo": ["Court", "Event"],
+    "platform": ["All", "Web", "App"]
+  },
+
+  "dataTypeNote": "DECIMAL columns (discountValue, maxDiscount, totalAmount, discountAmount) come back from PostgreSQL as STRINGS in list and booking responses, e.g. \"20.00\". Only /api/coupons/validate returns them as JSON numbers. Parse before doing math."
+}
