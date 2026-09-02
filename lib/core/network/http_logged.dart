@@ -21,6 +21,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import '../api/api_trace.dart';
 import '../utils/app_logger.dart';
 
 const String _name = 'HTTP';
@@ -106,7 +107,12 @@ Future<http.Response> _send(
   Map<String, String>? headers,
   Object? body,
 }) async {
+  // The same role/module preamble `ApiClient` prints, so a legacy call and a
+  // client call read identically in the console.
+  ApiTrace.context(url.path);
   AppLogger.request(method, url, body: body, headers: headers, name: _name);
+
+  final stopwatch = Stopwatch()..start();
 
   try {
     final response = await call();
@@ -114,11 +120,33 @@ Future<http.Response> _send(
       url,
       statusCode: response.statusCode,
       body: response.body,
+      elapsed: stopwatch.elapsed,
+      headers: response.headers,
       name: _name,
     );
+
+    if (response.statusCode >= 400) {
+      AppLogger.apiError(
+        method,
+        url,
+        statusCode: response.statusCode,
+        requestBody: body,
+        responseBody: response.body,
+        error: 'HTTP ${response.statusCode}',
+        name: _name,
+      );
+    }
     return response;
-  } catch (e) {
-    AppLogger.error('$method $url failed', name: _name, error: e);
+  } catch (e, s) {
+    AppLogger.apiError(
+      method,
+      url,
+      requestBody: body,
+      responseBody: '(no response after ${stopwatch.elapsedMilliseconds}ms)',
+      error: e,
+      stackTrace: s,
+      name: _name,
+    );
     rethrow;
   }
 }

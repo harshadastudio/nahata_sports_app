@@ -75,6 +75,53 @@ void main() {
       expect(requests.single.url.queryParameters['appliesTo'], 'Event');
     });
 
+    test('names the event and venue, so a scoped coupon can match', () async {
+      // The server matches each scope as "unscoped OR equal to this", so a
+      // coupon tied to one event never comes back unless the request says
+      // which event. Leaving these out is what kept the live "TEST" coupon —
+      // Active, 10%, scoped to Test Event — off the offers strip.
+      serve({'success': true, 'data': []});
+
+      await CouponRepository.instance.fetchActiveCoupons(
+        appliesTo: 'Event',
+        eventPassId: 9,
+        sportComplexId: 1,
+      );
+
+      final query = requests.single.url.queryParameters;
+      expect(query['appliesTo'], 'Event');
+      expect(query['eventPassId'], '9');
+      expect(query['sportComplexId'], '1');
+    });
+
+    test('names the venue and sport for a court booking', () async {
+      serve({'success': true, 'data': []});
+
+      await CouponRepository.instance.fetchActiveCoupons(
+        appliesTo: 'Court',
+        sportComplexId: 1,
+        sportId: 19,
+      );
+
+      final query = requests.single.url.queryParameters;
+      expect(query['appliesTo'], 'Court');
+      expect(query['sportComplexId'], '1');
+      expect(query['sportId'], '19');
+    });
+
+    test('a scope the screen does not know is left out entirely', () async {
+      // Sending an explicit null would narrow the match to unscoped coupons —
+      // the opposite of what an unknown scope should mean.
+      serve({'success': true, 'data': []});
+
+      await CouponRepository.instance.fetchActiveCoupons(appliesTo: 'Event');
+
+      final query = requests.single.url.queryParameters;
+      expect(query.containsKey('eventPassId'), isFalse);
+      expect(query.containsKey('sportComplexId'), isFalse);
+      expect(query.containsKey('sportId'), isFalse);
+    });
+
     test('the live empty response yields no coupons', () async {
       // Verbatim: {"success":true,"data":[]}
       serve({'success': true, 'data': []});

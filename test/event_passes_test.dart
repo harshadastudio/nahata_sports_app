@@ -251,7 +251,7 @@ void main() {
       serve();
       await SelectedGround.instance.save('Sinhagad Road', id: 1);
 
-      final events = await fetchEvents(status: 'active');
+      final events = await fetchEvents(timeframe: EventTimeframe.upcoming);
 
       expect(lastEventsCall().queryParameters['sportComplexId'], '1');
       expect(events, hasLength(1));
@@ -264,7 +264,7 @@ void main() {
       // Saved without an id — as the coaching flow does.
       await SelectedGround.instance.save('Sinhagad Road');
 
-      final events = await fetchEvents(status: 'active');
+      final events = await fetchEvents(timeframe: EventTimeframe.upcoming);
 
       // It looked the id up from /sports-complexes…
       expect(requests.any((u) => u.path.endsWith('/sports-complexes')), isTrue);
@@ -278,7 +278,7 @@ void main() {
     test('lists every venue when none is selected', () async {
       serve();
 
-      final events = await fetchEvents(status: 'active');
+      final events = await fetchEvents(timeframe: EventTimeframe.upcoming);
 
       expect(lastEventsCall().queryParameters.containsKey('sportComplexId'),
           isFalse);
@@ -299,7 +299,7 @@ void main() {
 
       // What the picker sends for "Sinhagad Road".
       final events = await fetchEvents(
-        status: 'active',
+        timeframe: EventTimeframe.upcoming,
         sportComplexId: 1,
         filterBySelectedVenue: false,
       );
@@ -315,7 +315,7 @@ void main() {
 
       // What the picker sends for "All complexes".
       final events = await fetchEvents(
-        status: 'active',
+        timeframe: EventTimeframe.upcoming,
         filterBySelectedVenue: false,
       );
 
@@ -328,7 +328,7 @@ void main() {
       serve();
       await SelectedGround.instance.save('Nowhere Ground');
 
-      final events = await fetchEvents(status: 'active');
+      final events = await fetchEvents(timeframe: EventTimeframe.upcoming);
 
       expect(lastEventsCall().queryParameters.containsKey('sportComplexId'),
           isFalse);
@@ -372,11 +372,16 @@ void main() {
         );
       }));
 
-      final active = await fetchEvents(status: 'active');
-      expect(active.map((e) => e.title), ['Long past', 'Far future']);
+      final upcoming =
+          await fetchEvents(timeframe: EventTimeframe.upcoming);
+      expect(lastEventsCall().queryParameters['timeframe'], 'upcoming');
+      // Soonest-first for what you can still book.
+      expect(upcoming.map((e) => e.title), ['Long past', 'Far future']);
 
-      final upcoming = await fetchEvents(status: 'upcoming');
-      expect(upcoming.map((e) => e.title), ['Far future']);
+      final past = await fetchEvents(timeframe: EventTimeframe.past);
+      expect(lastEventsCall().queryParameters['timeframe'], 'past');
+      // Most-recent-first for what just happened.
+      expect(past.map((e) => e.title), ['Far future', 'Long past']);
     });
   });
 
@@ -384,7 +389,7 @@ void main() {
     test('carries slots through so the details page needs no second call',
         () async {
       serve();
-      final events = await fetchEvents(status: 'active');
+      final events = await fetchEvents(timeframe: EventTimeframe.upcoming);
       final holi = events.firstWhere((e) => e.title == 'Holi Event');
 
       expect(holi.slots, hasLength(1));
@@ -402,7 +407,7 @@ void main() {
 
     test('uses the API image URL as-is', () async {
       serve();
-      final events = await fetchEvents(status: 'active');
+      final events = await fetchEvents(timeframe: EventTimeframe.upcoming);
 
       // The old code prefixed every path with nahatasports.com, which would
       // corrupt these absolute URLs.
@@ -413,7 +418,7 @@ void main() {
 
     test('location comes from the nested sportComplex', () async {
       serve();
-      final events = await fetchEvents(status: 'active');
+      final events = await fetchEvents(timeframe: EventTimeframe.upcoming);
 
       expect(events.firstWhere((e) => e.title == 'Holi Event').location,
           'Gangadham Chowk');
@@ -423,7 +428,7 @@ void main() {
 
     test('plain descriptions survive the formatter', () async {
       serve();
-      final events = await fetchEvents(status: 'active');
+      final events = await fetchEvents(timeframe: EventTimeframe.upcoming);
       final description =
           events.firstWhere((e) => e.title == 'Holi Event').formattedDescription;
 

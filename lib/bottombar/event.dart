@@ -24,6 +24,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../auth/login.dart';
 import '../core/network/api_exception.dart';
 import '../core/services/selected_ground.dart';
+import '../core/utils/app_logger.dart';
+import '../core/utils/payment_amounts.dart';
 import '../models/coupon_model.dart';
 import '../models/event_booking_model.dart';
 import '../models/event_pass_model.dart';
@@ -51,6 +53,10 @@ class EventModel {
   /// Question/answer pairs from the API.
   final List<EventFaq> faqs;
 
+  /// Extra details this event asks each booker for, defined per event by the
+  /// admin. Empty for most events.
+  final List<EventCustomField> customFields;
+
   /// Venue id, needed by venue-scoped coupons.
   final int? sportComplexId;
 
@@ -66,6 +72,7 @@ class EventModel {
     required this.description,
     this.slots = const <Map<String, dynamic>>[],
     this.faqs = const <EventFaq>[],
+    this.customFields = const <EventCustomField>[],
     this.sportComplexId,
   });
 
@@ -82,6 +89,7 @@ class EventModel {
           .map((s) => s.toBookingMap())
           .toList(growable: false),
       faqs: pass.faqs,
+      customFields: pass.customFields,
       sportComplexId: pass.sportComplexId,
     );
   }
@@ -187,17 +195,36 @@ class EventModel {
 //   final List data = body['data'] ?? [];
 //   return data.map((e) => EventModel.fromJson(e)).toList();
 // }
-/// Loads events from `GET /event-passes`.
+/// The two halves of the events screen, as `GET /event-passes` names them.
 ///
-/// [status] keeps the screen's two tabs working:
-/// * `"active"`   — every active event pass,
-/// * `"upcoming"` — active passes that still have a slot dated today or later,
-///   ordered by their earliest slot. The API exposes only an Active/Inactive
-///   status, so "upcoming" is derived from the embedded slot dates.
+/// The split is the **server's**, not ours: the API takes a `timeframe`
+/// parameter and decides which events have already happened. The screen used to
+/// derive "upcoming" client-side from the embedded slot dates, which meant the
+/// app and the API could disagree about what "past" means — a multi-day event
+/// part-way through being the obvious case.
+enum EventTimeframe {
+  upcoming('upcoming', 'Upcoming'),
+  past('past', 'Past');
+
+  const EventTimeframe(this.query, this.label);
+
+  /// The value sent as `?timeframe=`.
+  final String query;
+
+  /// The tab label.
+  final String label;
+}
+
+/// Loads events from `GET /event-passes?status=Active&timeframe=…`.
 ///
 /// Results are limited to the venue the user selected, when there is one.
+///
+/// Ordering is applied here rather than assumed of the response: upcoming
+/// events read soonest-first (what you can still book), past events
+/// most-recent-first (what just happened). Events whose slots carry no usable
+/// date sink to the bottom either way instead of landing at an arbitrary spot.
 Future<List<EventModel>> fetchEvents({
-  required String status,
+  required EventTimeframe timeframe,
   int? sportComplexId,
   bool filterBySelectedVenue = true,
 }) async {
@@ -208,26 +235,23 @@ Future<List<EventModel>> fetchEvents({
 
   final passes = await repository.fetchEventPasses(
     status: 'Active',
+    timeframe: timeframe.query,
     sportComplexId: complexId,
   );
 
-  final upcomingOnly = status.toLowerCase() == 'upcoming';
+  final ordered = passes.toList();
+  final newestFirst = timeframe == EventTimeframe.past;
 
-  final selected =
-      upcomingOnly ? passes.where((p) => p.hasUpcomingSlot).toList() : passes;
+  ordered.sort((a, b) {
+    final left = a.earliestSlotDate;
+    final right = b.earliestSlotDate;
+    if (left == null && right == null) return 0;
+    if (left == null) return 1;
+    if (right == null) return -1;
+    return newestFirst ? right.compareTo(left) : left.compareTo(right);
+  });
 
-  if (upcomingOnly) {
-    selected.sort((a, b) {
-      final left = a.earliestSlotDate;
-      final right = b.earliestSlotDate;
-      if (left == null && right == null) return 0;
-      if (left == null) return 1;
-      if (right == null) return -1;
-      return left.compareTo(right);
-    });
-  }
-
-  return selected.map(EventModel.fromEventPass).toList(growable: false);
+  return ordered.map(EventModel.fromEventPass).toList(growable: false);
 }
 
 /* -------------------------------------------
@@ -245,7 +269,10 @@ class _EventsScreenState extends State<EventsScreen>
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
-  int selectedTab = 0;
+
+  /// Which half of the screen is showing. Upcoming leads because it is the only
+  /// one you can act on — a past event can be read, not booked.
+  EventTimeframe _timeframe = EventTimeframe.upcoming;
 
   late Future<List<EventModel>> _futureEvents;
 
@@ -274,7 +301,7 @@ class _EventsScreenState extends State<EventsScreen>
     );
     _animationController.forward();
 
-    _futureEvents = fetchEvents(status: "active");
+    _futureEvents = fetchEvents(timeframe: _timeframe);
     _loadVenues();
   }
 
@@ -292,11 +319,11 @@ class _EventsScreenState extends State<EventsScreen>
     });
   }
 
-  /// Events for [status], scoped to the venue the picker is showing.
-  Future<List<EventModel>> _loadEvents(String status) {
-    if (_loadingVenues) return fetchEvents(status: status);
+  /// Events for [timeframe], scoped to the venue the picker is showing.
+  Future<List<EventModel>> _loadEvents(EventTimeframe timeframe) {
+    if (_loadingVenues) return fetchEvents(timeframe: timeframe);
     return fetchEvents(
-      status: status,
+      timeframe: timeframe,
       sportComplexId: _venueId,
       filterBySelectedVenue: false,
     );
@@ -314,7 +341,7 @@ class _EventsScreenState extends State<EventsScreen>
     setState(() {
       _venueId = id;
       _futureEvents = fetchEvents(
-        status: selectedTab == 0 ? "active" : "upcoming",
+        timeframe: _timeframe,
         sportComplexId: id,
         filterBySelectedVenue: false,
       );
@@ -330,7 +357,7 @@ class _EventsScreenState extends State<EventsScreen>
   /// Reloads the current tab. Errors stay on [_futureEvents] for the builder
   /// to render — swallowed here only so the refresh gesture completes.
   Future<void> _refresh() async {
-    final future = _loadEvents(selectedTab == 0 ? "active" : "upcoming");
+    final future = _loadEvents(_timeframe);
     setState(() => _futureEvents = future);
     try {
       await future;
@@ -496,7 +523,7 @@ class _EventsScreenState extends State<EventsScreen>
     );
   }
 
-  /// Active / Upcoming, as one segmented control.
+  /// Upcoming / Past, as one segmented control.
   ///
   /// The old row was two pills of different widths — one `Expanded`, one sized
   /// to its label — with a stray forward-arrow icon after them that did
@@ -513,15 +540,14 @@ class _EventsScreenState extends State<EventsScreen>
       ),
       child: Row(
         children: [
-          _buildTab(0, 'Active', "active"),
-          _buildTab(1, 'Upcoming', "upcoming"),
+          for (final timeframe in EventTimeframe.values) _buildTab(timeframe),
         ],
       ),
     );
   }
 
-  Widget _buildTab(int index, String label, String status) {
-    final selected = selectedTab == index;
+  Widget _buildTab(EventTimeframe timeframe) {
+    final selected = _timeframe == timeframe;
 
     return Expanded(
       child: GestureDetector(
@@ -530,8 +556,8 @@ class _EventsScreenState extends State<EventsScreen>
             ? null
             : () {
                 setState(() {
-                  selectedTab = index;
-                  _futureEvents = _loadEvents(status);
+                  _timeframe = timeframe;
+                  _futureEvents = _loadEvents(timeframe);
                 });
               },
         child: AnimatedContainer(
@@ -543,7 +569,7 @@ class _EventsScreenState extends State<EventsScreen>
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
-            label,
+            timeframe.label,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13.5,
@@ -575,14 +601,14 @@ class _EventsScreenState extends State<EventsScreen>
 
         final events = snapshot.data ?? [];
         if (events.isEmpty) {
+          final upcoming = _timeframe == EventTimeframe.upcoming;
           return _buildMessage(
             icon: Icons.event_busy_rounded,
-            title: selectedTab == 0
-                ? 'Nothing on right now'
-                : 'No upcoming events yet',
-            message: selectedTab == 0
-                ? 'Check the Upcoming tab for what is being planned.'
-                : 'New events show up here as soon as they are announced.',
+            title: upcoming ? 'No upcoming events' : 'No past events',
+            message: upcoming
+                ? 'Nothing is scheduled here yet. Check the Past tab to see '
+                    'what has already run.'
+                : 'Events move here once the last date has gone by.',
           );
         }
 
@@ -897,6 +923,11 @@ class _EventDetailsPageState extends State<EventDetailsPage>
 
   /// What the user actually pays: [_subtotal] less [_discount].
   double _totalPrice = 0.0;
+
+  /// Nothing to charge — either the slot itself is free or a coupon covered
+  /// the whole amount. Both skip the payment gateway entirely: there is no
+  /// order to raise and no signature to verify.
+  bool get _isFree => _totalPrice <= 0;
   Razorpay? _razorpay;
 
   /// Pending booking created before checkout, and the order raised for it.
@@ -920,6 +951,31 @@ class _EventDetailsPageState extends State<EventDetailsPage>
 
   String? _couponError;
   final TextEditingController _couponController = TextEditingController();
+
+  // ── The event's own questions ──────────────────────────────────────────────
+  //
+  // Which fields exist is decided per event by the admin and arrives with the
+  // event pass, so everything here is keyed by the field's `key` rather than
+  // by anything named in the client.
+
+  /// Answer per field key, sent as `customFieldValues` on the booking.
+  final Map<String, String> _customFieldValues = <String, String>{};
+
+  /// Controllers for the typed fields, created once per key.
+  final Map<String, TextEditingController> _customFieldControllers =
+      <String, TextEditingController>{};
+
+  /// Per-field validation message, set only after a failed booking attempt so
+  /// the form does not shout at someone who has not finished filling it in.
+  final Map<String, String> _customFieldErrors = <String, String>{};
+
+  List<EventCustomField> get _customFields => widget.event.customFields;
+
+  TextEditingController _customFieldController(EventCustomField field) =>
+      _customFieldControllers.putIfAbsent(
+        field.key,
+        () => TextEditingController(text: _customFieldValues[field.key] ?? ''),
+      );
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -957,14 +1013,52 @@ class _EventDetailsPageState extends State<EventDetailsPage>
   void dispose() {
     _animationController.dispose();
     _couponController.dispose();
+    for (final controller in _customFieldControllers.values) {
+      controller.dispose();
+    }
     _razorpay?.clear();
     super.dispose();
   }
 
+  /// Checks every required question has an answer, filling [_customFieldErrors]
+  /// for the ones that do not. True when the booking may proceed.
+  ///
+  /// The server rejects an incomplete set anyway; catching it here means the
+  /// user is told which field is missing instead of getting one flat message
+  /// after a round trip.
+  bool _validateCustomFields() {
+    final errors = <String, String>{};
+
+    for (final field in _customFields) {
+      final value = (_customFieldValues[field.key] ?? '').trim();
+
+      if (field.required && value.isEmpty) {
+        errors[field.key] = '${field.displayLabel} is required';
+        continue;
+      }
+      if (value.isNotEmpty && field.isNumber && double.tryParse(value) == null) {
+        errors[field.key] = 'Enter a number';
+      }
+    }
+
+    setState(() {
+      _customFieldErrors
+        ..clear()
+        ..addAll(errors);
+    });
+
+    return errors.isEmpty;
+  }
+
   /// Offers for event bookings. A failure here just means no offers strip.
   Future<void> _loadCoupons() async {
-    final coupons =
-        await CouponRepository.instance.fetchActiveCoupons(appliesTo: 'Event');
+    // The event and its venue must go up, or a coupon issued for this very
+    // event is filtered out as belonging to "some other" event.
+    final coupons = await CouponRepository.instance.fetchActiveCoupons(
+      appliesTo: 'Event',
+      eventPassId: int.tryParse(widget.event.id),
+      sportComplexId: widget.event.sportComplexId,
+    );
     if (!mounted) return;
     setState(() {
       _coupons = coupons;
@@ -1104,8 +1198,25 @@ class _EventDetailsPageState extends State<EventDetailsPage>
       _showSnack('Please select a slot');
       return;
     }
-    if (_totalPrice <= 0) {
+    // A zero total is not an error: an event may be free outright, or a coupon
+    // may have covered it entirely. Both skip the gateway further down rather
+    // than being rejected here, which is what produced "Invalid amount" on a
+    // free event.
+    if (_totalPrice < 0) {
       _showSnack('Invalid amount');
+      return;
+    }
+    // While a code is still being priced, [_discount] is the coupon's own rule
+    // applied locally — a provisional figure, not the server's. Paying on it
+    // would send an amount the backend never approved.
+    if (_applyingCoupon) {
+      _showSnack('Checking your coupon — one moment');
+      return;
+    }
+    // The event's own questions must be answered before a booking exists to
+    // attach them to — the server rejects the booking otherwise.
+    if (!_validateCustomFields()) {
+      _showSnack('Please fill in the required details');
       return;
     }
     if (_bookingInProgress) return;
@@ -1131,6 +1242,7 @@ class _EventDetailsPageState extends State<EventDetailsPage>
         email: user?['email']?.toString(),
         couponCode: _appliedCoupon?.code,
         sportComplexId: widget.event.sportComplexId,
+        customFieldValues: _customFieldValues,
       );
 
       if (!mounted) return;
@@ -1142,6 +1254,14 @@ class _EventDetailsPageState extends State<EventDetailsPage>
       _bookingId = booking.bookingId;
       _bookingPayload = booking.data;
 
+      // 1a) Free booking — the pass is the whole transaction. Stop before the
+      // gateway: raising a ₹0 order would be rejected by Razorpay anyway, and
+      // there is no payment to verify afterwards.
+      if (_isFree) {
+        await _completeFreeBooking(_bookingId!);
+        return;
+      }
+
       // 2) Razorpay order for that booking.
       final order = await PaymentRepository.instance.createOrder(
         bookingType: BookingType.event,
@@ -1152,6 +1272,28 @@ class _EventDetailsPageState extends State<EventDetailsPage>
       if (!mounted) return;
       if (order == null) {
         _showSnack('Could not start the payment. Please try again.');
+        return;
+      }
+
+      // The customer must be charged exactly what the summary showed. A
+      // mismatch means the server priced this booking differently from this
+      // screen — a coupon it did not honour, or one it applied a second time
+      // on top of the already-discounted amount sent up — and opening checkout
+      // anyway would either overcharge or undercharge. Neither is recoverable
+      // once Razorpay has the money, so it stops here. The unpaid hold expires
+      // on its own; there is no event equivalent of the courts' release route.
+      if (!orderMatchesExpected(order.amountPaise, _totalPrice)) {
+        AppLogger.error(
+          'Event order does not match the screen: order=${order.amountPaise} '
+          'paise, expected=₹$_totalPrice '
+          '(subtotal ₹$_subtotal less ₹$_discount, '
+          'coupon ${_appliedCoupon?.code ?? 'none'})',
+          name: 'Payments',
+        );
+        _showSnack(
+          'The payment amount did not match your booking total. '
+          'Please try again.',
+        );
         return;
       }
 
@@ -1169,6 +1311,23 @@ class _EventDetailsPageState extends State<EventDetailsPage>
           'contact': user?['phone'] ?? '',
           'email': user?['email'] ?? '',
         },
+        // UPI apps (GPay / PhonePe / Paytm) surface because their packages are
+        // declared in AndroidManifest <queries> and iOS
+        // LSApplicationQueriesSchemes — not because of anything set here.
+        //
+        // Do NOT add 'prefill.method' or a 'config.display' block: both make the
+        // iOS checkout webview navigate straight at a UPI app scheme and it dies
+        // with "Webview error Frame load interrupted".
+        'method': const {
+          'upi': true,
+          'card': true,
+          'netbanking': true,
+          'wallet': true,
+        },
+        'timeout': 300,
+        'remember_customer': true,
+        'retry': const {'enabled': true, 'max_count': 2},
+        'theme': const {'color': '#1A237E'},
       });
     } catch (e, st) {
       debugPrint("Error starting payment: $e\n$st");
@@ -1260,6 +1419,50 @@ class _EventDetailsPageState extends State<EventDetailsPage>
 
   void _onExternalWallet(ExternalWalletResponse response) {
     _showSnack("External wallet selected: ${response.walletName}");
+  }
+
+  /// Finishes a booking that costs nothing.
+  ///
+  /// There is no order to raise and no signature to verify, so this is the
+  /// whole tail of the flow: read the booking back for its pass code and QR,
+  /// then show the same pass screen a paid booking lands on. Deliberately
+  /// mirrors the end of [_confirmBooking] — a free pass and a paid one must be
+  /// the same object to the rest of the app.
+  ///
+  /// The read-back is best-effort: if it fails, the pass still opens on the
+  /// details already on screen rather than stranding a booking the server has
+  /// already accepted.
+  Future<void> _completeFreeBooking(int bookingId) async {
+    EventPassBooking? confirmed;
+    try {
+      confirmed = await EventBookingRepository.instance.fetchMyBooking(bookingId);
+    } catch (e) {
+      debugPrint('Could not read the free booking back: $e');
+    }
+
+    // A free booking has no payment to move it out of Pending, so the server
+    // has to confirm it on creation for a QR to exist. If it did not, the pass
+    // opens without one — worth seeing in the logs rather than silently
+    // shipping a blank ticket.
+    if (confirmed != null && !confirmed.isPaid) {
+      AppLogger.error(
+        'Free booking #$bookingId is still "${confirmed.status}" after '
+        'creation — no payment step will confirm it, so the pass has no QR',
+        name: 'EventBooking',
+      );
+    }
+
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EventPassPage(
+          booking: _passFor(bookingId, confirmed),
+          eventImage: confirmed?.event?.image ?? widget.event.image,
+        ),
+      ),
+    );
   }
 
   /// Confirm the booking once Razorpay reports success.
@@ -1550,6 +1753,12 @@ class _EventDetailsPageState extends State<EventDetailsPage>
                         const SizedBox(height: 24),
                         _buildMembersCard(),
                         const SizedBox(height: 24),
+                        // Only takes space when the event actually asks
+                        // something; it collapses to nothing otherwise.
+                        if (_customFields.isNotEmpty) ...[
+                          _buildCustomFieldsCard(),
+                          const SizedBox(height: 24),
+                        ],
                         _buildDescriptionCard(),
                         const SizedBox(height: 24),
                         _buildCouponsCard(),
@@ -1814,6 +2023,235 @@ class _EventDetailsPageState extends State<EventDetailsPage>
     );
   }
 
+  /// The event's own questions, drawn from whatever the admin defined.
+  ///
+  /// Renders nothing at all when the event asks nothing, which is most of
+  /// them — the card must not leave an empty box on those screens.
+  Widget _buildCustomFieldsCard() {
+    final fields = _customFields;
+    if (fields.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      key: const Key('event_custom_fields_card'),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF0A198D).withOpacity(0.1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.assignment_outlined, color: Color(0xFF0A198D), size: 22),
+              SizedBox(width: 10),
+              Text(
+                'Your details',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'The organiser needs these to confirm your pass.',
+            style: TextStyle(fontSize: 12.5, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 16),
+          for (final field in fields) ...[
+            _buildCustomField(field),
+            const SizedBox(height: 14),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// One question, drawn according to its `type`.
+  Widget _buildCustomField(EventCustomField field) {
+    final error = _customFieldErrors[field.key];
+
+    return Column(
+      key: ValueKey('custom_field_${field.key}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                field.displayLabel,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            if (field.required)
+              const Text(
+                ' *',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFDC2626),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (field.isChoice)
+          _buildCustomChoiceField(field, error)
+        else if (field.isDate)
+          _buildCustomDateField(field, error)
+        else
+          _buildCustomTextField(field, error),
+        if (error != null) ...[
+          const SizedBox(height: 5),
+          Text(
+            error,
+            key: ValueKey('custom_field_error_${field.key}'),
+            style: const TextStyle(fontSize: 11.5, color: Color(0xFFDC2626)),
+          ),
+        ],
+      ],
+    );
+  }
+
+  InputDecoration _customFieldDecoration(
+    EventCustomField field,
+    String? error,
+  ) {
+    OutlineInputBorder border(Color color) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: color),
+        );
+
+    return InputDecoration(
+      hintText: field.placeholder ?? 'Enter ${field.displayLabel.toLowerCase()}',
+      hintStyle: TextStyle(fontSize: 13.5, color: Colors.grey[400]),
+      isDense: true,
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      filled: true,
+      fillColor: Colors.grey[50],
+      enabledBorder: border(
+        error == null ? const Color(0xFFE5E7EB) : const Color(0xFFDC2626),
+      ),
+      focusedBorder: border(
+        error == null ? const Color(0xFF0A198D) : const Color(0xFFDC2626),
+      ),
+      border: border(const Color(0xFFE5E7EB)),
+    );
+  }
+
+  Widget _buildCustomTextField(EventCustomField field, String? error) {
+    return TextField(
+      key: ValueKey('custom_field_input_${field.key}'),
+      controller: _customFieldController(field),
+      enabled: !_bookingInProgress,
+      maxLines: field.isMultiline ? 3 : 1,
+      keyboardType: field.isNumber
+          ? const TextInputType.numberWithOptions(decimal: true)
+          : field.isEmail
+              ? TextInputType.emailAddress
+              : field.isPhone
+                  ? TextInputType.phone
+                  : field.isMultiline
+                      ? TextInputType.multiline
+                      : TextInputType.text,
+      style: const TextStyle(fontSize: 14, color: Colors.black87),
+      decoration: _customFieldDecoration(field, error),
+      onChanged: (value) {
+        _customFieldValues[field.key] = value;
+        // Clear the complaint as soon as it stops being true.
+        if (error != null && value.trim().isNotEmpty) {
+          setState(() => _customFieldErrors.remove(field.key));
+        }
+      },
+    );
+  }
+
+  Widget _buildCustomChoiceField(EventCustomField field, String? error) {
+    final value = _customFieldValues[field.key];
+
+    return DropdownButtonFormField<String>(
+      key: ValueKey('custom_field_input_${field.key}'),
+      initialValue: field.options.contains(value) ? value : null,
+      isExpanded: true,
+      decoration: _customFieldDecoration(field, error),
+      hint: Text(
+        field.placeholder ?? 'Select ${field.displayLabel.toLowerCase()}',
+        style: TextStyle(fontSize: 13.5, color: Colors.grey[400]),
+      ),
+      style: const TextStyle(fontSize: 14, color: Colors.black87),
+      items: [
+        for (final option in field.options)
+          DropdownMenuItem<String>(value: option, child: Text(option)),
+      ],
+      onChanged: _bookingInProgress
+          ? null
+          : (selected) {
+              if (selected == null) return;
+              setState(() {
+                _customFieldValues[field.key] = selected;
+                _customFieldErrors.remove(field.key);
+              });
+            },
+    );
+  }
+
+  Widget _buildCustomDateField(EventCustomField field, String? error) {
+    final controller = _customFieldController(field);
+
+    return TextField(
+      key: ValueKey('custom_field_input_${field.key}'),
+      controller: controller,
+      enabled: !_bookingInProgress,
+      readOnly: true,
+      style: const TextStyle(fontSize: 14, color: Colors.black87),
+      decoration: _customFieldDecoration(field, error).copyWith(
+        suffixIcon: const Icon(Icons.calendar_today_outlined,
+            size: 18, color: Color(0xFF0A198D)),
+      ),
+      onTap: () async {
+        final now = DateTime.now();
+        final existing = DateTime.tryParse(_customFieldValues[field.key] ?? '');
+
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: existing ?? DateTime(now.year - 18),
+          // A date of birth is the common case, so the range reaches well back
+          // while still allowing a future date for anything else.
+          firstDate: DateTime(1900),
+          lastDate: DateTime(now.year + 10),
+        );
+        if (picked == null) return;
+
+        // `yyyy-MM-dd`, the shape the API stores dates in.
+        final text = '${picked.year.toString().padLeft(4, '0')}-'
+            '${picked.month.toString().padLeft(2, '0')}-'
+            '${picked.day.toString().padLeft(2, '0')}';
+
+        setState(() {
+          _customFieldValues[field.key] = text;
+          controller.text = text;
+          _customFieldErrors.remove(field.key);
+        });
+      },
+    );
+  }
+
   /// Offers & Coupons — active event coupons, plus a code field.
   Widget _buildCouponsCard() {
     const brand = Color(0xFF0A198D);
@@ -2042,27 +2480,55 @@ class _EventDetailsPageState extends State<EventDetailsPage>
   }
 
   Widget _buildPaymentFAB() {
-    return InkWell(
-      onTap: _startPaymentFlow,
-      child: Container(
-        width: double.infinity,
-        margin: const EdgeInsets.symmetric(horizontal: 20),
-        child: FloatingActionButton.extended(
-          onPressed: _startPaymentFlow,
-          backgroundColor: const Color(0xFF0A198D),
-          elevation: 8,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-          label: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.payment, color: Colors.white),
-              const SizedBox(width: 8),
-              Text(
-                'Pay ₹${_totalPrice.toStringAsFixed(0)} & Book Now',
-                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+    // A free pass is not a payment, so the button must not promise one.
+    final label = _isFree
+        ? 'Get Free Pass'
+        : 'Pay ₹${_totalPrice.toStringAsFixed(0)} & Book Now';
+
+    final busy = _bookingInProgress;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      child: FloatingActionButton.extended(
+        key: const Key('event_book_button'),
+        // Disabled outright while a booking is in flight — the guard inside
+        // [_startPaymentFlow] already refuses a second run, but a button that
+        // still looks tappable invites the double tap in the first place.
+        onPressed: busy ? null : _startPaymentFlow,
+        backgroundColor:
+            busy ? const Color(0xFF0A198D).withOpacity(0.6) : const Color(0xFF0A198D),
+        elevation: busy ? 0 : 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        label: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (busy)
+              const SizedBox(
+                height: 18,
+                width: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            else
+              Icon(
+                _isFree ? Icons.confirmation_number_outlined : Icons.payment,
+                color: Colors.white,
               ),
-            ],
-          ),
+            const SizedBox(width: 8),
+            Text(
+              busy ? 'Please wait…' : label,
+              key: const Key('event_book_button_label'),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
         ),
       ),
     );

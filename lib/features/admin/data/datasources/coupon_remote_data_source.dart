@@ -14,16 +14,22 @@ class CouponRemoteDataSource {
 
   final ApiClient _api;
 
-  /// `GET /admin/coupons?page=&limit=&search=`
+  /// `GET /admin/coupons?page=&limit=&search=&status=`
+  ///
+  /// [status] filters on the column exactly (`Active`, `Inactive`, `Expired`).
+  /// The backend treats an empty string as "no filter", so a blank one is left
+  /// out entirely rather than sent as `status=`.
   Future<ApiResponse> list({
     required int page,
     required int limit,
     String? search,
+    String? status,
   }) {
     final query = <String, dynamic>{
       'page': page,
       'limit': limit,
       if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      if (status != null && status.trim().isNotEmpty) 'status': status.trim(),
     };
 
     AdminLog.call('GET ${ApiEndpoints.adminCoupons} $query');

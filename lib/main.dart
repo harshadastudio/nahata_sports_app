@@ -622,6 +622,7 @@
 //   }
 // }
 import 'dart:async';
+import 'core/utils/app_logger.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -630,11 +631,11 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth/login.dart';
 import 'bottombar/Custombottombar.dart';
 import 'bottombar/morescreen.dart';
+import 'core/config/api_config.dart';
 import 'core/navigation/role_router.dart';
 import 'core/services/app_navigator.dart';
 import 'core/services/permission_service.dart';
@@ -666,7 +667,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
   // 🔹 Background message handler (must be top-level)
   Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     await Firebase.initializeApp();
-    print('📩 Handling background message: ${message.messageId}');
+    AppLogger.debug('📩 Handling background message: ${message.messageId}', name: 'main');
     _showLocalNotification(message);
   }
 
@@ -689,6 +690,11 @@ import 'package:connectivity_plus/connectivity_plus.dart';
             priority: Priority.high,
             icon: android?.smallIcon ?? '@mipmap/ic_launcher',
           ),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
         ),
         payload: message.data['screen'] ?? '',
       );
@@ -698,7 +704,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
   // 🔹 Handle navigation from notification tap
   void _handleNotificationNavigation(RemoteMessage message) {
     final data = message.data;
-    print('📌 Navigating from notification: $data');
+    AppLogger.debug('📌 Navigating from notification: $data', name: 'main');
 
     // Example: route by 'screen' key from backend
     if (data['screen'] == 'notifications') {
@@ -736,8 +742,19 @@ Future<void> main() async {
   const AndroidInitializationSettings androidInit =
   AndroidInitializationSettings('@mipmap/ic_launcher');
 
+  const DarwinInitializationSettings darwinInit =
+  DarwinInitializationSettings(
+    requestAlertPermission: true,
+    requestBadgePermission: true,
+    requestSoundPermission: true,
+  );
+
   final InitializationSettings initSettings =
-  InitializationSettings(android: androidInit);
+  InitializationSettings(
+    android: androidInit,
+    iOS: darwinInit,
+    macOS: darwinInit,
+  );
 
   await flutterLocalNotificationsPlugin.initialize(
     initSettings,
@@ -772,7 +789,7 @@ Future<void> main() async {
     badge: true,
     sound: true,
   );
-  print("🔔 Permission: ${settings.authorizationStatus}");
+  AppLogger.debug("🔔 Permission: ${settings.authorizationStatus}", name: 'main');
 
   // Create notification channel BEFORE asking token
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -789,13 +806,13 @@ Future<void> main() async {
 
   // Handle foreground messages
   FirebaseMessaging.onMessage.listen((message) {
-    print("📩 Foreground message received");
+    AppLogger.debug("📩 Foreground message received", name: 'main');
     _showLocalNotification(message);
   });
 
   // Handle when clicking notification
   FirebaseMessaging.onMessageOpenedApp.listen((message) {
-    print("📌 Notification clicked");
+    AppLogger.debug("📌 Notification clicked", name: 'main');
     _handleNotificationNavigation(message);
   });
 
@@ -807,9 +824,9 @@ Future<void> main() async {
   String? token;
   try {
     token = await FirebaseMessaging.instance.getToken();
-    print("📱 FCM Token: $token");
+    AppLogger.debug("📱 FCM Token: $token", name: 'main');
   } catch (e) {
-    print("❌ Failed to get FCM token: $e");
+    AppLogger.debug("❌ Failed to get FCM token: $e", name: 'main');
   }
 
   runApp(
@@ -1550,16 +1567,65 @@ class _SplashStep3State extends State<SplashStep3> {
 
 
 class InternetService {
-  /// Quick network type check + real internet lookup
-  static Future<bool> hasInternet() async {
-    final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity == ConnectivityResult.none) return false;
+  /// How long a single reachability probe may take. Kept short: this decides
+  /// whether a red banner covers the top of the app, so a slow answer is worse
+  /// than a wrong one we correct a moment later.
+  static const Duration _probeTimeout = Duration(seconds: 3);
 
+  /// The probe target. Reaching *our* API is what "features are available"
+  /// actually means — a working route to google.com says nothing about it.
+  static final Uri _probeUri = Uri.parse(ApiConfig.baseUrl);
+
+  /// True when the device has a network *and* our backend answers on it.
+  ///
+  /// Two deliberate choices, both of which the old google.com DNS lookup got
+  /// wrong and which showed as a red banner on a healthy connection:
+  ///
+  ///  * `checkConnectivity()` returns a `List<ConnectivityResult>` (it has
+  ///    since connectivity_plus 6). The previous code compared that list to
+  ///    `ConnectivityResult.none`, which is never equal, so the fast offline
+  ///    path never ran and every check paid for a DNS round-trip.
+  ///  * A single failed probe is not proof of being offline. One dropped
+  ///    packet on a handover, or a request issued before iOS has finished
+  ///    bringing the interface up at launch, would flip the banner on. Only a
+  ///    second consecutive failure counts.
+  /// Swappable so tests can drive the state machine without a real socket.
+  /// Production code never sets this.
+  @visibleForTesting
+  static Future<bool> Function()? probeOverride;
+
+  static Future<bool> hasInternet() async {
+    final results = await Connectivity().checkConnectivity();
+
+    // No interface at all — no need to put a request on the wire.
+    if (results.isEmpty ||
+        results.every((r) => r == ConnectivityResult.none)) {
+      return false;
+    }
+
+    final probe = probeOverride ?? _reachable;
+    if (await probe()) return true;
+
+    // Give a flaky first attempt one more chance before crying offline.
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    return probe();
+  }
+
+  /// One probe. Any HTTP status counts as reachable — a 401 or 404 still
+  /// proves the request travelled to the server and came back.
+  static Future<bool> _reachable() async {
+    HttpClient? client;
     try {
-      final result = await InternetAddress.lookup('google.com').timeout(const Duration(seconds: 5));
-      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      client = HttpClient()..connectionTimeout = _probeTimeout;
+      final request = await client.headUrl(_probeUri).timeout(_probeTimeout);
+      request.followRedirects = false;
+      final response = await request.close().timeout(_probeTimeout);
+      await response.drain<void>();
+      return true;
     } catch (_) {
       return false;
+    } finally {
+      client?.close(force: true);
     }
   }
 }
@@ -1599,48 +1665,68 @@ class ConnectivityService {
 }
 
 class ConnectivityProvider extends ChangeNotifier {
+  /// Optimistic on purpose: the banner is a correction, not a greeting. It
+  /// stays hidden until a check has actually failed.
   bool _isOnline = true;
   bool get isOnline => _isOnline;
 
   late StreamSubscription _sub; // avoid strict generic to prevent cast issues
   Timer? _debounce; // small debounce to avoid flicker
+  Timer? _recheck; // periodic poll, only while offline
+  bool _checking = false; // one probe at a time
+
+  /// How often to re-probe while the banner is up. Connectivity change events
+  /// alone are not enough — a router that comes back on the same Wi-Fi network
+  /// emits no event, and the banner would stay up for good.
+  @visibleForTesting
+  static Duration recheckInterval = const Duration(seconds: 10);
 
   ConnectivityProvider() {
-    _init();
+    _check();
     // listen for connectivity changes (wifi/mobile/none)
     _sub = Connectivity().onConnectivityChanged.listen((_) => _handleChange());
-  }
-
-  Future<void> _init() async {
-    final online = await InternetService.hasInternet();
-    _updateState(online);
   }
 
   void _handleChange() {
     // debounce rapid flaps
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () async {
-      final online = await InternetService.hasInternet();
-      _updateState(online);
-    });
+    _debounce = Timer(const Duration(milliseconds: 350), _check);
   }
 
-  Future<void> retryNow() async {
-    final online = await InternetService.hasInternet();
-    _updateState(online);
+  Future<void> retryNow() => _check();
+
+  /// Probes once, ignoring the call if a probe is already in flight so the
+  /// timer and a user's RETRY tap cannot stack up.
+  Future<void> _check() async {
+    if (_checking) return;
+    _checking = true;
+    try {
+      _updateState(await InternetService.hasInternet());
+    } finally {
+      _checking = false;
+    }
   }
 
   void _updateState(bool online) {
-    if (_isOnline != online) {
-      _isOnline = online;
-      notifyListeners();
+    if (_isOnline == online) return;
+    _isOnline = online;
+
+    // Poll only while we believe we are offline; stop as soon as we recover.
+    _recheck?.cancel();
+    if (!online) {
+      _recheck = Timer.periodic(recheckInterval, (_) => _check());
+    } else {
+      _recheck = null;
     }
+
+    notifyListeners();
   }
 
   @override
   void dispose() {
     _sub.cancel();
     _debounce?.cancel();
+    _recheck?.cancel();
     super.dispose();
   }
 }

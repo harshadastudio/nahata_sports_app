@@ -415,6 +415,29 @@ class _Toolbar extends StatelessWidget {
       ),
     );
 
+    // Exact column values, so the chips send what the backend compares on.
+    final statusFilter = Wrap(
+      spacing: AdminTokens.space2,
+      children: [
+        for (final option in <String?>[
+          null,
+          ...CouponsController.statusOptions,
+        ])
+          ChoiceChip(
+            label: Text(option ?? 'All'),
+            labelStyle: const TextStyle(fontSize: 12.5),
+            selected: controller.status == option,
+            // Re-tapping the active chip clears it, so the list is never
+            // stuck in a filter with no visible way out.
+            onSelected: controller.state.isLoading
+                ? null
+                : (_) => controller.setStatus(
+                    controller.status == option ? null : option,
+                  ),
+          ),
+      ],
+    );
+
     final refresh = OutlinedButton.icon(
       onPressed: controller.state.isLoading ? null : controller.refresh,
       icon: controller.state.isLoading
@@ -443,6 +466,8 @@ class _Toolbar extends StatelessWidget {
         children: [
           search,
           const SizedBox(height: AdminTokens.space3),
+          Align(alignment: Alignment.centerLeft, child: statusFilter),
+          const SizedBox(height: AdminTokens.space3),
           Row(
             children: [
               Expanded(child: refresh),
@@ -454,13 +479,20 @@ class _Toolbar extends StatelessWidget {
       );
     }
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        search,
-        const Spacer(),
-        refresh,
-        const SizedBox(width: AdminTokens.space3),
-        add,
+        Row(
+          children: [
+            search,
+            const Spacer(),
+            refresh,
+            const SizedBox(width: AdminTokens.space3),
+            add,
+          ],
+        ),
+        const SizedBox(height: AdminTokens.space3),
+        Align(alignment: Alignment.centerLeft, child: statusFilter),
       ],
     );
   }

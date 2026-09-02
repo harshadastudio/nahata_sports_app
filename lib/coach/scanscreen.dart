@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../core/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
@@ -37,14 +38,14 @@ class _ScanScreenState extends State<ScanScreen> {
 
   // --------------- HANDLE QR SCAN ----------------
   Future<void> _handleScan(String scannedData) async {
-    print("--------------- QR SCAN STARTED ---------------");
-    print("📥 RAW QR Data:\n$scannedData");
+    AppLogger.debug("--------------- QR SCAN STARTED ---------------", name: 'scanscreen');
+    AppLogger.debug("📥 RAW QR Data:\n$scannedData", name: 'scanscreen');
 
     try {
       setState(() => isProcessing = true);
 
       final userId = await AuthService.getUserId();
-      print("👤 Logged-in Coach/User ID: $userId");
+      AppLogger.debug("👤 Logged-in Coach/User ID: $userId", name: 'scanscreen');
 
       if (userId == null) {
         _showDialog("Error ⚠️", "User not logged in", Colors.red);
@@ -57,7 +58,7 @@ class _ScanScreenState extends State<ScanScreen> {
       // 🟢 CASE 1: BOOKING CONFIRMATION (TEXT QR)
       // =====================================================
       if (!trimmed.startsWith('{')) {
-        print("📄 Detected BOOKING CONFIRMATION QR");
+        AppLogger.debug("📄 Detected BOOKING CONFIRMATION QR", name: 'scanscreen');
 
         final lines = trimmed.split('\n');
         final Map<String, String> bookingData = {};
@@ -71,7 +72,7 @@ class _ScanScreenState extends State<ScanScreen> {
           }
         }
 
-        print("📋 Parsed Booking Data: $bookingData");
+        AppLogger.debug("📋 Parsed Booking Data: $bookingData", name: 'scanscreen');
 
         _showDialog(
           "Booking Details 📄",
@@ -95,7 +96,7 @@ Amount: ${bookingData['Amount'] ?? '-'}
 
       try {
         qrData = jsonDecode(trimmed);
-        print("✅ Attendance QR JSON decoded: $qrData");
+        AppLogger.debug("✅ Attendance QR JSON decoded: $qrData", name: 'scanscreen');
       } catch (e) {
         _showDialog(
           "Invalid QR ❌",
@@ -123,7 +124,7 @@ Amount: ${bookingData['Amount'] ?? '-'}
         "coach_id": userId,
       };
 
-      print("📤 Sending Attendance Data: $body");
+      AppLogger.debug("📤 Sending Attendance Data: $body", name: 'scanscreen');
 
       final response = await http.post(
         url,
@@ -132,7 +133,7 @@ Amount: ${bookingData['Amount'] ?? '-'}
       );
 
       final data = jsonDecode(response.body);
-      print("📥 API Response: $data");
+      AppLogger.debug("📥 API Response: $data", name: 'scanscreen');
 
       if (response.statusCode == 200 && data['success'] == true) {
         final studentName = data['student']?['name'] ?? '';
@@ -150,8 +151,8 @@ Amount: ${bookingData['Amount'] ?? '-'}
         );
       }
     } catch (e, stack) {
-      print("🔥 Exception: $e");
-      print(stack);
+      AppLogger.debug("🔥 Exception: $e", name: 'scanscreen');
+      AppLogger.debug('${stack}', name: 'scanscreen');
 
       _showDialog(
         "Error ⚠️",
@@ -161,7 +162,7 @@ Amount: ${bookingData['Amount'] ?? '-'}
     } finally {
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) setState(() => isProcessing = false);
-      print("--------------- QR SCAN FINISHED ---------------");
+      AppLogger.debug("--------------- QR SCAN FINISHED ---------------", name: 'scanscreen');
     }
   }
   // ---------------- Result dialog ----------------

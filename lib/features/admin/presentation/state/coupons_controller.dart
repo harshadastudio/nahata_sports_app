@@ -32,6 +32,11 @@ class CouponsController extends ChangeNotifier {
   static const Duration searchDebounce = Duration(milliseconds: 400);
   static const List<int> pageSizes = [10, 20, 50, 100];
 
+  /// The values the `status` column accepts. Sent verbatim — the backend
+  /// compares them exactly, so a different casing here would silently match
+  /// nothing rather than error.
+  static const List<String> statusOptions = ['Active', 'Inactive', 'Expired'];
+
   ViewState _state = ViewState.idle;
   Paged<AdminCoupon> _page = const Paged<AdminCoupon>();
   List<AdminCoupon> _coupons = const [];
@@ -40,6 +45,10 @@ class CouponsController extends ChangeNotifier {
   int _requestedPage = 1;
   int _limit = 20;
   String _search = '';
+
+  /// Exact `status` column value, or null for "any". The backend filters on
+  /// it verbatim, so only the spellings in [statusOptions] are ever sent.
+  String? _status;
 
   Timer? _debounce;
   int _requestId = 0;
@@ -72,6 +81,9 @@ class CouponsController extends ChangeNotifier {
 
   int get limit => _limit;
   String get search => _search;
+
+  /// The status filter in force, or null when the list is unfiltered.
+  String? get status => _status;
 
   AdminCoupon? get selected => _selected;
   ViewState get detailState => _detailState;
@@ -130,7 +142,7 @@ class CouponsController extends ChangeNotifier {
 
     AdminLog.state(
       'Coupons loading → page=$target limit=$_limit '
-      'search="${_search.trim()}" append=$append',
+      'search="${_search.trim()}" status=${_status ?? '-'} append=$append',
     );
 
     _requestedPage = target;
@@ -144,6 +156,7 @@ class CouponsController extends ChangeNotifier {
         page: target,
         limit: _limit,
         search: _search.trim().isEmpty ? null : _search.trim(),
+        status: _status,
       );
 
       if (_disposed || id != _requestId) {
@@ -332,6 +345,31 @@ class CouponsController extends ChangeNotifier {
     AdminLog.ui('Coupon search cleared');
     _debounce?.cancel();
     _search = '';
+    load(page: 1);
+  }
+
+  /// Filters by status, or clears the filter when [status] is null.
+  ///
+  /// Always returns to page 1: keeping the old page number would ask for, say,
+  /// page 4 of a filtered set that has one page and land on an empty list.
+  void setStatus(String? status) {
+    final next = (status == null || status.trim().isEmpty)
+        ? null
+        : status.trim();
+    if (next == _status) return;
+
+    AdminLog.ui('Coupon status filter → ${next ?? 'any'}');
+    _status = next;
+    load(page: 1);
+  }
+
+  /// Clears the search box and the status filter together.
+  void clearFilters() {
+    if (_search.isEmpty && _status == null) return;
+    AdminLog.ui('Coupon filters cleared');
+    _debounce?.cancel();
+    _search = '';
+    _status = null;
     load(page: 1);
   }
 

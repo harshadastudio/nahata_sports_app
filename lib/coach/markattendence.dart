@@ -138,6 +138,7 @@
 // }
 //
 import 'package:flutter/material.dart';
+import '../core/utils/app_logger.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -178,11 +179,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         studentId = rawId is int ? rawId : int.tryParse(rawId.toString());
       });
 
-      print('🎓 Student ID: $studentId');
+      AppLogger.debug('🎓 Student ID: $studentId', name: 'markattendence');
       // ✅ Now safe to fetch students
       await fetchStudents();
     } else {
-      print('⚠️ No user data found in SharedPreferences');
+      AppLogger.debug('⚠️ No user data found in SharedPreferences', name: 'markattendence');
     }
   }
 
@@ -205,15 +206,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               attendanceStatus[int.parse(s['id'])] = 'Absent';
             }
           });
-          print('✅ Students fetched: ${students.length}');
+          AppLogger.debug('✅ Students fetched: ${students.length}', name: 'markattendence');
         } else {
-          print("⚠️ API returned empty data: ${data['message']}");
+          AppLogger.debug("⚠️ API returned empty data: ${data['message']}", name: 'markattendence');
         }
       } else {
-        print("❌ Server error: ${response.statusCode}");
+        AppLogger.debug("❌ Server error: ${response.statusCode}", name: 'markattendence');
       }
     } catch (e) {
-      print("❌ Failed to fetch students: $e");
+      AppLogger.debug("❌ Failed to fetch students: $e", name: 'markattendence');
     } finally {
       setState(() => isLoading = false);
     }
@@ -376,7 +377,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () {
-                  print('📤 Attendance Submitted: $attendanceStatus');
+                  AppLogger.debug('📤 Attendance Submitted: $attendanceStatus', name: 'markattendence');
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                         content: Text('Attendance submitted!')),

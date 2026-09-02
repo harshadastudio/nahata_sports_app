@@ -1,6 +1,7 @@
 
 
 import 'dart:convert';
+import '../core/utils/app_logger.dart';
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nahata_app/auth/registration.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'apple_auth.dart';
 import '../core/navigation/role_router.dart';
 import '../core/services/app_navigator.dart';
 import '../core/services/permission_service.dart';
@@ -1063,7 +1065,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       final data = jsonDecode(response.body);
-      print("VERIFY OTP RESPONSE: $data");
+      AppLogger.debug("VERIFY OTP RESPONSE: $data", name: 'login');
 
       if (data["status"] == true) {
         // 🔥 IMPORTANT: Close OTP dialog before next dialog
@@ -1081,7 +1083,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
-      print("Error in _verifyOtp: $e");
+      AppLogger.debug("Error in _verifyOtp: $e", name: 'login');
       _showMessage("Something went wrong", tone: AppMessageTone.error);
     }
   }
@@ -1248,6 +1250,71 @@ class _LoginScreenState extends State<LoginScreen> {
   /// `status` instead of `success` — so it could never have succeeded.
   Future<bool> _googleLoginToBackend(String idToken) =>
       ApiService.googleLogin(idToken);
+
+  /// Sign in with Apple — the whole flow, from the Apple sheet to the routed
+  /// screen.
+  ///
+  /// Old API (commented out at the Apple button below): a raw `http.post` to
+  /// `/api/apple_login` with `{idToken: ...}`, checked against `data["status"]`.
+  /// Three things were wrong with it: the route is `/auth/apple-login`, the
+  /// body key is `identityToken`, and the response flag is `success`. It also
+  /// threw away `credential.givenName` / `familyName`, which Apple hands over
+  /// on the first authorization and never again — so every Apple account was
+  /// created named after its email prefix.
+  Future<void> _handleAppleSignIn() async {
+    final appleUser = await AppleAuthService.signInWithApple();
+
+    // Null covers cancel as well as failure; nothing to shout about, and the
+    // service has already logged which it was.
+    if (appleUser == null) {
+      _showMessage(
+        "Apple sign-in cancelled or failed.",
+        tone: AppMessageTone.error,
+      );
+      return;
+    }
+
+    _showMessage("Verifying your Apple account…");
+
+    // Straight to the backend: the identity token dies ~10 minutes after Apple
+    // issues it, and an expired one is rejected exactly like a forged one.
+    final success = await ApiService.appleLogin(
+      appleUser["identityToken"]!,
+      firstName: appleUser["firstName"],
+      lastName: appleUser["lastName"],
+    );
+
+    if (!success) {
+      _showMessage(
+        ApiService.lastErrorMessage ?? "Apple login failed. Try again.",
+        tone: AppMessageTone.error,
+      );
+      return;
+    }
+
+    final profile = ApiService.currentProfile;
+    final role = (profile?.roleLabel.isNotEmpty ?? false)
+        ? profile!.roleLabel
+        : (ApiService.currentUser?['role']?.toString() ?? 'user');
+    final screen = _getScreenForRole(role);
+
+    // Apple never provides a phone number, so a fresh Apple account arrives
+    // with `needsPhone`. Booking confirmations and passes go to that WhatsApp
+    // number, so say so — the profile screen is where it gets saved
+    // (`PUT /auth/profile`).
+    _showMessage(
+      profile?.needsPhone == true
+          ? "Login successful. Add your WhatsApp number in your profile to receive booking confirmations."
+          : "Login successful",
+      tone: AppMessageTone.success,
+    );
+
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => screen),
+    );
+  }
 
   // ---------------------- OLD API (commented out) ----------------------
   // Future<bool> _googleLoginToBackend(String idToken) async {
@@ -1466,7 +1533,10 @@ class _LoginScreenState extends State<LoginScreen> {
 // ----------------------------
 //   SIGN IN WITH APPLE BUTTON
 // ----------------------------
-                  if (Platform.isIOS)
+                    // Apple only offers the native sheet on iOS/macOS, and
+                    // App Store review requires this button wherever another
+                    // social sign-in is offered — which Google is, above.
+                    if (AppleAuthService.isAvailable)
                       Padding(
                         padding: const EdgeInsets.only(top: 15),
                         child: SizedBox(
@@ -1475,77 +1545,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: SignInWithAppleButton(
                             borderRadius: BorderRadius.circular(15),
                             style: SignInWithAppleButtonStyle.black,
-                            onPressed: () async {
-                              try {
-                                // 1️⃣ Request Apple Credentials
-                                final credential = await SignInWithApple.getAppleIDCredential(
-                                  scopes: [
-                                    AppleIDAuthorizationScopes.email,
-                                    AppleIDAuthorizationScopes.fullName,
-                                  ],
-                                );
-
-                                _showMessage("Verifying your Apple account…");
-
-                                // 2️⃣ Send ID Token to your backend API
-                                final response = await http.post(
-                                  Uri.parse("https://nahatasports.com/api/apple_login"),
-                                  headers: {"Content-Type": "application/json"},
-                                  body: jsonEncode({
-                                    "idToken": credential.identityToken,
-                                    // "authorizationCode": credential.authorizationCode,
-                                    // "userIdentifier": credential.userIdentifier,
-                                  }),
-                                );
-
-                                final data = jsonDecode(response.body);
-                                print("🍎 Apple Login Backend Response: $data");
-
-                                if (response.statusCode == 200 && data["status"] == true) {
-                                  final payload =
-                                      Map<String, dynamic>.from(data["data"]);
-
-                                  // Stores tokens, caches the profile and syncs
-                                  // every screen bound to it.
-                                  final profile =
-                                      await ApiService.adoptSession(payload);
-
-                                  // Redirect by role
-                                  final role = profile.roleLabel.isEmpty
-                                      ? "user"
-                                      : profile.roleLabel;
-                                  final screen = _getScreenForRole(role);
-
-                                  _showMessage(
-                                    "Login successful",
-                                    tone: AppMessageTone.success,
-                                  );
-
-                                  if (!mounted) return;
-                                  Navigator.pushReplacement(
-                                    context,
-                                    MaterialPageRoute(builder: (_) => screen),
-                                  );
-                                } else {
-                                  _showMessage(
-                                    "Apple login failed. Try again.",
-                                    tone: AppMessageTone.error,
-                                  );
-                                }
-                              } catch (e) {
-                                print("🍎 Apple Sign-In Error: $e");
-                                _showMessage(
-                                  "Apple sign-in cancelled or failed.",
-                                  tone: AppMessageTone.error,
-                                );
-                              }
-                            },
+                            onPressed: _handleAppleSignIn,
                           ),
                         ),
                       ),
-
-
-
+//
+//
+//
                     const SizedBox(height: 20),
                     Row(
                       children: [
@@ -1579,7 +1585,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             );
                           },
                           child: const Text(
-                            "Register",
+                            "Student Register",
                             style: TextStyle(
                               color: brandBlue,
                               fontWeight: FontWeight.bold,
@@ -2003,6 +2009,47 @@ class ApiService {
     if (!result.success || result.profile == null) {
       lastErrorMessage =
           result.message ?? 'Google login failed. Please try again.';
+      currentUser = null;
+      currentProfile = null;
+      return false;
+    }
+
+    final profile = result.profile!;
+    currentProfile = profile;
+    currentUser = profile.toLegacyUserMap();
+
+    ProfileProvider.maybeInstance?.adopt(profile);
+
+    final userId = profile.id;
+    if (userId != null) await _saveFcmTokenToServer(userId);
+
+    lastErrorMessage = null;
+    return true;
+  }
+
+  /// Apple sign-in — `POST /auth/apple-login`.
+  ///
+  /// [identityToken] is the JWT from the Apple sheet. [firstName] / [lastName]
+  /// are non-null only on the user's first ever authorization — Apple never
+  /// sends the name again — and are simply dropped after that.
+  ///
+  /// Everything after the network call is identical to [login] and
+  /// [googleLogin]: tokens stored, profile cached and broadcast, FCM token
+  /// registered.
+  static Future<bool> appleLogin(
+    String identityToken, {
+    String? firstName,
+    String? lastName,
+  }) async {
+    final result = await AuthRepository.instance.appleLogin(
+      identityToken: identityToken,
+      firstName: firstName,
+      lastName: lastName,
+    );
+
+    if (!result.success || result.profile == null) {
+      lastErrorMessage =
+          result.message ?? 'Apple login failed. Please try again.';
       currentUser = null;
       currentProfile = null;
       return false;

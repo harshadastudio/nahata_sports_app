@@ -98,7 +98,8 @@ class VisitorPassScannerPage extends StatefulWidget {
   State<VisitorPassScannerPage> createState() => _VisitorPassScannerPageState();
 }
 
-class _VisitorPassScannerPageState extends State<VisitorPassScannerPage> {
+class _VisitorPassScannerPageState extends State<VisitorPassScannerPage>
+    with WidgetsBindingObserver {
   final GlobalKey _qrKey = GlobalKey(debugLabel: 'VisitorPassQR');
   final TextEditingController _manual = TextEditingController();
 
@@ -123,6 +124,7 @@ class _VisitorPassScannerPageState extends State<VisitorPassScannerPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _mode = widget.initialMode;
     AdminLog.life('VisitorPassScannerPage mounted (${_mode.name})');
     _requestCamera();
@@ -143,6 +145,7 @@ class _VisitorPassScannerPageState extends State<VisitorPassScannerPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // The QRViewController disposes itself when the QRView unmounts — calling
     // it here as well is deprecated and would double-dispose the native view.
     _manual.dispose();
@@ -152,6 +155,20 @@ class _VisitorPassScannerPageState extends State<VisitorPassScannerPage> {
 
   bool get _cameraSupported =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  /// Re-checks the camera permission when the app comes back to the
+  /// foreground.
+  ///
+  /// The denied state offers "Open settings", and without this the user grants
+  /// the permission, returns, and still sees the same refusal until they leave
+  /// the screen and come back — which reads as the grant not having worked.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed && !_cameraAllowed) {
+      _requestCamera();
+    }
+  }
 
   Future<void> _requestCamera() async {
     if (!_cameraSupported) {

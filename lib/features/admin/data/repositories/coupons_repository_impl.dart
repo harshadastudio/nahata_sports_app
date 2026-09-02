@@ -44,11 +44,13 @@ class CouponsRepositoryImpl implements CouponsRepository {
     int page = 1,
     int limit = 20,
     String? search,
+    String? status,
   }) async {
     final response = await _remote.list(
       page: page,
       limit: limit,
       search: search,
+      status: status,
     );
     if (!response.isOk) throw response.toException();
 

@@ -45,6 +45,7 @@ class EventBookingRepository {
     String? email,
     String? couponCode,
     int? sportComplexId,
+    Map<String, String>? customFieldValues,
   }) async {
     try {
       final response = await _api.post(
@@ -61,6 +62,15 @@ class EventBookingRepository {
           if (couponCode != null && couponCode.isNotEmpty)
             'couponCode': couponCode,
           if (sportComplexId != null) 'sportComplexId': sportComplexId,
+          // The event's own questions, as `[{key, value}]`. Sent only when the
+          // event defines some — an empty list would be noise on the many
+          // events that ask nothing. The server echoes each answer back with
+          // its label attached.
+          if (customFieldValues != null && customFieldValues.isNotEmpty)
+            'customFieldValues': [
+              for (final entry in customFieldValues.entries)
+                {'key': entry.key, 'value': entry.value},
+            ],
         },
       );
 

@@ -28,7 +28,8 @@ class CoachScannerPage extends StatefulWidget {
   State<CoachScannerPage> createState() => _CoachScannerPageState();
 }
 
-class _CoachScannerPageState extends State<CoachScannerPage> {
+class _CoachScannerPageState extends State<CoachScannerPage>
+    with WidgetsBindingObserver {
   final GlobalKey _qrKey = GlobalKey(debugLabel: 'CoachGatePassQR');
   final TextEditingController _manual = TextEditingController();
 
@@ -58,6 +59,7 @@ class _CoachScannerPageState extends State<CoachScannerPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     CoachLog.life('CoachScannerPage mounted');
     _requestCamera();
   }
@@ -77,6 +79,7 @@ class _CoachScannerPageState extends State<CoachScannerPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // QRViewController disposes itself when the QRView unmounts; disposing it
     // here as well would double-dispose the native view.
     _manual.dispose();
@@ -86,6 +89,20 @@ class _CoachScannerPageState extends State<CoachScannerPage> {
 
   bool get _cameraSupported =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  /// Re-checks the camera permission when the app comes back to the
+  /// foreground.
+  ///
+  /// The denied state offers "Open settings", and without this the user grants
+  /// the permission, returns, and still sees the same refusal until they leave
+  /// the screen and come back — which reads as the grant not having worked.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed && !_cameraAllowed) {
+      _requestCamera();
+    }
+  }
 
   Future<void> _requestCamera() async {
     if (!_cameraSupported) {
@@ -224,9 +241,9 @@ class _CoachScannerPageState extends State<CoachScannerPage> {
   }
 
   void _toast(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: color),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
   }
 
   Future<void> _showFailure(String message) async {
@@ -244,7 +261,8 @@ class _CoachScannerPageState extends State<CoachScannerPage> {
 
   Future<void> _showResult(CoachPassScan scan) async {
     final tone = switch (scan.outcome) {
-      CoachScanOutcome.marked || CoachScanOutcome.updated => CoachTokens.success,
+      CoachScanOutcome.marked ||
+      CoachScanOutcome.updated => CoachTokens.success,
       CoachScanOutcome.already => CoachTokens.warning,
       _ => CoachTokens.info,
     };
@@ -370,9 +388,7 @@ class _CoachScannerPageState extends State<CoachScannerPage> {
             ),
             const SizedBox(height: CoachTokens.space3),
             Text(
-              unsupported
-                  ? 'No camera on this device'
-                  : 'Camera access is off',
+              unsupported ? 'No camera on this device' : 'Camera access is off',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 15,
@@ -390,8 +406,9 @@ class _CoachScannerPageState extends State<CoachScannerPage> {
             if (!unsupported) ...[
               const SizedBox(height: CoachTokens.space4),
               FilledButton(
-                onPressed:
-                    _permanentlyDenied ? openAppSettings : _requestCamera,
+                onPressed: _permanentlyDenied
+                    ? openAppSettings
+                    : _requestCamera,
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: CoachTokens.brand,

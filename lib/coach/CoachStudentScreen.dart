@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../core/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -31,7 +32,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
     if (studentId != null) {
       await fetchStudents();
     } else {
-      print("⚠️ No studentId found, skipping fetchStudents()");
+      AppLogger.debug("⚠️ No studentId found, skipping fetchStudents()", name: 'CoachStudentScreen');
       setState(() => isLoading = false);
     }
   }
@@ -47,25 +48,25 @@ class _StudentsScreenState extends State<StudentsScreen> {
       setState(() {
         studentId = parsedId;
       });
-      print('🎓 Student ID: $studentId');
+      AppLogger.debug('🎓 Student ID: $studentId', name: 'CoachStudentScreen');
     } else {
-      print('⚠️ No user data found in SharedPreferences');
+      AppLogger.debug('⚠️ No user data found in SharedPreferences', name: 'CoachStudentScreen');
     }
   }
 
   Future<void> fetchStudents() async {
     if (studentId == null) {
-      print("⚠️ Cannot fetch students — studentId is null");
+      AppLogger.debug("⚠️ Cannot fetch students — studentId is null", name: 'CoachStudentScreen');
       return;
     }
 
     final url = Uri.parse('https://nahatasports.com/api/students?coach_id=$studentId');
-    print("🌐 Fetching students from: $url");
+    AppLogger.debug("🌐 Fetching students from: $url", name: 'CoachStudentScreen');
 
     try {
       final response = await http.get(url);
-      print("📩 Response: ${response.statusCode}");
-      print("📩 Body: ${response.body}");
+      AppLogger.debug("📩 Response: ${response.statusCode}", name: 'CoachStudentScreen');
+      AppLogger.debug("📩 Body: ${response.body}", name: 'CoachStudentScreen');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -74,17 +75,17 @@ class _StudentsScreenState extends State<StudentsScreen> {
             students = data['data'];
             isLoading = false;
           });
-          print("✅ Students loaded: ${students.length}");
+          AppLogger.debug("✅ Students loaded: ${students.length}", name: 'CoachStudentScreen');
         } else {
-          print("⚠️ API returned no data");
+          AppLogger.debug("⚠️ API returned no data", name: 'CoachStudentScreen');
           setState(() => isLoading = false);
         }
       } else {
-        print("❌ Server Error: ${response.statusCode}");
+        AppLogger.debug("❌ Server Error: ${response.statusCode}", name: 'CoachStudentScreen');
         setState(() => isLoading = false);
       }
     } catch (e) {
-      print("❌ Exception fetching students: $e");
+      AppLogger.debug("❌ Exception fetching students: $e", name: 'CoachStudentScreen');
       setState(() => isLoading = false);
     }
   }
@@ -190,7 +191,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     children: [
                       ElevatedButton.icon(
                         onPressed: () {
-                          print("👀 View pressed for ${student['name']}");
+                          AppLogger.debug("👀 View pressed for ${student['name']}", name: 'CoachStudentScreen');
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -277,9 +278,9 @@ class _FeedbackPageState extends State<FeedbackPage> {
       setState(() {
         coachId = (rawId is String) ? int.tryParse(rawId) : rawId as int?;
       });
-      print("🧑‍🏫 Coach ID: $coachId");
+      AppLogger.debug("🧑‍🏫 Coach ID: $coachId", name: 'CoachStudentScreen');
     } else {
-      print("⚠️ No user data found in prefs");
+      AppLogger.debug("⚠️ No user data found in prefs", name: 'CoachStudentScreen');
     }
   }
 
@@ -302,7 +303,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
     setState(() => isSubmitting = true);
 
     final url = Uri.parse('https://nahatasports.com/api/feedback/${widget.studentId}');
-    print("📤 Sending feedback to: $url");
+    AppLogger.debug("📤 Sending feedback to: $url", name: 'CoachStudentScreen');
 
     final body = {
       "user_id": coachId.toString(),
@@ -316,7 +317,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
         body: jsonEncode(body),
       );
 
-      print("📩 Response: ${response.statusCode} => ${response.body}");
+      AppLogger.debug("📩 Response: ${response.statusCode} => ${response.body}", name: 'CoachStudentScreen');
 
       final data = jsonDecode(response.body);
       if ((response.statusCode == 200 || response.statusCode == 201) &&
@@ -332,7 +333,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
       }
 
     } catch (e) {
-      print("❌ Exception submitting feedback: $e");
+      AppLogger.debug("❌ Exception submitting feedback: $e", name: 'CoachStudentScreen');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("⚠️ Something went wrong")),
       );
@@ -404,12 +405,12 @@ class _ViewStudentScreenState extends State<ViewStudentScreen> {
   Future<void> fetchStudentDetails() async {
     final url = Uri.parse(
         "https://nahatasports.com/api/my-enrollments?user_id=${widget.studentId}");
-    print("📤 GET: $url");
+    AppLogger.debug("📤 GET: $url", name: 'CoachStudentScreen');
 
     try {
       final response = await http.get(url);
-      print("📩 Response: ${response.statusCode}");
-      print("📩 Body: ${response.body}");
+      AppLogger.debug("📩 Response: ${response.statusCode}", name: 'CoachStudentScreen');
+      AppLogger.debug("📩 Body: ${response.body}", name: 'CoachStudentScreen');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -424,7 +425,7 @@ class _ViewStudentScreenState extends State<ViewStudentScreen> {
         }
       }
     } catch (e) {
-      print("❌ Error: $e");
+      AppLogger.debug("❌ Error: $e", name: 'CoachStudentScreen');
       setState(() => isLoading = false);
     }
   }
@@ -434,7 +435,7 @@ class _ViewStudentScreenState extends State<ViewStudentScreen> {
     final url =
     Uri.parse("https://nahatasports.com/api/enrollment/status/$enrollId");
 
-    print("📤 POST: $url");
+    AppLogger.debug("📤 POST: $url", name: 'CoachStudentScreen');
 
     try {
       final response = await http.post(
@@ -442,8 +443,8 @@ class _ViewStudentScreenState extends State<ViewStudentScreen> {
         body: {"status": status},
       );
 
-      print("📩 Response: ${response.statusCode}");
-      print("📩 Body: ${response.body}");
+      AppLogger.debug("📩 Response: ${response.statusCode}", name: 'CoachStudentScreen');
+      AppLogger.debug("📩 Body: ${response.body}", name: 'CoachStudentScreen');
 
       final data = jsonDecode(response.body);
 

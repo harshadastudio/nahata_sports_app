@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/utils/app_logger.dart';
 
 
 import 'dart:convert';
@@ -21,6 +22,8 @@ import 'package:nahata_app/auth/login.dart';
 import 'package:nahata_app/bottombar/Viewgame.dart' hide ApiService;
 import 'package:nahata_app/bottombar/bkpayment.dart';
 import 'package:nahata_app/core/widgets/app_shimmer.dart';
+import '../models/coupon_model.dart';
+import '../repositories/coupon_repository.dart';
 
 
 
@@ -47,8 +50,7 @@ import 'package:nahata_app/core/widgets/app_shimmer.dart';
 //   String? error;
 //
 //   List<Map<String, dynamic>> courts = [];
-//   String? selectedCourt;
-//   String? selectedHourType;
+// //   String? selectedHourType;
 //
 //   List<Map<String, dynamic>> selectedSlots = [];
 //   int totalPrice = 0;
@@ -206,33 +208,9 @@ import 'package:nahata_app/core/widgets/app_shimmer.dart';
 //   }
 //
 //   // ---------------------- Helpers ----------------------
-//   List<String> _getCourtNames() {
-//     final names = courts.map((s) => s['court'].toString()).toSet().toList();
-//     names.sort();
-//     return names;
-//   }
-//
-//   List<String> _getHourTypesForCourt(String? court) {
-//     if (court == null) return [];
-//     final hourTypes = courts
-//         .where((s) => s['court'] == court)
-//         .map((s) => s['hourType'].toString())
-//         .toSet()
-//         .toList();
-//     hourTypes.sort();
-//     return hourTypes;
-//   }
-//
-//   List<Map<String, dynamic>> _getSlotsForCourtAndHour(
-//       String? court, String? hourType) {
-//     if (court == null || hourType == null) return [];
-//     final list = courts
-//         .where((s) => s['court'] == court && s['hourType'] == hourType)
-//         .toList();
-//     list.sort((a, b) => a['time'].toString().compareTo(b['time'].toString()));
-//     return list;
-//   }
-//
+// //
+// //
+// //
 //   void toggleSlot(Map<String, dynamic> slot) {
 //     setState(() {
 //       final exists = selectedSlots.any((s) =>
@@ -1423,8 +1401,7 @@ import 'package:nahata_app/core/widgets/app_shimmer.dart';
 //   String? error;
 //
 //   List<Map<String, dynamic>> courts = [];
-//   String? selectedCourt;
-//   String? selectedHourType;
+// //   String? selectedHourType;
 //
 //   List<Map<String, dynamic>> selectedSlots = [];
 //   int totalPrice = 0;
@@ -1580,33 +1557,9 @@ import 'package:nahata_app/core/widgets/app_shimmer.dart';
 //   }
 //
 //   // ---------------------- Helpers ----------------------
-//   List<String> _getCourtNames() {
-//     final names = courts.map((s) => s['court'].toString()).toSet().toList();
-//     names.sort();
-//     return names;
-//   }
-//
-//   List<String> _getHourTypesForCourt(String? court) {
-//     if (court == null) return [];
-//     final hourTypes = courts
-//         .where((s) => s['court'] == court)
-//         .map((s) => s['hourType'].toString())
-//         .toSet()
-//         .toList();
-//     hourTypes.sort();
-//     return hourTypes;
-//   }
-//
-//   List<Map<String, dynamic>> _getSlotsForCourtAndHour(
-//       String? court, String? hourType) {
-//     if (court == null || hourType == null) return [];
-//     final list = courts
-//         .where((s) => s['court'] == court && s['hourType'] == hourType)
-//         .toList();
-//     list.sort((a, b) => a['time'].toString().compareTo(b['time'].toString()));
-//     return list;
-//   }
-//
+// //
+// //
+// //
 //   void toggleSlot(Map<String, dynamic> slot) {
 //     setState(() {
 //       final exists = selectedSlots.any((s) =>
@@ -2046,6 +1999,20 @@ import 'package:nahata_app/core/widgets/app_shimmer.dart';
 
 
 
+/// One row of the Venue sheet: what `/sports-complexes` returned, reduced to
+/// what the picker and the card header need.
+class _VenueOption {
+  final int? id;
+  final String name;
+  final String address;
+
+  const _VenueOption({
+    required this.id,
+    required this.name,
+    required this.address,
+  });
+}
+
 class SlotBookingScreen extends StatefulWidget {
   final String location;
   final String game;
@@ -2068,6 +2035,149 @@ class SlotBookingScreen extends StatefulWidget {
 class _SlotBookingScreenState extends State<SlotBookingScreen> {
   static const brandBlue = Color(0xFF1A237E);
 
+  // ── Palette ───────────────────────────────────────────────────────────────
+  static const _navy = Color(0xFF1E1B4B);
+  static const _indigo = Color(0xFF4F46E5);
+  static const _indigoDeep = Color(0xFF312E81);
+  static const _pageBg = Color(0xFFF7F8FC);
+  static const _fieldBg = Color(0xFFFCFCFE);
+  static const _line = Color(0xFFEDEFF5);
+  static const _border = Color(0xFFE4E7F0);
+  static const _muted = Color(0xFF6B7280);
+
+  /// Street address of the venue, from `/sports-complexes`. Null until it
+  /// resolves — the card simply omits the line rather than showing a gap.
+  String? _venueAddress;
+
+  /// The venue and sport being booked. They start as whatever the caller
+  /// passed, but the Venue and Sport rows change them here on this screen, so
+  /// re-picking either never throws the user back to the sport list.
+  late String _venue;
+  late String _sport;
+
+  /// Every venue `/sports-complexes` offers, backing the Venue sheet.
+  List<_VenueOption> _venues = const [];
+
+  /// The in-flight loads. The venue list is shared by the header address and
+  /// the id resolution rather than fetched once each; the sport list is
+  /// dropped and refetched whenever the venue changes.
+  Future<void>? _venuesLoad;
+  Future<List<Sport>>? _sportsLoad;
+
+  /// The start time the user picked, and how many consecutive slots follow it.
+  /// Together these are the booking: [_runSlots] turns them back into the slot
+  /// maps the payment screen already expects.
+  TimeSlot? _startSlot;
+  int _durationSlots = 1;
+
+  bool _offersExpanded = true;
+
+  // ── Coupons ───────────────────────────────────────────────────────────────
+  // The code is only previewed here through `/coupons/validate`; it travels to
+  // the payment screen, which sends it with the booking so the backend applies
+  // the discount itself. Nothing computed on this screen can lower the bill.
+  final TextEditingController _couponController = TextEditingController();
+  List<CouponModel> _coupons = const [];
+  bool _loadingCoupons = true;
+  CouponModel? _appliedCoupon;
+  CouponValidation? _validation;
+  bool _applyingCoupon = false;
+  int _couponRequest = 0;
+  String? _couponError;
+
+  /// Every start time offered today, cheapest free court per time.
+  ///
+  /// [mergeSlotsByTime] works one hour type at a time because the old screen
+  /// had a tab per type; this screen has no such tab, so the types are merged
+  /// back together and re-sorted. Each slot keeps its own price, so a peak
+  /// hour still costs what it costs.
+  List<TimeSlot> get _allTimes {
+    final merged = <TimeSlot>[];
+    for (final type in _getHourTypes()) {
+      merged.addAll(mergeSlotsByTime(courts, type));
+    }
+    merged.sort((a, b) => (a.slot['startTime'] ?? a.slot['time'])
+        .toString()
+        .compareTo((b.slot['startTime'] ?? b.slot['time']).toString()));
+    return merged;
+  }
+
+  /// Bookable start times — a sold-out hour cannot begin a booking.
+  List<TimeSlot> get _openTimes =>
+      _allTimes.where((t) => !t.isSoldOut).toList(growable: false);
+
+  /// The run of consecutive slots the booking covers.
+  ///
+  /// Walks forward from [_startSlot] and stops early at a sold-out hour or a
+  /// gap in the timetable, so the duration stepper can never produce a booking
+  /// that spans an hour someone else already has.
+  List<TimeSlot> get _runSlots {
+    final start = _startSlot;
+    if (start == null) return const <TimeSlot>[];
+
+    final all = _allTimes;
+    final index = all.indexWhere(
+      (t) => t.slot['startTime'] == start.slot['startTime'],
+    );
+    if (index < 0) return const <TimeSlot>[];
+
+    final run = <TimeSlot>[all[index]];
+    for (var i = index + 1; i < all.length && run.length < _durationSlots; i++) {
+      final previousEnd = run.last.slot['endTime'].toString();
+      final nextStart = all[i].slot['startTime'].toString();
+      if (all[i].isSoldOut || nextStart != previousEnd) break;
+      run.add(all[i]);
+    }
+    return run;
+  }
+
+  /// How many more consecutive hours are actually free after the current run.
+  bool get _canExtend {
+    final all = _allTimes;
+    final run = _runSlots;
+    if (run.isEmpty) return false;
+
+    final index = all.indexWhere(
+      (t) => t.slot['startTime'] == run.last.slot['startTime'],
+    );
+    if (index < 0 || index + 1 >= all.length) return false;
+
+    final next = all[index + 1];
+    return !next.isSoldOut &&
+        next.slot['startTime'].toString() ==
+            run.last.slot['endTime'].toString();
+  }
+
+  /// Price of the run before any discount.
+  int get _baseTotal =>
+      _runSlots.fold(0, (sum, t) => sum + (t.slot['price'] as int));
+
+  /// What the coupon takes off, as the server priced it. Display only.
+  int get _discount =>
+      (_validation?.discountAmount ?? 0).round().clamp(0, _baseTotal);
+
+  int get _payable => (_baseTotal - _discount).clamp(0, _baseTotal);
+
+  /// Nothing to charge — a free court, or a coupon that covered it. The
+  /// gateway is skipped entirely for these.
+  bool get _isFree => _runSlots.isNotEmpty && _payable <= 0;
+
+  /// `"1 Hr"` / `"2 Hrs"`, from the run's own clock times rather than an
+  /// assumed slot length.
+  String get _durationLabel {
+    final run = _runSlots;
+    if (run.isEmpty) return '—';
+    return run.length == 1 ? '1 Hr' : '${run.length} Hrs';
+  }
+
+  /// `"7:00 AM–8:00 AM"` across the whole run.
+  String get _runLabel {
+    final run = _runSlots;
+    if (run.isEmpty) return '';
+    return '${_fmtTime(run.first.slot['startTime'].toString())}'
+        '–${_fmtTime(run.last.slot['endTime'].toString())}';
+  }
+
   // 🔄 NEW API base + resolved ids
   static const String _apiBase = "https://api.nahatasports.com/api";
   int? _sportComplexId;
@@ -2080,7 +2190,6 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
 
 
   List<Map<String, dynamic>> courts = [];
-  String? selectedCourt;
   String? selectedHourType;
 
   List<Map<String, dynamic>> selectedSlots = [];
@@ -2096,15 +2205,437 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
   @override
   void initState() {
     super.initState();
+    _venue = widget.location;
+    _sport = widget.game;
+    // Seeded from the caller so the first fetch skips the name lookups; both
+    // are re-resolved from scratch whenever a picker changes the selection.
+    _sportComplexId = widget.sportComplexId;
+    _sportId = widget.sportId;
     _dateScrollController = ScrollController();
     _generateDateList();
     fetchCourtsWisePrice();
+    _loadVenues();
   }
 
   @override
   void dispose() {
     _dateScrollController.dispose();
+    _couponController.dispose();
     super.dispose();
+  }
+
+  /// Offers for court bookings at this venue and sport.
+  ///
+  /// The ids matter: the server matches a coupon's scope as "unscoped **or**
+  /// equal to this", so a coupon issued for this venue only comes back when
+  /// the request names it. A failure here just means no offers strip.
+  Future<void> _loadCoupons() async {
+    final coupons = await CouponRepository.instance.fetchActiveCoupons(
+      appliesTo: 'Court',
+      sportComplexId: _sportComplexId,
+      sportId: _sportId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _coupons = coupons;
+      _loadingCoupons = false;
+    });
+  }
+
+  /// `POST /coupons/validate` — the server decides whether the code applies to
+  /// this booking and how much comes off. Preview only; the payment screen
+  /// sends the code again and the backend re-checks it there.
+  Future<void> _applyCouponCode(String code) async {
+    final trimmed = code.trim();
+    if (trimmed.isEmpty) {
+      setState(() => _couponError = 'Enter a coupon code');
+      return;
+    }
+    if (_runSlots.isEmpty) {
+      setState(() => _couponError = 'Pick a start time first');
+      return;
+    }
+
+    // Only the newest reply may write back.
+    final request = ++_couponRequest;
+    setState(() {
+      _applyingCoupon = true;
+      _couponError = null;
+    });
+
+    final result = await CouponRepository.instance.validateCoupon(
+      code: trimmed,
+      amount: _baseTotal,
+      appliesTo: 'Court',
+      sportComplexId: _sportComplexId,
+      sportId: _sportId,
+    );
+
+    if (!mounted || request != _couponRequest) return;
+
+    setState(() {
+      _applyingCoupon = false;
+      if (result.isValid) {
+        _appliedCoupon = result.coupon;
+        _validation = result;
+        _couponError = null;
+        _couponController.text = result.coupon?.code ?? trimmed;
+      } else {
+        _appliedCoupon = null;
+        _validation = null;
+        _couponError = result.message ?? 'Invalid coupon code';
+      }
+    });
+  }
+
+  void _removeCoupon() {
+    _couponRequest++; // discard any validation still in flight
+    setState(() {
+      _appliedCoupon = null;
+      _validation = null;
+      _applyingCoupon = false;
+      _couponError = null;
+      _couponController.clear();
+    });
+  }
+
+  /// Re-prices an applied coupon after the amount changes — a longer booking
+  /// may clear a minimum the shorter one did not, and vice versa.
+  void _revalidateCoupon() {
+    final code = _appliedCoupon?.code;
+    if (code == null || code.isEmpty) return;
+    _applyCouponCode(code);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Venue and sport — the two things this screen can re-pick in place
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /// The venue list, fetched once and shared.
+  ///
+  /// It backs the Venue sheet, the header address and the id resolution, so
+  /// opening the screen makes one request rather than three.
+  Future<void> _loadVenues() => _venuesLoad ??= _fetchVenues();
+
+  Future<void> _fetchVenues() async {
+    try {
+      final res = await http.get(
+        Uri.parse(
+          '$_apiBase/sports-complexes?status=Active&showOnFrontend=true&limit=50',
+        ),
+        headers: {'Accept': 'application/json'},
+      );
+      if (res.statusCode != 200) return;
+
+      final List complexes =
+          jsonDecode(res.body)['data']?['sportsComplexes'] ?? [];
+
+      final options = <_VenueOption>[];
+      for (final c in complexes) {
+        final name = (c['name'] ?? '').toString().trim();
+        if (name.isEmpty) continue;
+
+        final parts = <String>[
+          if ((c['address'] ?? '').toString().trim().isNotEmpty)
+            c['address'].toString().trim(),
+          if ((c['city'] ?? '').toString().trim().isNotEmpty)
+            c['city'].toString().trim(),
+        ];
+
+        options.add(_VenueOption(
+          id: c['id'] is int ? c['id'] as int : int.tryParse('${c['id']}'),
+          name: name,
+          address: parts.join(', '),
+        ));
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _venues = options;
+        _venueAddress ??= _addressForCurrentVenue();
+      });
+    } catch (e) {
+      AppLogger.debug('Could not load venues: $e', name: 'slotbook');
+      _venuesLoad = null; // the picker can try again on the next open
+    }
+  }
+
+  /// The current venue's street address, by id when one is known and by name
+  /// otherwise. Null while the list is still loading or when the venue has no
+  /// address on file — the header then simply omits the line.
+  String? _addressForCurrentVenue() {
+    for (final v in _venues) {
+      final matches = _sportComplexId != null
+          ? v.id == _sportComplexId
+          : v.name.toLowerCase() == _venue.toLowerCase().trim();
+      if (matches) return v.address.isEmpty ? null : v.address;
+    }
+    return null;
+  }
+
+  /// The sports the current venue runs, from its courts. Dropped and refetched
+  /// whenever the venue changes.
+  Future<List<Sport>> _loadSports() =>
+      _sportsLoad ??= Api_loc_Service.fetchSportsByLocation(_venue)
+          .catchError((Object e) {
+        _sportsLoad = null; // let the next open retry
+        throw e;
+      });
+
+  /// Clears everything the previous venue/sport decided, so a stale start time
+  /// or a coupon scoped to the old venue cannot survive the switch.
+  void _resetSelectionForNewScope() {
+    _startSlot = null;
+    _durationSlots = 1;
+    courts = [];
+    selectedSlots = [];
+    totalPrice = 0;
+    _couponRequest++; // discard any validation still in flight
+    _appliedCoupon = null;
+    _validation = null;
+    _applyingCoupon = false;
+    _couponError = null;
+    _couponController.clear();
+    _coupons = const [];
+    _loadingCoupons = true; // fetchCourtsWisePrice re-asks once the ids resolve
+  }
+
+  /// The Venue sheet. The venue changes right here: the ids are re-resolved,
+  /// the sport is re-checked against the new venue, and the day reloads.
+  Future<void> _pickVenue() async {
+    final chosen = await _showPickerSheet<_VenueOption>(
+      title: 'VENUE',
+      options: _loadVenues().then((_) => _venues),
+      labelOf: (v) => v.name,
+      subtitleOf: (v) => v.address.isEmpty ? null : v.address,
+      isSelected: (v) => v.name.toLowerCase() == _venue.toLowerCase().trim(),
+      emptyLabel: 'No venues available right now',
+    );
+    if (chosen == null || !mounted) return;
+    if (chosen.name.toLowerCase() == _venue.toLowerCase().trim()) return;
+
+    setState(() {
+      _venue = chosen.name;
+      _venueAddress = chosen.address.isEmpty ? null : chosen.address;
+      _sportComplexId = chosen.id;
+      _sportId = null; // the old id belongs to the old venue's courts
+      _sportsLoad = null;
+      _resetSelectionForNewScope();
+    });
+
+    await _syncSportToVenue();
+    if (!mounted) return;
+    await fetchCourtsWisePrice();
+  }
+
+  /// The Sport sheet, listing what the current venue actually offers.
+  Future<void> _pickSport() async {
+    final chosen = await _showPickerSheet<Sport>(
+      title: 'SPORT',
+      options: _loadSports(),
+      labelOf: (s) => s.name,
+      isSelected: (s) =>
+          s.name.toLowerCase().trim() == _sport.toLowerCase().trim(),
+      emptyLabel: 'No sports listed at this venue',
+    );
+    if (chosen == null || !mounted) return;
+    if (chosen.name.toLowerCase().trim() == _sport.toLowerCase().trim()) return;
+
+    setState(() {
+      _sport = chosen.name;
+      _sportId = chosen.id;
+      _resetSelectionForNewScope();
+    });
+    await fetchCourtsWisePrice();
+  }
+
+  /// Keeps the sport valid after a venue change: a venue that does not run it
+  /// falls back to the first sport it does run, rather than loading a day with
+  /// no courts in it and looking broken.
+  Future<void> _syncSportToVenue() async {
+    List<Sport> sports;
+    try {
+      sports = await _loadSports();
+    } catch (e) {
+      AppLogger.debug('Could not load sports for $_venue: $e', name: 'slotbook');
+      return;
+    }
+    if (!mounted || sports.isEmpty) return;
+
+    final wanted = _sport.toLowerCase().trim();
+    final match = sports.where((s) => s.name.toLowerCase().trim() == wanted);
+
+    if (match.isNotEmpty) {
+      setState(() => _sportId = match.first.id);
+      return;
+    }
+
+    final fallback = sports.first;
+    final previous = _sport;
+    setState(() {
+      _sport = fallback.name;
+      _sportId = fallback.id;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$previous is not offered at $_venue — showing ${fallback.name}',
+        ),
+      ),
+    );
+  }
+
+  /// The start-time sheet's chrome, reused for the venue and sport lists.
+  ///
+  /// The rows come from a future so a list still being fetched shows a spinner
+  /// inside the sheet instead of holding the sheet closed while it loads.
+  Future<T?> _showPickerSheet<T>({
+    required String title,
+    required Future<List<T>> options,
+    required String Function(T) labelOf,
+    required bool Function(T) isSelected,
+    String? Function(T)? subtitleOf,
+    String emptyLabel = 'Nothing to choose from',
+  }) {
+    return showModalBottomSheet<T>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.35,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, controller) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0E2EC),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: _navy,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+              ),
+              const Divider(height: 1, color: _line),
+              Expanded(
+                child: FutureBuilder<List<T>>(
+                  future: options,
+                  builder: (_, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(
+                        child: SizedBox(
+                          height: 26,
+                          width: 26,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.4, color: _indigo),
+                        ),
+                      );
+                    }
+
+                    final items = snapshot.data ?? const [];
+                    if (snapshot.hasError || items.isEmpty) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            snapshot.hasError
+                                ? 'Could not load the list. Try again.'
+                                : emptyLabel,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: _muted,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    return ListView.separated(
+                      controller: controller,
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) =>
+                          const Divider(height: 1, color: _line, indent: 20),
+                      itemBuilder: (_, i) {
+                        final item = items[i];
+                        final selected = isSelected(item);
+                        final subtitle = subtitleOf?.call(item);
+                        return ListTile(
+                          title: Text(
+                            labelOf(item),
+                            style: TextStyle(
+                              color: _navy,
+                              fontSize: 15,
+                              fontWeight:
+                                  selected ? FontWeight.w700 : FontWeight.w500,
+                            ),
+                          ),
+                          subtitle: subtitle == null
+                              ? null
+                              : Text(
+                                  subtitle,
+                                  style: const TextStyle(
+                                      fontSize: 12, color: _muted),
+                                ),
+                          trailing: selected
+                              ? const Icon(Icons.check_circle,
+                                  color: _indigo, size: 20)
+                              : null,
+                          onTap: () => Navigator.pop(sheetContext, item),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Picks the first bookable time once the day's slots arrive, so the screen
+  /// opens on a usable booking rather than empty fields.
+  void _seedSelection() {
+    final open = _openTimes;
+    if (open.isEmpty) {
+      _startSlot = null;
+      _durationSlots = 1;
+      return;
+    }
+
+    final current = _startSlot;
+    final stillOpen = current != null &&
+        open.any((t) => t.slot['startTime'] == current.slot['startTime']);
+
+    if (!stillOpen) {
+      _startSlot = open.first;
+      _durationSlots = 1;
+    }
   }
 
   void _generateDateList() {
@@ -2246,25 +2777,17 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     }
   }
 
-  /// Resolve the sports-complex id for the current [widget.location] by name.
+  /// Resolve the sports-complex id for the current venue by name, off the same
+  /// list the Venue sheet and the header address use.
   Future<int?> _resolveComplexId() async {
-    if (widget.sportComplexId != null) return widget.sportComplexId;
-    final url = Uri.parse(
-        '$_apiBase/sports-complexes?status=Active&showOnFrontend=true&limit=50');
-    final res = await http.get(url, headers: {'Accept': 'application/json'});
-    if (res.statusCode != 200) return null;
-    final body = jsonDecode(res.body);
-    final List complexes = body['data']?['sportsComplexes'] ?? [];
-    for (final c in complexes) {
-      if ((c['name'] ?? '').toString().toLowerCase().trim() ==
-          widget.location.toLowerCase().trim()) {
-        return c['id'] is int ? c['id'] as int : int.tryParse('${c['id']}');
-      }
+    await _loadVenues();
+    for (final v in _venues) {
+      if (v.name.toLowerCase() == _venue.toLowerCase().trim()) return v.id;
     }
     return null;
   }
 
-  /// GET /courts of a complex (paginated), filtered to [widget.game].
+  /// GET /courts of a complex (paginated), filtered to the current sport.
   Future<List<dynamic>> _fetchCourtsForSport(int complexId) async {
     final List<dynamic> matching = [];
     int page = 1;
@@ -2279,8 +2802,8 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
         final sportName = (c['Sport']?['name'] ?? '').toString();
         final sportId = c['Sport']?['id'];
         final matchesName =
-            sportName.toLowerCase().trim() == widget.game.toLowerCase().trim();
-        final matchesId = widget.sportId != null && sportId == widget.sportId;
+            sportName.toLowerCase().trim() == _sport.toLowerCase().trim();
+        final matchesId = _sportId != null && sportId == _sportId;
         if (matchesName || matchesId) matching.add(c);
       }
       final totalPages = body['pagination']?['totalPages'] ?? 1;
@@ -2308,7 +2831,7 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
   // plus hidden booking metadata: courtId, slotId, sportId, sportComplexId,
   // startTime, endTime (ignored by the UI, used by PaymentScreen).
   Future<void> fetchCourtsWisePrice() async {
-    print("🚀 fetchCourtsWisePrice() [NEW API] called");
+    AppLogger.debug("🚀 fetchCourtsWisePrice() [NEW API] called", name: 'slotbook');
 
     setState(() {
       isLoading = true;
@@ -2323,17 +2846,16 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
       if (_sportComplexId == null) {
         setState(() {
           courts = [];
-          error = "Location \"${widget.location}\" not found";
+          error = "Location \"$_venue\" not found";
         });
         return;
       }
 
       final matchingCourts = await _fetchCourtsForSport(_sportComplexId!);
       if (matchingCourts.isNotEmpty) {
-        _sportId = widget.sportId ??
-            (matchingCourts.first['Sport']?['id'] is int
-                ? matchingCourts.first['Sport']['id'] as int
-                : int.tryParse('${matchingCourts.first['Sport']?['id']}'));
+        _sportId ??= matchingCourts.first['Sport']?['id'] is int
+            ? matchingCourts.first['Sport']['id'] as int
+            : int.tryParse('${matchingCourts.first['Sport']?['id']}');
       }
 
       final List<Map<String, dynamic>> parsedSlots = [];
@@ -2372,7 +2894,7 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
         }
       }
 
-      print("✅ Total AVAILABLE slots: ${parsedSlots.length}");
+      AppLogger.debug("✅ Total AVAILABLE slots: ${parsedSlots.length}", name: 'slotbook');
 
       setState(() {
         courts = parsedSlots;
@@ -2381,25 +2903,28 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
         totalPrice = selectedSlots.fold(
             0, (sum, s) => sum + (s['price'] as int));
 
-        final courtNames = _getCourtNames();
-        if (courtNames.isNotEmpty) {
-          selectedCourt = courtNames.first;
-          final ht = _getHourTypesForCourt(selectedCourt);
-          selectedHourTypeTab = ht.isNotEmpty ? ht.first : null;
-        } else {
-          selectedCourt = null;
-          selectedHourTypeTab = null;
-        }
+        // No court to preselect any more — the tabs are the only choice left,
+        // and the court is picked per slot when one is tapped.
+        final hourTypes = _getHourTypes();
+        selectedHourTypeTab = hourTypes.isNotEmpty ? hourTypes.first : null;
+
+        // The day changed under the form, so re-seed the start time.
+        _seedSelection();
       });
 
-      print("🎉 fetchCourtsWisePrice() [NEW API] completed");
+      // Offers are venue- and sport-scoped, so they can only be asked for once
+      // those ids have been resolved above.
+      if (_loadingCoupons) _loadCoupons();
+      _revalidateCoupon();
+
+      AppLogger.debug("🎉 fetchCourtsWisePrice() [NEW API] completed", name: 'slotbook');
     } catch (e, stack) {
-      print("🔥 Exception: $e");
-      print(stack);
+      AppLogger.debug("🔥 Exception: $e", name: 'slotbook');
+      AppLogger.debug('${stack}', name: 'slotbook');
       setState(() => error = "Error: $e");
     } finally {
       setState(() => isLoading = false);
-      print("⏹️ Loading finished");
+      AppLogger.debug("⏹️ Loading finished", name: 'slotbook');
     }
   }
 
@@ -2503,35 +3028,27 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
   // }
 
   // ---------------------- Helpers ----------------------
-  List<String> _getCourtNames() {
-    final names = courts.map((s) => s['court'].toString()).toSet().toList();
-    names.sort();
-    return names;
-  }
+  // --------------------------------------------------------------------------
+  // Time-first booking
+  // --------------------------------------------------------------------------
+  // The screen used to ask for a court before it would show a single time, so
+  // booking an 8pm game meant checking four courts one by one to find out who
+  // had 8pm free. Which court you play on is the venue's problem, not the
+  // customer's — so the court picker is gone and a time is offered whenever
+  // *any* court has it free. The court is still chosen here, just automatically,
+  // and it still travels on the slot map that payment consumes.
 
-  List<Map<String, dynamic>> _getSlotsForCourtAndHour(
-      String? court, String? hourType) {
-    if (court == null || hourType == null) return [];
-    final list = courts
-        .where((s) => s['court'] == court && s['hourType'] == hourType)
-        .toList();
-    // 🔄 NEW API: sort by 24h startTime so slots stay chronological
-    list.sort((a, b) => (a['startTime'] ?? a['time'])
-        .toString()
-        .compareTo((b['startTime'] ?? b['time']).toString()));
-    return list;
-  }
-
-  List<String> _getHourTypesForCourt(String? court) {
-    if (court == null) return [];
-    final hourTypes = courts
-        .where((s) => s['court'] == court)
-        .map((s) => s['hourType'].toString())
-        .toSet()
-        .toList();
+  /// Every pricing tier present today, across all courts.
+  List<String> _getHourTypes() {
+    final hourTypes =
+        courts.map((s) => s['hourType'].toString()).toSet().toList();
     hourTypes.sort();
     return hourTypes;
   }
+
+  /// One entry per start time in this pricing tier. See [mergeSlotsByTime].
+  List<TimeSlot> _timeSlotsFor(String hourType) =>
+      mergeSlotsByTime(courts, hourType);
   void toggleSlot(Map<String, dynamic> slot) {
     if (slot['isSoldOut'] == true) return;
 
@@ -2708,8 +3225,8 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
                         MaterialPageRoute(
                           builder: (context) => PaymentScreen(
                             bookingDetails: {
-                              "location": widget.location,
-                              "game": widget.game,
+                              "location": _venue,
+                              "game": _sport,
                               "slots": selectedSlots,
                               "price": totalPrice,
                               "date": DateFormat('yyyy-MM-dd').format(_selectedDay),
@@ -2902,13 +3419,15 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: _pageBg,
       appBar: _buildAppBar(),
-      body: Column(
-        children: [
-          Expanded(child: _buildBody()),
-          if (selectedSlots.isNotEmpty) _buildBottomBar(),
-        ],
+      // SafeArea on the bottom so the CTA clears the system navigation bar.
+      body: SafeArea(
+        top: false,
+        child: isLoading || error != null
+            // The shimmer and the error state are the screen's own, unchanged.
+            ? _buildBody()
+            : _buildBookingForm(),
       ),
     );
   }
@@ -2916,45 +3435,1086 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
       elevation: 0,
-      leading: InkWell(
-        onTap: () {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => Viewgame(locationName: widget.location),
+      scrolledUnderElevation: 0,
+      leadingWidth: 64,
+      leading: Center(
+        child: Material(
+          color: const Color(0xFFF2F3F8),
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: _goBackToSports,
+            child: const SizedBox(
+              height: 40,
+              width: 40,
+              child: Icon(Icons.chevron_left, color: _navy, size: 24),
             ),
-          );
-        },
-        child: const Icon(
-          Icons.arrow_back_ios_new,
-          color: Colors.black87,
-          size: 20,
+          ),
         ),
       ),
-      title: Column(
+      title: const Text(
+        'BOOK A COURT',
+        style: TextStyle(
+          color: _navy,
+          fontSize: 19,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.4,
+        ),
+      ),
+      centerTitle: false,
+      titleSpacing: 4,
+    );
+  }
+
+  /// Back out to the sport list for this venue — where the sport and venue are
+  /// actually chosen, which is also what the Venue and Sport rows point at.
+  void _goBackToSports() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Viewgame(locationName: _venue),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Book a Court — form layout
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /// The whole screen is one white card on a tinted page, scrolling as a unit.
+  ///
+  /// Every figure in it is derived from the slots the API returned: nothing
+  /// here is placeholder text, and a day with no free courts renders as one.
+  Widget _buildBookingForm() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 28),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: _border),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A1E1B4B),
+              blurRadius: 18,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildVenueHeader(),
+            _buildAssuranceStrip(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildVenueRow(),
+                  _rowDivider(),
+                  _buildSportRow(),
+                  _rowDivider(),
+                  _buildDateRow(),
+                  _rowDivider(),
+                  _buildStartTimeRow(),
+                  _rowDivider(),
+                  _buildDurationRow(),
+                  _rowDivider(),
+                  _buildAvailabilityLine(),
+                  const SizedBox(height: 14),
+                  _buildOffersCard(),
+                  const SizedBox(height: 14),
+                  _buildTotalCard(),
+                  const SizedBox(height: 14),
+                  _buildPrimaryCta(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _rowDivider() => const Divider(height: 1, thickness: 1, color: _line);
+
+  /// Venue name and its street address.
+  Widget _buildVenueHeader() {
+    final address = _venueAddress;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            widget.game,
+            _venue,
             style: const TextStyle(
-              color: Colors.black,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
+              color: _navy,
+              fontSize: 26,
+              height: 1.15,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          Text(
-            "at ${widget.location}",
-            style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
+          if (address != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 2),
+                  child:
+                      Icon(Icons.location_on_outlined, size: 15, color: _muted),
+                ),
+                const SizedBox(width: 6),
+                // Expanded, so a long address wraps instead of being cut off.
+                Expanded(
+                  child: Text(
+                    address,
+                    style: const TextStyle(
+                      color: _muted,
+                      fontSize: 13.5,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAssuranceStrip() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [_indigoDeep, _indigo],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+      ),
+      child: const Text(
+        '✓  Instant confirmation · Secure online payment',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 13.5,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  /// One labelled row: caption on the left, field on the right.
+  ///
+  /// Both halves are flexed rather than fixed, so the row holds its shape from
+  /// a 320pt phone to a tablet and at any system text size.
+  Widget _formRow({required String label, required Widget field}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 4,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: _navy,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(flex: 7, child: field),
+        ],
+      ),
+    );
+  }
+
+  /// The bordered input container the reference uses for every field.
+  Widget _fieldBox({
+    required Widget child,
+    VoidCallback? onTap,
+    Widget? trailing,
+  }) {
+    return Material(
+      color: _fieldBg,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _border),
+          ),
+          child: Row(
+            children: [
+              Expanded(child: child),
+              if (trailing != null) ...[const SizedBox(width: 6), trailing],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fieldText(String value) => Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: _navy,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
+      );
+
+  static const _chevron = Icon(Icons.expand_more, size: 20, color: _muted);
+
+  Widget _buildVenueRow() {
+    return _formRow(
+      label: 'Venue',
+      field: _fieldBox(
+        // Both rows re-pick in place: the sheet changes the selection and the
+        // day reloads underneath it, so neither leaves this screen.
+        onTap: _pickVenue,
+        trailing: _chevron,
+        child: _fieldText(_venue),
+      ),
+    );
+  }
+
+  Widget _buildSportRow() {
+    return _formRow(
+      label: 'Sport',
+      field: _fieldBox(
+        onTap: _pickSport,
+        trailing: _chevron,
+        child: _fieldText(_sport),
+      ),
+    );
+  }
+
+  Widget _buildDateRow() {
+    return _formRow(
+      label: 'Date',
+      field: _fieldBox(
+        onTap: _pickDate,
+        trailing:
+            const Icon(Icons.calendar_today_outlined, size: 17, color: _muted),
+        child: _fieldText(DateFormat('EEE, MMM d, yyyy').format(_selectedDay)),
+      ),
+    );
+  }
+
+  /// Opens the platform date picker and reloads that day's slots.
+  ///
+  /// The window matches the horizontal date strip the screen used before, so
+  /// the range of bookable days is unchanged.
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDay.isBefore(today) ? today : _selectedDay,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 30)),
+    );
+    if (picked == null) return;
+    if (DateUtils.isSameDay(picked, _selectedDay)) return;
+
+    setState(() {
+      _selectedDay = picked;
+      _startSlot = null;
+      _durationSlots = 1;
+    });
+    await fetchCourtsWisePrice();
+  }
+
+  Widget _buildStartTimeRow() {
+    final open = _openTimes;
+    final start = _startSlot;
+
+    return _formRow(
+      label: 'Start Time',
+      field: _fieldBox(
+        onTap: open.isEmpty ? null : _pickStartTime,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.access_time, size: 17, color: _muted),
+            SizedBox(width: 2),
+            _chevron,
+          ],
+        ),
+        child: _fieldText(
+          start == null
+              ? (open.isEmpty ? 'No slots today' : 'Select a time')
+              : _fmtTime(start.slot['startTime'].toString()),
+        ),
+      ),
+    );
+  }
+
+  /// Start times for the day, in a sheet so a long list stays scrollable on a
+  /// short screen.
+  Future<void> _pickStartTime() async {
+    final open = _openTimes;
+    if (open.isEmpty) return;
+
+    final chosen = await showModalBottomSheet<TimeSlot>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.35,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, controller) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0E2EC),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 18, 20, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'START TIME',
+                    style: TextStyle(
+                      color: _navy,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+              ),
+              const Divider(height: 1, color: _line),
+              Expanded(
+                child: ListView.separated(
+                  controller: controller,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  itemCount: open.length,
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, color: _line, indent: 20),
+                  itemBuilder: (_, i) {
+                    final entry = open[i];
+                    final selected =
+                        _startSlot?.slot['startTime'] == entry.slot['startTime'];
+                    return ListTile(
+                      title: Text(
+                        _fmtTime(entry.slot['startTime'].toString()),
+                        style: TextStyle(
+                          color: _navy,
+                          fontSize: 15,
+                          fontWeight:
+                              selected ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '₹${entry.slot['price']} · '
+                        '${entry.freeCourts} of ${entry.totalCourts} free',
+                        style: const TextStyle(fontSize: 12, color: _muted),
+                      ),
+                      trailing: selected
+                          ? const Icon(Icons.check_circle,
+                              color: _indigo, size: 20)
+                          : null,
+                      onTap: () => Navigator.pop(sheetContext, entry),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (chosen == null) return;
+    setState(() {
+      _startSlot = chosen;
+      _durationSlots = 1;
+    });
+    _revalidateCoupon();
+  }
+
+  Widget _buildDurationRow() {
+    return _formRow(
+      label: 'Duration',
+      field: Row(
+        children: [
+          _stepperButton(
+            icon: Icons.remove,
+            enabled: _durationSlots > 1,
+            onTap: () {
+              setState(() => _durationSlots -= 1);
+              _revalidateCoupon();
+            },
+          ),
+          Expanded(
+            child: Text(
+              _durationLabel,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _navy,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          _stepperButton(
+            icon: Icons.add,
+            enabled: _canExtend,
+            filled: true,
+            onTap: () {
+              setState(() => _durationSlots += 1);
+              _revalidateCoupon();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A circular stepper control. The disabled state is a flat grey circle,
+  /// matching the reference's minus button at one hour.
+  Widget _stepperButton({
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+    bool filled = false,
+  }) {
+    final background = enabled && filled ? _indigo : const Color(0xFFF0F1F6);
+    final foreground = !enabled
+        ? const Color(0xFFB9BCC9)
+        : (filled ? Colors.white : _navy);
+
+    return Material(
+      color: background,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: enabled ? onTap : null,
+        child: SizedBox(
+          height: 42,
+          width: 42,
+          child: Icon(icon, size: 20, color: foreground),
+        ),
+      ),
+    );
+  }
+
+  /// The availability line under the duration stepper.
+  Widget _buildAvailabilityLine() {
+    final run = _runSlots;
+
+    if (run.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 14, bottom: 2),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, size: 18, color: _muted),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'No courts free on this date',
+                style: TextStyle(
+                  color: _muted,
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 14, bottom: 2),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle_outline, size: 18, color: _indigo),
+          const SizedBox(width: 8),
+          // Wraps rather than clipping when the range plus a large system text
+          // size outgrows one line.
+          Expanded(
+            child: Text(
+              'Available · $_runLabel',
+              style: const TextStyle(
+                color: _indigo,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
       ),
-      centerTitle: false,
     );
+  }
+
+  /// OFFERS & COUPONS — the offers the venue is running, plus a code field.
+  ///
+  /// The figures shown come from `/coupons/validate`; the money actually
+  /// charged is decided by the server when the booking is created.
+  Widget _buildOffersCard() {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () => setState(() => _offersExpanded = !_offersExpanded),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+              child: Row(
+                children: [
+                  const Icon(Icons.auto_awesome, size: 18, color: _indigo),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'OFFERS & COUPONS',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _navy,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _offersExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 22,
+                    color: _muted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_offersExpanded) ...[
+            const Divider(height: 1, color: _line),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
+              child: Column(children: [
+                _buildOffersList(),
+                const SizedBox(height: 16),
+                _buildOrEnterCode(),
+                const SizedBox(height: 12),
+                _buildCouponField(),
+                if (_couponError != null) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(Icons.error_outline,
+                          size: 15, color: Color(0xFFDC2626)),
+                      const SizedBox(width: 6),
+                      // The server's own wording, which is already
+                      // user-facing — wrapped, never truncated.
+                      Expanded(
+                        child: Text(
+                          _couponError!,
+                          style: const TextStyle(
+                            color: Color(0xFFDC2626),
+                            fontSize: 12.5,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ]),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// The offers strip: what the venue is running right now, or the empty line
+  /// the reference shows when it is running nothing.
+  Widget _buildOffersList() {
+    if (_loadingCoupons) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 10),
+        child: SizedBox(
+          height: 18,
+          width: 18,
+          child: CircularProgressIndicator(strokeWidth: 2, color: _indigo),
+        ),
+      );
+    }
+
+    final applied = _appliedCoupon;
+    if (applied != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0FDF4),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFBBF7D0)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.check_circle,
+                size: 18, color: Color(0xFF16A34A)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    applied.code ?? 'Coupon applied',
+                    style: const TextStyle(
+                      color: Color(0xFF166534),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (_discount > 0)
+                    Text(
+                      'You saved ₹$_discount',
+                      style: const TextStyle(
+                        color: Color(0xFF16A34A),
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: _applyingCoupon ? null : _removeCoupon,
+              child: const Text('Remove'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final usable =
+        _coupons.where((c) => (c.code ?? '').isNotEmpty).toList(growable: false);
+
+    if (usable.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 10),
+        child: Text(
+          'No active offers right now',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: _muted, fontSize: 13.5),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        for (final coupon in usable.take(6))
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: _applyingCoupon
+                  ? null
+                  : () => _applyCouponCode(coupon.code!),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                decoration: BoxDecoration(
+                  color: _fieldBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _border),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            coupon.code!,
+                            style: const TextStyle(
+                              color: _navy,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                          if ((coupon.description ?? '').isNotEmpty)
+                            Text(
+                              coupon.description!,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _muted,
+                                fontSize: 11.5,
+                                height: 1.35,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      coupon.shortLabel,
+                      style: const TextStyle(
+                        color: _indigo,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildOrEnterCode() {
+    return Row(
+      children: const [
+        Expanded(child: Divider(height: 1, color: _line)),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            'OR ENTER CODE',
+            style: TextStyle(
+              color: Color(0xFFA9ADBD),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ),
+        Expanded(child: Divider(height: 1, color: _line)),
+      ],
+    );
+  }
+
+  Widget _buildCouponField() {
+    final busy = _applyingCoupon;
+    final hasCoupon = _appliedCoupon != null;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: _fieldBg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _border),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.local_offer_outlined,
+                    size: 17, color: _muted),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _couponController,
+                    enabled: !busy && !hasCoupon,
+                    textCapitalization: TextCapitalization.characters,
+                    onSubmitted: _applyCouponCode,
+                    style: const TextStyle(
+                      color: _navy,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: 'COUPON CODE',
+                      hintStyle: TextStyle(
+                        color: Color(0xFFA9ADBD),
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.6,
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          height: 46,
+          child: ElevatedButton(
+            onPressed: busy
+                ? null
+                : (hasCoupon
+                    ? _removeCoupon
+                    : () => _applyCouponCode(_couponController.text)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF9E9BC8),
+              disabledBackgroundColor: const Color(0xFFCFCDE4),
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: busy
+                ? const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : Text(
+                    hasCoupon ? 'REMOVE' : 'APPLY',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// TOTAL — the amount the CTA is about to charge, discount already off.
+  Widget _buildTotalCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F8FC),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          if (_discount > 0) ...[
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Subtotal',
+                    style: TextStyle(color: _muted, fontSize: 13.5),
+                  ),
+                ),
+                Text(
+                  '₹$_baseTotal',
+                  style: const TextStyle(color: _muted, fontSize: 13.5),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Coupon ${_appliedCoupon?.code ?? ''}'.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF16A34A),
+                      fontSize: 13.5,
+                    ),
+                  ),
+                ),
+                Text(
+                  '− ₹$_discount',
+                  style: const TextStyle(
+                    color: Color(0xFF16A34A),
+                    fontSize: 13.5,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: _border),
+            const SizedBox(height: 14),
+          ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const Expanded(
+                child: Text(
+                  'TOTAL',
+                  style: TextStyle(
+                    color: _muted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+              // Flexible so a five-figure total shrinks the gap rather than
+              // running off the card.
+              Flexible(
+                child: Text(
+                  '₹$_payable',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    color: _navy,
+                    fontSize: 30,
+                    height: 1.1,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The single call to action.
+  ///
+  /// A free court is never described as a payment: there is nothing to charge,
+  /// the gateway is skipped, and the label says so.
+  Widget _buildPrimaryCta() {
+    final ready = _runSlots.isNotEmpty;
+    final free = _isFree;
+
+    final label = !ready
+        ? 'Select a time'
+        : (free ? 'Reserve Free Court' : 'Pay & Reserve · ₹$_payable');
+
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        key: const Key('court_book_cta'),
+        onPressed: ready && !isLoading ? _onReservePressed : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _indigoDeep,
+          disabledBackgroundColor: const Color(0xFFC7C9DC),
+          foregroundColor: Colors.white,
+          elevation: 2,
+          shadowColor: const Color(0x33312E81),
+          padding: const EdgeInsets.symmetric(vertical: 17),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              free ? Icons.confirmation_number_outlined : Icons.credit_card,
+              size: 19,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 10),
+            // Flexible so the label ellipsises rather than overflowing the
+            // button on a narrow phone at a large text size.
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Hands the chosen run to the payment screen.
+  ///
+  /// The slot maps handed over are exactly the ones the API produced —
+  /// `courtId`, `slotId`, `startTime`, `endTime` and the rest — so the booking
+  /// call downstream is unchanged. `couponCode` travels with them: the payment
+  /// screen re-validates it and the backend applies the discount itself, which
+  /// is the only place a coupon ever takes effect.
+  Future<void> _onReservePressed() async {
+    final run = _runSlots;
+    if (run.isEmpty) return;
+
+    try {
+      final loggedIn = await ApiService.isLoggedIn();
+      if (!mounted) return;
+
+      if (!loggedIn) {
+        _showNotLoggedInPopup();
+        return;
+      }
+
+      final userDetails = ApiService.currentUser;
+
+      // Keep the existing shape byte for byte; only the selection changed.
+      selectedSlots = run.map((t) => t.slot).toList();
+      totalPrice = _baseTotal;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PaymentScreen(
+            bookingDetails: {
+              "location": _venue,
+              "game": _sport,
+              "slots": selectedSlots,
+              // The original price: the backend re-applies the coupon itself,
+              // so a pre-discounted figure here would discount it twice.
+              "price": totalPrice,
+              "date": DateFormat('yyyy-MM-dd').format(_selectedDay),
+              "phone": userDetails?['phone'] ?? '',
+              "cash": 0,
+              "sportComplexId": _sportComplexId,
+              "sportId": _sportId,
+              if (_appliedCoupon?.code != null)
+                "couponCode": _appliedCoupon!.code,
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Widget _buildBody() {
@@ -2994,8 +4554,6 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
       children: [
         const SizedBox(height: 16),
         _buildHorizontalCalendar(),
-        const SizedBox(height: 20),
-        _buildAvailableCourts(),
         const SizedBox(height: 20),
         Expanded(child: _buildSlotsSection()),
       ],
@@ -3085,84 +4643,11 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     );
   }
 
-  Widget _buildAvailableCourts() {
-    final courtNames = _getCourtNames();
-    if (courtNames.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Text(
-            "Available Slots(${courtNames.length})",
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 42,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: courtNames.length,
-            itemBuilder: (context, index) {
-              final court = courtNames[index];
-              final isSelected = selectedCourt == court;
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    selectedCourt = court;
-                    // Reset hour type tab when court changes
-                    final hourTypes = _getHourTypesForCourt(court);
-                    if (hourTypes.isNotEmpty) {
-                      selectedHourTypeTab = hourTypes.first;
-                    }
-                  });
-                },
-                child: Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isSelected ? brandBlue : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isSelected ? brandBlue : Colors.grey.shade300,
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      court,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isSelected ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildSlotsSection() {
-    if (selectedCourt == null) {
-      return const Center(
-        child: Text("Select a court to view slots"),
-      );
-    }
-
-    final hourTypes = _getHourTypesForCourt(selectedCourt);
+    final hourTypes = _getHourTypes();
     if (hourTypes.isEmpty) {
       return const Center(
-        child: Text("No slots available"),
+        child: Text("No slots available for this date"),
       );
     }
 
@@ -3243,7 +4728,7 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     );
   }
   Widget _buildSlotsList(String hourType) {
-    final slots = _getSlotsForCourtAndHour(selectedCourt, hourType);
+    final slots = _timeSlotsFor(hourType);
 
     if (slots.isEmpty) {
       return Center(
@@ -3272,6 +4757,11 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
       itemBuilder: (context, index) => _buildSlotChip(slots[index]),
     );
   }
+
+  /// A start time, plus the court that will be booked for it.
+  ///
+  /// [slot] is a real slot map straight from the API — court id, slot id and
+  /// price included — so nothing downstream of the tap has to change.
 
   // Widget _buildSlotChip(Map<String, dynamic> slot) {
   //   final isSelected = selectedSlots.any((s) =>
@@ -3343,18 +4833,26 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
   //   );
   // }
 
-  Widget _buildSlotChip(Map<String, dynamic> slot) {
+  Widget _buildSlotChip(TimeSlot entry) {
+    final slot = entry.slot;
     final isSelected = selectedSlots.any((s) =>
     s['court'] == slot['court'] &&
         s['hourType'] == slot['hourType'] &&
         s['time'] == slot['time'] &&
         s['date'] == slot['date']);
-    // final isSoldOut = (slot['price'] == 0);
-    final isSoldOut = slot['isSoldOut'] == true;
+    final isSoldOut = entry.isSoldOut;
+
+    // Which court you get is shown, not chosen — and only once the slot is in
+    // the basket, so browsing stays a list of times and prices.
+    final courtNote = isSoldOut
+        ? 'All ${entry.totalCourts} courts booked'
+        : (isSelected
+            ? 'Court: ${slot['court']}'
+            : (entry.freeCourts > 1 ? '${entry.freeCourts} courts free' : '1 court left'));
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: isSelected
@@ -3362,9 +4860,7 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
             : (isSoldOut ? Colors.grey.shade200 : Colors.white),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isSelected
-              ? brandBlue
-              : (isSoldOut ? Colors.grey.shade300 : Colors.grey.shade300),
+          color: isSelected ? brandBlue : Colors.grey.shade300,
           width: 1,
         ),
       ),
@@ -3373,42 +4869,61 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Text(
-                  slot['time'],
-                  style: TextStyle(
-                    color: isSelected
-                        ? Colors.white
-                        : (isSoldOut ? Colors.grey : Colors.black87),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        slot['time'],
+                        style: TextStyle(
+                          color: isSelected
+                              ? Colors.white
+                              : (isSoldOut ? Colors.grey : Colors.black87),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        isSoldOut ? "Sold Out" : "₹${slot['price']}",
+                        style: TextStyle(
+                          color: isSelected
+                              ? Colors.white
+                              : (isSoldOut ? Colors.grey : Colors.grey.shade600),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  isSoldOut ? "Sold Out" : "₹${slot['price']}",
-                  style: TextStyle(
-                    color: isSelected
-                        ? Colors.white
-                        : (isSoldOut ? Colors.grey : Colors.grey.shade600),
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: isSelected ? Colors.white : brandBlue,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.add,
-                color: isSelected ? brandBlue : Colors.white,
-                size: 20,
+                  // const SizedBox(height: 3),
+                  // Text(
+                  //   courtNote,
+                  //   style: TextStyle(
+                  //     color: isSelected
+                  //         ? Colors.white70
+                  //         : (isSoldOut ? Colors.grey : Colors.grey.shade600),
+                  //     fontSize: 11.5,
+                  //   ),
+                  // ),
+                ],
               ),
             ),
+            if (!isSoldOut)
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.white : brandBlue,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isSelected ? Icons.check : Icons.add,
+                  color: isSelected ? brandBlue : Colors.white,
+                  size: 20,
+                ),
+              ),
           ],
         ),
       ),
@@ -3656,3 +5171,68 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
 //     totalPrice = selectedSlots.fold(0, (sum, s) => sum + (s['price'] as int));
 //   });
 // }
+
+/// One bookable start time on the slot screen.
+///
+/// [slot] is a real slot map from the API — court id, slot id, price and all —
+/// so the court is decided here and everything downstream (the basket, the
+/// confirmation sheet, `POST /courts/bookings/create`) is unchanged.
+class TimeSlot {
+  const TimeSlot({
+    required this.slot,
+    required this.freeCourts,
+    required this.totalCourts,
+  });
+
+  /// The court that will be booked: the cheapest one still free at this time.
+  final Map<String, dynamic> slot;
+
+  /// How many courts still have this time. Zero means every court is taken.
+  final int freeCourts;
+  final int totalCourts;
+
+  bool get isSoldOut => freeCourts == 0;
+}
+
+/// Collapses per-court slots into one row per start time, chronologically.
+///
+/// The booking screen used to ask which court you wanted before it would show
+/// a single time, so finding a free 8pm meant opening four courts in turn.
+/// Which court you play on is the venue's business, so it is decided here
+/// instead: a time is offered while *any* court still has it, and the cheapest
+/// free court is the one that gets booked.
+///
+/// [slots] are the raw per-court slot maps; only those in [hourType] are
+/// considered. A time appears sold out only once every court is taken.
+List<TimeSlot> mergeSlotsByTime(
+  List<Map<String, dynamic>> slots,
+  String hourType,
+) {
+  final byTime = <String, List<Map<String, dynamic>>>{};
+  for (final slot in slots) {
+    if (slot['hourType'].toString() != hourType) continue;
+    byTime.putIfAbsent(slot['time'].toString(), () => []).add(slot);
+  }
+
+  final entries = <TimeSlot>[];
+  byTime.forEach((time, candidates) {
+    final free = candidates.where((s) => s['isSoldOut'] != true).toList()
+      ..sort((a, b) => (a['price'] as int).compareTo(b['price'] as int));
+
+    entries.add(
+      TimeSlot(
+        // Falls back to a taken slot purely so the row can render as sold out;
+        // it is never selectable.
+        slot: free.isNotEmpty ? free.first : candidates.first,
+        freeCourts: free.length,
+        totalCourts: candidates.length,
+      ),
+    );
+  });
+
+  // 24h startTime keeps the list chronological; `time` is a display string.
+  entries.sort((a, b) => (a.slot['startTime'] ?? a.slot['time'])
+      .toString()
+      .compareTo((b.slot['startTime'] ?? b.slot['time']).toString()));
+  return entries;
+}

@@ -31,8 +31,12 @@ class CoachingEnquiryRemoteDataSource {
       if (status != null && status.trim().isNotEmpty) 'status': status.trim(),
     };
 
-    AdminLog.call('GET ${ApiEndpoints.coachingEnquiries} $query');
-    return _api.get(ApiEndpoints.coachingEnquiries, query: query);
+    // `/coaching-enquiries/all` — the admin/employee listing. Bare
+    // `GET /coaching-enquiries` is not a route at all (the family exposes
+    // `POST /`, `GET /my-enquiries` and `GET /:id`), so the console's list
+    // used to 404.
+    AdminLog.call('GET ${ApiEndpoints.coachingEnquiriesAll} $query');
+    return _api.get(ApiEndpoints.coachingEnquiriesAll, query: query);
   }
 
   /// `GET /coaching-enquiries/{enquiryId}`

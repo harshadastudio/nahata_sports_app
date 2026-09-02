@@ -15,7 +15,12 @@ import '../entities/sport.dart';
 /// * a percentage discount cannot exceed 100.
 abstract class CouponsRepository {
   /// `GET /admin/coupons?page=&limit=&search=`
-  Future<Paged<AdminCoupon>> getCoupons({int page, int limit, String? search});
+  Future<Paged<AdminCoupon>> getCoupons({
+    int page,
+    int limit,
+    String? search,
+    String? status,
+  });
 
   /// `GET /admin/coupons/{couponId}`
   Future<AdminCoupon> getCouponById(int id);

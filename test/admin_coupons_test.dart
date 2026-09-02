@@ -871,6 +871,7 @@ class _FakeRepository implements CouponsRepository {
     int page = 1,
     int limit = 20,
     String? search,
+    String? status,
   }) async {
     if (failNext) {
       failNext = false;

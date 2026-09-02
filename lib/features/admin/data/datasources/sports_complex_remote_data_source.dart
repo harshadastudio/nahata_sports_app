@@ -72,9 +72,12 @@ class SportsComplexRemoteDataSource {
 
   Future<ApiResponse> setStatus(int id, AdminUserStatus status) {
     AdminLog.call(
-      'PUT ${ApiEndpoints.sportsComplexStatus(id)} → ${status.slug}',
+      'PATCH ${ApiEndpoints.sportsComplexStatus(id)} → ${status.slug}',
     );
-    return _api.put(
+    // PATCH, not PUT: the route is registered as
+    // `router.patch('/:id/status')`, and Express does not fall back to it for
+    // a PUT — the call 404s instead of changing anything.
+    return _api.patch(
       ApiEndpoints.sportsComplexStatus(id),
       body: <String, dynamic>{'status': status.slug},
     );
@@ -82,9 +85,11 @@ class SportsComplexRemoteDataSource {
 
   Future<ApiResponse> setVisibility(int id, bool showOnFrontend) {
     AdminLog.call(
-      'PUT ${ApiEndpoints.sportsComplexVisibility(id)} → $showOnFrontend',
+      'PATCH ${ApiEndpoints.sportsComplexVisibility(id)} → $showOnFrontend',
     );
-    return _api.put(
+    // PATCH for the same reason as `setStatus` above — the route is
+    // `router.patch('/:id/show-on-frontend')`.
+    return _api.patch(
       ApiEndpoints.sportsComplexVisibility(id),
       body: <String, dynamic>{'showOnFrontend': showOnFrontend},
     );

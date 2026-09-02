@@ -865,7 +865,6 @@
 //   }
 // }
 
-
 // Networking for this screen goes through the centralised API layer
 // (CoachingRepository), so no direct http / json / prefs usage remains here.
 import 'package:flutter/material.dart';
@@ -874,9 +873,11 @@ import 'package:nahata_app/auth/login.dart';
 import '../core/network/api_exception.dart';
 import '../core/services/selected_ground.dart';
 import '../core/widgets/app_shimmer.dart';
+import '../core/widgets/media_image.dart';
 import '../models/batch_model.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/coaching_repository.dart';
+import 'coaching_enquiry_form.dart';
 // class Sport {
 //   final String id;
 //   final String sportName;
@@ -918,11 +919,6 @@ import '../repositories/coaching_repository.dart';
 //   // }
 // }
 
-
-
-
-
-
 //
 // class CoachApiService {
 //   static const String baseUrl = "https://nahatasports.com/api/coach";
@@ -943,129 +939,6 @@ import '../repositories/coaching_repository.dart';
 //     }
 //   }
 // }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 //
 //
@@ -1141,6 +1014,14 @@ class Coach {
   final String developmentPath;
   final String startTime;
   final String endTime;
+
+  /// From the coach's own record, e.g. "ALL India Basketball Cert".
+  final String certification;
+
+  /// The coach's own weekly availability, e.g. "Monday,Tuesday,Sunday" —
+  /// distinct from [availability], which is the tapped batch's schedule.
+  final String weeklyAvailability;
+
   Coach? coach;
 
   Coach({
@@ -1159,12 +1040,11 @@ class Coach {
     required this.developmentPath,
     required this.startTime,
     required this.endTime,
+    this.certification = '',
+    this.weeklyAvailability = '',
   });
 
   factory Coach.fromJson(Map<String, dynamic> json) {
-
-
-
     // Example: if API returns a list of batches, pick the first batch for display
     String startTime = '';
     String endTime = '';
@@ -1185,7 +1065,10 @@ class Coach {
     if (json['coachbio'] != null) {
       final bio = json['coachbio'] as String;
       final regex = RegExp(r'✅\s*(.*?)<br>', multiLine: true);
-      parsedAchievements = regex.allMatches(bio).map((m) => m.group(1) ?? '').toList();
+      parsedAchievements = regex
+          .allMatches(bio)
+          .map((m) => m.group(1) ?? '')
+          .toList();
     }
 
     return Coach(
@@ -1207,8 +1090,6 @@ class Coach {
     );
   }
 }
-
-
 
 class Sport {
   final String id;
@@ -1248,7 +1129,12 @@ class Batch {
   final String endTime;
   final String price;
 
-
+  /// Shown in the enquiry form's "Program Details" panel. Carried on the view
+  /// model because the enquiry is raised from the coach page, which has the
+  /// batch but not the [BatchModel] it came from.
+  final String duration;
+  final String status;
+  final int? availableSpots;
 
   Batch({
     required this.id,
@@ -1261,9 +1147,24 @@ class Batch {
     required this.startTime,
     required this.endTime,
     required this.price,
+    this.duration = '',
+    this.status = '',
+    this.availableSpots,
   });
 
+  /// Session window as one line, e.g. `"7:00 AM to 8:00 AM"`. Empty when the
+  /// batch has no times, so the row can be dropped rather than shown as "to".
+  String get timingLabel {
+    if (startTime.isEmpty && endTime.isEmpty) return '';
+    if (endTime.isEmpty) return startTime;
+    if (startTime.isEmpty) return endTime;
+    return '$startTime to $endTime';
+  }
+
   factory Batch.fromJson(Map<String, dynamic> json) {
+    final max = int.tryParse(json['max_students']?.toString() ?? '');
+    final current = int.tryParse(json['current_students']?.toString() ?? '');
+
     return Batch(
       id: json['id']?.toString() ?? '',
       sportId: json['sport_id']?.toString() ?? '',
@@ -1275,11 +1176,63 @@ class Batch {
       startTime: json['start_time'] ?? '',
       endTime: json['end_time'] ?? '',
       price: json['price'] ?? '',
+      duration: json['duration']?.toString() ?? '',
+      status: json['status']?.toString() ?? '',
+      availableSpots: max == null
+          ? null
+          : ((max - (current ?? 0)) < 0 ? 0 : max - (current ?? 0)),
     );
   }
 }
 
+/// The sport photo behind a grid tile.
+///
+/// Two jobs beyond drawing the image: it fades in so the tile does not flash,
+/// and it lays a dark scrim over the picture. Without the scrim the white
+/// sport name is unreadable on a light photo — which is the reason the tile
+/// used to draw a flat colour instead of the picture.
+class _SportPhoto extends StatelessWidget {
+  const _SportPhoto({required this.url});
 
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.network(
+          url,
+          fit: BoxFit.cover,
+          // A broken or missing image leaves the gradient underneath showing,
+          // which is the pre-existing look rather than a grey error box.
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+            if (wasSynchronouslyLoaded) return child;
+            return AnimatedOpacity(
+              opacity: frame == null ? 0 : 1,
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOut,
+              child: child,
+            );
+          },
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withOpacity(0.15),
+                Colors.black.withOpacity(0.55),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 /// Adapter between the coaching API and the view models this screen already
 /// uses ([Sport], [Batch], [Coach]).
@@ -1305,7 +1258,10 @@ class CoachApiService {
   }
 
   /// Every active batch for a sport, optionally narrowed to one ground.
-  static Future<List<Batch>> fetchBatches(String sportId, {String? ground}) async {
+  static Future<List<Batch>> fetchBatches(
+    String sportId, {
+    String? ground,
+  }) async {
     final id = int.tryParse(sportId);
     if (id == null) return const [];
 
@@ -1326,7 +1282,10 @@ class CoachApiService {
   /// Prefer [fetchCoachesByBatch] when you need the coach *for a specific
   /// batch*: a coach usually runs several batches at different times and
   /// prices, and this list can only carry one of them.
-  static Future<List<Coach>> fetchCoaches(String sportId, {String? ground}) async {
+  static Future<List<Coach>> fetchCoaches(
+    String sportId, {
+    String? ground,
+  }) async {
     final byBatch = await fetchCoachesByBatch(sportId, ground: ground);
 
     final byCoachId = <String, Coach>{};
@@ -1350,19 +1309,36 @@ class CoachApiService {
     if (id == null) return const {};
 
     try {
+      // Two calls in parallel: the batches carry the schedule and price, the
+      // coach records carry the photo and biography. Neither payload has both,
+      // which is why the details screen used to render an empty description
+      // under a placeholder avatar.
+      //
       // Shares one round trip with fetchBatches — the repository de-duplicates
       // concurrent requests for the same sport+ground.
-      final batches = await _repository.fetchBatchesBySport(id, ground: ground);
+      final results = await Future.wait([
+        _repository.fetchBatchesBySport(id, ground: ground),
+        _repository.fetchCoachProfiles(id),
+      ]);
+
+      final batches = results[0] as List<BatchModel>;
+      final profiles = results[1] as List<CoachProfile>;
+
+      final profileById = <String, CoachProfile>{
+        for (final profile in profiles)
+          if (profile.id != null) profile.id.toString(): profile,
+      };
 
       final byBatchId = <String, Coach>{};
       for (final batch in batches) {
         final batchId = batch.id?.toString();
         if (batchId == null || batchId.isEmpty) continue;
 
-        final coachId = batch.coach?.id?.toString() ?? batch.coachId?.toString();
+        final coachId =
+            batch.coach?.id?.toString() ?? batch.coachId?.toString();
         if (coachId == null || coachId.isEmpty) continue;
 
-        byBatchId[batchId] = _toCoach(batch);
+        byBatchId[batchId] = _toCoach(batch, profileById[coachId]);
       }
       return byBatchId;
     } on ApiException catch (e) {
@@ -1397,55 +1373,85 @@ class CoachApiService {
   // Mappers
   // ---------------------------------------------------------------------------
 
+  /// Bullet points the CMS writes into the biography as `✅ ... <br>`.
+  /// Returns empty for a plain-prose bio, which simply renders no bullets.
+  static List<String> _achievementsFrom(String bio) {
+    if (bio.isEmpty) return const <String>[];
+    // The tick has to be the literal character: in a raw string `\u2705`
+    // stays six characters and matches nothing.
+    final regex = RegExp(r'✅\s*(.*?)<br>', multiLine: true);
+    return regex
+        .allMatches(bio)
+        .map((m) => (m.group(1) ?? '').trim())
+        .where((a) => a.isNotEmpty)
+        .toList(growable: false);
+  }
+
   static Sport _toSport(SportRef sport) => Sport(
-        id: sport.id?.toString() ?? '',
-        sportName: sport.displayName,
-        // The grid's subtitle. Shows the venue when the list is filtered to
-        // one ground, otherwise the sport's category ("Indoor"/"Outdoor").
-        ground: (sport.ground?.trim().isNotEmpty ?? false)
-            ? sport.ground!.trim()
-            : (sport.category ?? ''),
-        image: sport.image ?? '',
-      );
+    id: sport.id?.toString() ?? '',
+    sportName: sport.displayName,
+    // The grid's subtitle. Shows the venue when the list is filtered to
+    // one ground, otherwise the sport's category ("Indoor"/"Outdoor").
+    ground: (sport.ground?.trim().isNotEmpty ?? false)
+        ? sport.ground!.trim()
+        : (sport.category ?? ''),
+    // `/sports` returns a full URL today, but other routes send a bare
+    // filename; resolving here means either shape renders.
+    image: resolveMediaUrl(sport.image) ?? '',
+  );
 
   static Batch _toBatch(BatchModel batch) => Batch(
-        id: batch.id?.toString() ?? '',
-        sportId: batch.sportId?.toString() ?? '',
-        coachId: batch.coach?.id?.toString() ?? batch.coachId?.toString() ?? '',
-        name: batch.displayName,
-        month: batch.startMonthLabel,
-        ageGroup: batch.ageGroup ?? '',
-        days: batch.daysLabel,
-        startTime: batch.sessionStart,
-        endTime: batch.sessionEnd,
-        price: batch.feesLabel,
-      );
+    id: batch.id?.toString() ?? '',
+    sportId: batch.sportId?.toString() ?? '',
+    coachId: batch.coach?.id?.toString() ?? batch.coachId?.toString() ?? '',
+    name: batch.displayName,
+    month: batch.startMonthLabel,
+    ageGroup: batch.ageGroup ?? '',
+    days: batch.daysLabel,
+    startTime: batch.sessionStart,
+    endTime: batch.sessionEnd,
+    price: batch.feesLabel,
+    duration: batch.duration ?? '',
+    status: batch.status ?? '',
+    // Null when the batch has no cap, which reads as "unlimited" rather
+    // than as "0 spots left".
+    availableSpots: batch.maxStudents == null ? null : batch.availableSlots,
+  );
 
-  static Coach _toCoach(BatchModel batch) {
+  /// Builds the screen's coach from the batch it teaches, enriched with the
+  /// coach's own record when `/coaches/sport/{id}` returned one.
+  ///
+  /// The batch supplies everything schedule-shaped (timing, price, days, age
+  /// group); [profile] supplies the photo, the biography and the credential
+  /// line. A missing profile degrades to what the batch alone knows rather
+  /// than failing — the same behaviour as before, but now it is the fallback
+  /// instead of the only path.
+  static Coach _toCoach(BatchModel batch, [CoachProfile? profile]) {
     final coach = batch.coach;
+    final bio = profile?.bio ?? '';
+
     return Coach(
       id: coach?.id?.toString() ?? batch.coachId?.toString() ?? '',
       sportId: batch.sportId?.toString() ?? '',
-      name: coach?.displayName ?? '',
+      name: coach?.displayName ?? profile?.name ?? '',
       sport: batch.sport?.displayName ?? '',
-      ground: coach?.ground ?? '',
-      // No coach photo in the coaching API — the screen falls back to its
-      // placeholder avatar.
-      image: '',
+      ground: coach?.ground ?? profile?.ground ?? '',
+      image: profile?.image ?? '',
       availability: batch.schedule ?? '',
       price: batch.feesLabel,
-      // No coach biography in the coaching API.
-      coachBio: '',
+      coachBio: bio,
       days: batch.daysLabel,
       ageGroup: batch.ageGroup ?? '',
-      achievements: const <String>[],
-      developmentPath: '',
+      achievements: _achievementsFrom(bio),
+      // Doubles as the credential line under the coach's name.
+      developmentPath: profile?.credentials ?? '',
       startTime: batch.sessionStart,
       endTime: batch.sessionEnd,
+      certification: profile?.certification ?? '',
+      weeklyAvailability: profile?.availability ?? '',
     );
   }
 }
-
 
 // API Service
 // class CoachApiService {
@@ -1521,12 +1527,39 @@ class SportsScreen extends StatefulWidget {
   State<SportsScreen> createState() => _SportsScreenState();
 }
 
-class _SportsScreenState extends State<SportsScreen> {
-  /// Sentinel for the "All venues" entry — PopupMenuButton needs a non-null
-  /// value, but "no filter" is represented as a null ground everywhere else.
-  static const String _allVenues = '__all_venues__';
+/// Type metrics for a sports grid tile.
+///
+/// Shared by the tile and by the delegate that sizes it — if they drifted
+/// apart the height would stop matching the text again, which is the bug this
+/// pair exists to prevent.
+const double _sportTileNameSize = 16;
+const double _sportTileGroundSize = 12;
+const double _sportTileLineHeight = 1.25;
 
+/// "Multipurpose AC Studio" needs three lines in a half-width tile; nothing in
+/// the catalogue needs more.
+const int _sportTileNameMaxLines = 3;
+
+/// Geometry for the sports grid, worked out once per build from the names the
+/// API actually returned. See [_SportsScreenState._sportsGridMetrics].
+class _SportsGridMetrics {
+  const _SportsGridMetrics({required this.delegate, required this.nameSize});
+
+  final SliverGridDelegate delegate;
+
+  /// Logical font size for the sport name before the user's text scale is
+  /// applied — reduced from [_sportTileNameSize] only when a name genuinely
+  /// cannot fit the device at full size.
+  final double nameSize;
+}
+
+class _SportsScreenState extends State<SportsScreen> {
   late Future<List<Sport>> futureSports;
+
+  /// The venue list, fetched once and shared by the picker and the ground
+  /// fallback below — both need it on first load, and neither should pay for
+  /// its own round trip.
+  Future<List<String>>? _venuesFuture;
 
   /// Ground actually used for the current request — passed on to BatchScreen
   /// so the batch list stays scoped to the same venue.
@@ -1547,13 +1580,31 @@ class _SportsScreenState extends State<SportsScreen> {
   Future<List<Sport>> _loadSports() async {
     if (!_groundResolved) {
       _ground = widget.ground ?? await SelectedGround.instance.read();
+
+      // The picker offers only the real venues now, so there is no "all
+      // venues" state left for the screen to sit in. With nothing remembered,
+      // open on the first venue the API lists rather than every ground at
+      // once — otherwise the grid would show a selection the filter cannot
+      // express or undo.
+      if (_ground == null) {
+        final venues = await _loadVenuesOnce();
+        if (venues.isNotEmpty) {
+          _ground = venues.first;
+          await SelectedGround.instance.save(_ground);
+        }
+      }
+
       _groundResolved = true;
     }
     return CoachApiService.fetchSports(ground: _ground);
   }
 
+  /// `GET /sports-complexes`, fetched at most once per screen.
+  Future<List<String>> _loadVenuesOnce() =>
+      _venuesFuture ??= CoachApiService.fetchVenues();
+
   Future<void> _loadVenues() async {
-    final venues = await CoachApiService.fetchVenues();
+    final venues = await _loadVenuesOnce();
     if (!mounted) return;
     setState(() {
       _venues = venues;
@@ -1562,8 +1613,7 @@ class _SportsScreenState extends State<SportsScreen> {
   }
 
   /// Switches venue: remembers the choice, then reloads the grid.
-  Future<void> _onVenueSelected(String value) async {
-    final ground = value == _allVenues ? null : value;
+  Future<void> _onVenueSelected(String ground) async {
     if (ground == _ground) return;
 
     await SelectedGround.instance.save(ground);
@@ -1648,10 +1698,7 @@ class _SportsScreenState extends State<SportsScreen> {
                 const Expanded(
                   child: Text(
                     'Available coaches',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: Colors.grey, fontSize: 14),
                   ),
                 ),
                 _buildVenuePicker(),
@@ -1689,14 +1736,10 @@ class _SportsScreenState extends State<SportsScreen> {
                 }
 
                 final sports = snapshot.data!;
+                final metrics = _sportsGridMetrics(context, sports);
                 return GridView.builder(
                   padding: const EdgeInsets.all(20),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 1.2,
-                  ),
+                  gridDelegate: metrics.delegate,
                   itemCount: sports.length,
                   itemBuilder: (context, index) {
                     final sport = sports[index];
@@ -1711,7 +1754,6 @@ class _SportsScreenState extends State<SportsScreen> {
                         //     ),
                         //   ),
                         // );
-
 
                         Navigator.push(
                           context,
@@ -1739,14 +1781,26 @@ class _SportsScreenState extends State<SportsScreen> {
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: [
                             BoxShadow(
-                              color: getSportColor(sport.sportName).withOpacity(0.3),
+                              color: getSportColor(
+                                sport.sportName,
+                              ).withOpacity(0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 4),
                             ),
                           ],
                         ),
+                        // `clipBehavior` keeps the photo inside the tile's
+                        // rounded corners; without it the image squares them off.
+                        clipBehavior: Clip.antiAlias,
                         child: Stack(
+                          fit: StackFit.expand,
                           children: [
+                            // The sport's own photo from `/sports`. The gradient
+                            // above stays visible while it loads and is what the
+                            // tile falls back to if the URL is missing or broken,
+                            // so a tile is never blank.
+                            if (sport.image.isNotEmpty)
+                              _SportPhoto(url: sport.image),
                             Positioned(
                               right: -10,
                               bottom: -10,
@@ -1766,31 +1820,40 @@ class _SportsScreenState extends State<SportsScreen> {
                               ),
                             ),
                             Padding(
-                              padding: const EdgeInsets.all(20),
+                              padding: const EdgeInsets.all(16),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        sport.sportName, // from API
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                  // Flexible, so that if a name is longer than
+                                  // even the measured height allows it shrinks
+                                  // the box rather than overrunning it. The
+                                  // ellipsis is the last resort after the tile
+                                  // has already grown to fit — not a way of
+                                  // hiding the problem.
+                                  Flexible(
+                                    child: Text(
+                                      sport.sportName, // from API
+                                      maxLines: _sportTileNameMaxLines,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: metrics.nameSize,
+                                        height: _sportTileLineHeight,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        sport.ground, // from API
-                                        style: TextStyle(
-                                          color: Colors.white.withOpacity(0.9),
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    sport.ground, // from API
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.9),
+                                      fontSize: _sportTileGroundSize,
+                                      height: _sportTileLineHeight,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1803,11 +1866,122 @@ class _SportsScreenState extends State<SportsScreen> {
                 );
               },
             ),
-          )
-
+          ),
         ],
       ),
       // bottomNavigationBar: _buildBottomNav(),
+    );
+  }
+
+  /// Grid geometry for the sports tiles, measured against the names they hold.
+  ///
+  /// A fixed `childAspectRatio: 1.2` set the tile height from its width alone,
+  /// so a long sport name ran past the bottom. The tile clips its children to
+  /// get rounded corners, which turned that overflow into a silently cropped
+  /// name instead of the usual overflow stripes, so nothing ever flagged it.
+  ///
+  /// Nothing is assumed here. Every name is laid out with a [TextPainter] at
+  /// the user's own text scale, and the result drives three decisions in turn:
+  ///
+  ///  1. a name's longest **word** cannot be wrapped, so if it is wider than a
+  ///     half-width tile the grid drops to one column rather than ellipsing it,
+  ///  2. if the word still will not fit one full-width tile — a 22-character
+  ///     name at double system text size on a small phone is simply wider than
+  ///     the device — the type shrinks by exactly the shortfall, because a
+  ///     whole name a little smaller beats "Multipurpo…",
+  ///  3. the tallest measured name then sets the row height.
+  ///
+  /// The cost is a few text layouts over a list that holds a dozen sports.
+  _SportsGridMetrics _sportsGridMetrics(
+    BuildContext context,
+    List<Sport> sports,
+  ) {
+    const spacing = 16.0;
+    const gridPadding = 20.0;
+    const tilePadding = 16.0;
+
+    // Below this the name stops being readable; an ellipsis is better.
+    const minNameSize = 11.0;
+
+    final media = MediaQuery.of(context);
+    final available = media.size.width - gridPadding * 2;
+
+    TextPainter paint(String text, double size, FontWeight weight,
+        {int? maxLines, double? maxWidth}) {
+      return TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(
+            fontSize: size,
+            fontWeight: weight,
+            height: _sportTileLineHeight,
+          ),
+        ),
+        maxLines: maxLines,
+        textScaler: media.textScaler,
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: maxWidth ?? double.infinity);
+    }
+
+    double widestWordAt(double size) {
+      var widest = 0.0;
+      for (final sport in sports) {
+        for (final word in sport.sportName.split(RegExp(r'\s+'))) {
+          if (word.isEmpty) continue;
+          final width = paint(word, size, FontWeight.w600).width;
+          if (width > widest) widest = width;
+        }
+      }
+      return widest;
+    }
+
+    final widest = widestWordAt(_sportTileNameSize);
+
+    // 1. Two columns unless the longest unbreakable word will not fit in one.
+    final twoColumnContent = (available - spacing) / 2 - tilePadding * 2;
+    final columns = widest > twoColumnContent ? 1 : 2;
+
+    final tileWidth = (available - spacing * (columns - 1)) / columns;
+    final contentWidth = tileWidth - tilePadding * 2;
+
+    // 2. Shrink only by what is actually missing, and never below legibility.
+    var nameSize = _sportTileNameSize;
+    if (widest > contentWidth && widest > 0) {
+      final fitted = _sportTileNameSize * (contentWidth / widest);
+      nameSize = fitted < minNameSize ? minNameSize : fitted;
+    }
+
+    // 3. Height comes from the tallest name at whatever size it ended up.
+    var tallestName = 0.0;
+    for (final sport in sports) {
+      final height = paint(
+        sport.sportName.isEmpty ? ' ' : sport.sportName,
+        nameSize,
+        FontWeight.w600,
+        maxLines: _sportTileNameMaxLines,
+        maxWidth: contentWidth,
+      ).height;
+      if (height > tallestName) tallestName = height;
+    }
+
+    final groundHeight =
+        paint(' ', _sportTileGroundSize, FontWeight.w400, maxLines: 1).height;
+
+    final needed = tallestName + 4 + groundHeight + tilePadding * 2;
+
+    // A single-column tile would otherwise become absurdly tall; two-column
+    // tiles keep at least the proportions they had for short names.
+    final floor = columns == 1 ? 0.0 : tileWidth / 1.2;
+    final tileHeight = needed < floor ? floor : needed;
+
+    return _SportsGridMetrics(
+      nameSize: nameSize,
+      delegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        crossAxisSpacing: spacing,
+        mainAxisSpacing: spacing,
+        childAspectRatio: tileWidth / tileHeight,
+      ),
     );
   }
 
@@ -1829,7 +2003,9 @@ class _SportsScreenState extends State<SportsScreen> {
     // Nothing to choose between — keep the row exactly as it was.
     if (_venues.isEmpty) return const SizedBox.shrink();
 
-    final label = _ground ?? 'All venues';
+    // Null only for the moment between the venues arriving and the ground
+    // fallback in [_loadSports] settling on the first of them.
+    final label = _ground ?? 'Select venue';
 
     return PopupMenuButton<String>(
       key: const Key('venue_picker'),
@@ -1838,8 +2014,8 @@ class _SportsScreenState extends State<SportsScreen> {
       color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       onSelected: _onVenueSelected,
+      // Only the real venues — coaching is always scoped to one ground.
       itemBuilder: (context) => [
-        _venueMenuItem(_allVenues, 'All venues', _ground == null),
         ..._venues.map(
           (venue) => _venueMenuItem(venue, venue, _ground == venue),
         ),
@@ -1854,8 +2030,7 @@ class _SportsScreenState extends State<SportsScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.location_on_outlined,
-                size: 16, color: brandBlue),
+            const Icon(Icons.location_on_outlined, size: 16, color: brandBlue),
             const SizedBox(width: 6),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 130),
@@ -1872,8 +2047,7 @@ class _SportsScreenState extends State<SportsScreen> {
               ),
             ),
             const SizedBox(width: 2),
-            const Icon(Icons.keyboard_arrow_down,
-                size: 18, color: Colors.grey),
+            const Icon(Icons.keyboard_arrow_down, size: 18, color: Colors.grey),
           ],
         ),
       ),
@@ -1902,8 +2076,7 @@ class _SportsScreenState extends State<SportsScreen> {
               ),
             ),
           ),
-          if (selected)
-            const Icon(Icons.check, size: 18, color: brandBlue),
+          if (selected) const Icon(Icons.check, size: 18, color: brandBlue),
         ],
       ),
     );
@@ -1951,14 +2124,7 @@ class _SportsScreenState extends State<SportsScreen> {
   }
 }
 
-
 //888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-
-
-
-
-
-
 
 class BatchScreen extends StatefulWidget {
   final String sportId;
@@ -2089,7 +2255,8 @@ class _BatchScreenState extends State<BatchScreen> {
                     // and age group on the details page belong to the batch
                     // that was tapped rather than to another of the coach's
                     // batches.
-                    final coach = coachByBatchId[batch.id] ??
+                    final coach =
+                        coachByBatchId[batch.id] ??
                         allCoaches.firstWhere(
                           (c) => c.id == batch.coachId,
                           orElse: () => Coach(
@@ -2115,12 +2282,15 @@ class _BatchScreenState extends State<BatchScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => CoachDetailsScreen(coach: coach, batch: batch),
+                          builder: (context) =>
+                              CoachDetailsScreen(coach: coach, batch: batch),
                         ),
                       );
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("No coach assigned to this batch")),
+                        const SnackBar(
+                          content: Text("No coach assigned to this batch"),
+                        ),
                       );
                     }
                   },
@@ -2189,7 +2359,7 @@ class _BatchScreenState extends State<BatchScreen> {
                                   const SizedBox(height: 4),
                                   if (batch.ageGroup.isNotEmpty)
                                     Text(
-                                      batch.ageGroup,
+                                      "Age Group: ${batch.ageGroup}",
                                       style: TextStyle(
                                         fontSize: 14,
                                         color: Colors.grey[600],
@@ -2211,7 +2381,8 @@ class _BatchScreenState extends State<BatchScreen> {
                                         color: Colors.grey[600],
                                       ),
                                     ),
-                                  if (batch.startTime.isNotEmpty && batch.endTime.isNotEmpty)
+                                  if (batch.startTime.isNotEmpty &&
+                                      batch.endTime.isNotEmpty)
                                     Text(
                                       "Time: ${batch.startTime} - ${batch.endTime}",
                                       style: TextStyle(
@@ -2267,7 +2438,6 @@ class _BatchScreenState extends State<BatchScreen> {
     );
   }
 }
-
 
 // Batch Screen
 // class BatchScreen extends StatefulWidget {
@@ -2470,14 +2640,14 @@ class _BatchScreenState extends State<BatchScreen> {
 
 // Coach Details Screen
 
-
-
 class CoachDetailsScreen extends StatefulWidget {
   final Coach coach;
   final Batch batch;
-  const CoachDetailsScreen({super.key,
-    required this.batch,  // Add batch here
-    required this.coach});
+  const CoachDetailsScreen({
+    super.key,
+    required this.batch, // Add batch here
+    required this.coach,
+  });
 
   @override
   State<CoachDetailsScreen> createState() => _CoachDetailsScreenState();
@@ -2514,10 +2684,7 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
                 widget.coach.ground.trim().isNotEmpty
                     ? "Coach Available in ${widget.coach.ground.trim()}"
                     : "Coach Availability",
-                style: const TextStyle(
-                  color: Colors.grey,
-                  fontSize: 14,
-                ),
+                style: const TextStyle(color: Colors.grey, fontSize: 14),
               ),
             ),
             Container(
@@ -2536,19 +2703,55 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
               ),
               child: Column(
                 children: [
-                  // Coach Image
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(60),
-                    child: widget.coach.image.isNotEmpty
-                        ? Image.network(
-                      widget.coach.image,
-                      height: 120,
-                      width: 120,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          _placeholderImage(),
-                    )
-                        : _placeholderImage(),
+                  // Coach Image — tapping it opens the coach's full profile.
+                  Semantics(
+                    button: true,
+                    label: 'View ${widget.coach.name}’s profile',
+                    child: InkWell(
+                      key: const Key('coach_photo'),
+                      borderRadius: BorderRadius.circular(60),
+                      onTap: () => _showCoachProfile(context, widget.coach),
+                      child: Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(60),
+                            // A coach photo arrives either as a URL or, for
+                            // some records, as an inline base64 `data:` URI —
+                            // MediaImage handles both and falls back to the
+                            // placeholder when the bytes are in a format
+                            // Flutter cannot decode.
+                            child: widget.coach.image.isNotEmpty
+                                ? MediaImage(
+                                    source: widget.coach.image,
+                                    height: 120,
+                                    width: 120,
+                                    fit: BoxFit.cover,
+                                    // Shown at 120px; the source runs to well
+                                    // over a thousand pixels square.
+                                    decodeSize: 360,
+                                    errorBuilder: (context, error, stackTrace) =>
+                                        _placeholderImage(),
+                                  )
+                                : _placeholderImage(),
+                          ),
+                          // Without this the photo looks like decoration
+                          // rather than something you can open.
+                          Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF1A237E),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.person_outline,
+                              size: 15,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 16),
 
@@ -2604,6 +2807,25 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
                       ],
                     ),
                   ),
+
+                  // Experience / qualifications, when the coach record has
+                  // them. Hidden entirely rather than shown as a blank line.
+                  if (widget.coach.developmentPath.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        widget.coach.developmentPath,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 24),
 
                   // Timing and Days
@@ -2620,7 +2842,8 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
                                 fontSize: 14,
                               ),
                             ),
-                            Text("${widget.batch.startTime} - ${widget.batch.endTime}",
+                            Text(
+                              "${widget.batch.startTime} - ${widget.batch.endTime}",
                               // coach.availability.isNotEmpty
                               //     ? coach.availability
                               //     : "6-8 PM",
@@ -2644,7 +2867,9 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
                               ),
                             ),
                             Text(
-                              widget.batch.days.isNotEmpty ? widget.batch.days : "-",
+                              widget.batch.days.isNotEmpty
+                                  ? widget.batch.days
+                                  : "-",
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 12,
@@ -2718,10 +2943,7 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
                       children: [
                         const Text(
                           "Ground",
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 14,
-                          ),
+                          style: TextStyle(color: Colors.grey, fontSize: 14),
                         ),
                         Text(
                           widget.coach.ground,
@@ -2788,13 +3010,11 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.white
+                                color: Colors.white,
                               ),
                             ),
                           ),
                         ),
-
-
                       ],
                     ),
                   ),
@@ -2815,18 +3035,187 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
         children: [
           const Text(
             "✅ ",
-            style: TextStyle(
-              color: Color(0xFF10B981),
-              fontSize: 14,
-            ),
+            style: TextStyle(color: Color(0xFF10B981), fontSize: 14),
           ),
           Expanded(
             child: Text(
               achievement,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.black87,
-              ),
+              style: const TextStyle(fontSize: 14, color: Colors.black87),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The coach's profile, opened by tapping their photo.
+  ///
+  /// A sheet rather than a route: the details screen underneath is already
+  /// about this coach, so this is a closer look at the same subject, not a
+  /// place to navigate to and come back from.
+  ///
+  /// Only what the API actually sent is shown — a coach with no biography or
+  /// no certification gets a shorter card, never an empty labelled row.
+  void _showCoachProfile(BuildContext context, Coach coach) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.62,
+          minChildSize: 0.4,
+          maxChildSize: 0.92,
+          expand: false,
+          builder: (_, scrollController) => Container(
+            key: const Key('coach_profile_sheet'),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(70),
+                    child: coach.image.isNotEmpty
+                        ? MediaImage(
+                            source: coach.image,
+                            height: 140,
+                            width: 140,
+                            fit: BoxFit.cover,
+                            decodeSize: 420,
+                            errorBuilder: (_, __, ___) => _placeholderImage(),
+                          )
+                        : _placeholderImage(),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Center(
+                  child: Text(
+                    coach.name.isEmpty ? 'Coach' : coach.name,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                if (coach.developmentPath.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Center(
+                    child: Text(
+                      coach.developmentPath,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                _coachProfileRow(
+                    Icons.sports_outlined, 'Sport', coach.sport),
+                _coachProfileRow(
+                    Icons.location_on_outlined, 'Venue', coach.ground),
+                _coachProfileRow(Icons.event_available_outlined,
+                    'Available on', coach.weeklyAvailability),
+                _coachProfileRow(Icons.workspace_premium_outlined,
+                    'Certification', coach.certification),
+                _coachProfileRow(
+                    Icons.schedule_outlined, 'Batch timing', coach.availability),
+                if (coach.coachBio.trim().isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  const Text(
+                    'About',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    coach.coachBio,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      height: 1.5,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 26),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1A237E),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Close',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// One labelled line of the profile sheet. Renders nothing when the API sent
+  /// no value, so the card never shows an empty field.
+  Widget _coachProfileRow(IconData icon, String label, String value) {
+    final text = value.trim();
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF1A237E)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 11.5, color: Colors.grey[500]),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    color: Colors.black87,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -2842,11 +3231,7 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
         color: const Color(0xFF1A237E),
         borderRadius: BorderRadius.circular(60),
       ),
-      child: const Icon(
-        Icons.person,
-        size: 60,
-        color: Colors.white,
-      ),
+      child: const Icon(Icons.person, size: 60, color: Colors.white),
     );
   }
 
@@ -2858,74 +3243,51 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
         color: Colors.white.withOpacity(0.2),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Icon(
-        Icons.person,
-        size: 12,
-        color: Colors.white,
-      ),
+      child: const Icon(Icons.person, size: 12, color: Colors.white),
     );
   }
-  /// `POST /coaching-enquiries`
+
+  /// Opens the enrollment enquiry form, then reports what the server said.
   ///
-  /// Contact details come from the signed-in profile, so the button stays a
-  /// single tap exactly as before.
+  /// The form owns `POST /coaching-enquiries` and keeps itself open on a
+  /// failure, so the only outcomes that reach here are "cancelled" and "sent".
   Future<void> _sendInquiry(BuildContext context) async {
+    // The route is login-gated: the enquiry is filed against the bearer
+    // token's user, so there is nothing to submit without a session.
     final profile = await AuthRepository.instance.cachedProfile();
+    if (!mounted) return;
 
     if (profile?.id == null) {
       _showNotLoggedInPopup();
       return;
     }
 
-    final result = await CoachingRepository.instance.submitEnquiry(
-      batchId: int.tryParse(widget.batch.id),
-      sportId: int.tryParse(widget.batch.sportId),
-      coachId: int.tryParse(widget.coach.id),
-      name: profile!.displayName,
-      email: profile.email ?? '',
-      phone: profile.phoneNumber ?? '',
-      message: _enquiryMessage(),
+    final result = await CoachingEnquiryForm.show(
+      context,
+      batch: widget.batch,
+      coach: widget.coach,
+      profile: profile!,
     );
 
-    if (!mounted) return;
+    if (!mounted || result == null) return; // Cancelled.
 
     _showPopup(
       context,
-      title: result.success ? "Success" : "Failed",
-      message: result.success && result.referenceNumber != null
+      title: "Success",
+      message: result.referenceNumber != null
           ? "${result.message}\nReference: ${result.referenceNumber}"
           : result.message,
-      isSuccess: result.success,
+      isSuccess: true,
     );
   }
 
-  /// Default enquiry text, built from the batch the user is looking at.
-  String _enquiryMessage() {
-    final batchName = widget.batch.name.trim();
-    final sport = widget.coach.sport.trim();
-
-    final buffer = StringBuffer('I am interested in ');
-    buffer.write(batchName.isEmpty ? 'this batch' : 'the "$batchName" batch');
-    if (sport.isNotEmpty) buffer.write(' for $sport');
-    buffer.write('.');
-
-    final schedule = widget.batch.startTime.isNotEmpty
-        ? ' ${widget.batch.days} ${widget.batch.startTime}'
-            '${widget.batch.endTime.isNotEmpty ? " - ${widget.batch.endTime}" : ""}'
-        : '';
-    if (schedule.trim().isNotEmpty) {
-      buffer.write(' Preferred schedule:$schedule.');
-    }
-
-    buffer.write(' Please contact me with the details.');
-    return buffer.toString();
-  }
-
   /// Reusable popup function
-  void _showPopup(BuildContext context,
-      {required String title,
-        required String message,
-        bool isSuccess = true}) {
+  void _showPopup(
+    BuildContext context, {
+    required String title,
+    required String message,
+    bool isSuccess = true,
+  }) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -3021,18 +3383,18 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
                   color: Colors.orange.withOpacity(0.15),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.lock_outline,
-                    size: 48, color: Colors.orange),
+                child: const Icon(
+                  Icons.lock_outline,
+                  size: 48,
+                  color: Colors.orange,
+                ),
               ),
               const SizedBox(height: 20),
 
               // Title
               const Text(
                 "Login Required",
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
 
               const SizedBox(height: 10),
@@ -3071,7 +3433,7 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
-            (route) => false,
+        (route) => false,
       );
     });
   }
@@ -3113,7 +3475,6 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
     return document.body?.text ?? "";
   }
 }
-
 
 //
 // class Sport {

@@ -12,6 +12,7 @@ export 'package:nahata_app/features/coach/presentation/pages/coach_home_page.dar
     show CoachHomeScreen;
 
 import 'dart:convert';
+import '../core/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:nahata_app/core/network/http_logged.dart' as http;
@@ -436,7 +437,7 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
       );
 
       final data = json.decode(response.body);
-      print("Mark Paid Response: $data");
+      AppLogger.debug("Mark Paid Response: $data", name: 'coach_screen');
 
       if (response.statusCode == 200 && data['status'] == true) {
         setState(() {
@@ -466,7 +467,7 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen>
         );
       }
     } catch (e) {
-      print("Error in markAsPaid: $e");
+      AppLogger.debug("Error in markAsPaid: $e", name: 'coach_screen');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error: $e")),
       );
@@ -1156,9 +1157,9 @@ class _LegacyCoachHomeScreenState extends State<LegacyCoachHomeScreen> {
         }
       });
 
-      print('🎓 Student ID: $studentId');
+      AppLogger.debug('🎓 Student ID: $studentId', name: 'coach_screen');
     } else {
-      print('⚠️ No user data found in SharedPreferences');
+      AppLogger.debug('⚠️ No user data found in SharedPreferences', name: 'coach_screen');
     }
   }
 

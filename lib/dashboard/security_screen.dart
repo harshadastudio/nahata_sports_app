@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../core/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
@@ -68,7 +69,7 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
     setState(() => isLoading = true);
 
     try {
-      print("📤 Sending QR to API: $qrCodeData");
+      AppLogger.debug("📤 Sending QR to API: $qrCodeData", name: 'security_screen');
 
       // Parse QR text into key-value map
       final Map<String, String> parsed = {};
@@ -87,8 +88,8 @@ class _SecurityGateScannerScreenState extends State<SecurityGateScannerScreen>
         body: jsonEncode({"qr_code_data": qrCodeData}),
       );
 
-      print("Status Code: ${response.statusCode}");
-      print("Response Body: ${response.body}");
+      AppLogger.debug("Status Code: ${response.statusCode}", name: 'security_screen');
+      AppLogger.debug("Response Body: ${response.body}", name: 'security_screen');
 
       final Map<String, dynamic> data = jsonDecode(response.body);
 

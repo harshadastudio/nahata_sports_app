@@ -60,6 +60,9 @@ class ApiConfig {
   static const Duration receiveTimeout = Duration(seconds: 30);
   static const Duration uploadTimeout = Duration(seconds: 60);
 
+  /// Largest profile picture `POST /auth/profile/picture` accepts.
+  static const int maxProfilePictureBytes = 1024 * 1024;
+
   /// HTTPS is mandatory — see [assertSecure].
   static bool isSecure(String url) => url.startsWith('https://');
 
@@ -77,6 +80,14 @@ class ApiEndpoints {
 
   static const String login = '/auth/login';
   static const String googleLogin = '/auth/google-login';
+
+  /// `POST /auth/apple-login` — Sign in with Apple.
+  ///
+  /// Body is `{identityToken, user: {name: {firstName, lastName}}?, portal}`
+  /// for the native iOS flow. Apple hands the name over on the **first**
+  /// authorization only, so it is sent then and omitted afterwards; the server
+  /// keys off Apple's stable `sub` and keeps the name it already has.
+  static const String appleLogin = '/auth/apple-login';
   static const String registerStudent = '/students/register';
 
   /// `POST /auth/register` — the quick account sign-up:
@@ -88,12 +99,48 @@ class ApiEndpoints {
   static const String register = '/auth/register';
   static const String studentMe = '/students/me';
 
+  /// `GET /students/me/enrollments` — auth. The signed-in student's batches as
+  /// a bare list under `data`, newest first. An account with no student record
+  /// answers `{success: true, data: []}` rather than 404.
+  static const String myEnrollments = '/students/me/enrollments';
+
+  /// `GET /students/feedback` — auth. Feedback notifications for this student.
+  static const String myStudentFeedback = '/students/feedback';
+
+  /// `POST /students/feedback/read` — auth, no body. Marks them all read.
+  static const String markStudentFeedbackRead = '/students/feedback/read';
+
   /// `GET /students?page=&limit=&search=` — the staff-facing student list.
   /// Complex-scoped for EMPLOYEE, so it needs no complex filter of its own.
   static const String students = '/students';
   static const String refresh = '/auth/refresh';
   static const String profile = '/auth/profile';
+
+  /// `POST /auth/profile/picture` — multipart, field `profile_picture`.
+  ///
+  /// The only route that writes a signed-in user's photo: `PUT /auth/profile`
+  /// takes the text fields and ignores a file. Answers `{data: {url}}` with
+  /// the stored URL, which is what the profile then renders.
+  ///
+  /// The backend caps the upload at 1 MB ([maxProfilePictureBytes]); anything
+  /// larger comes back rejected, so the picker downscales before sending.
+  static const String profilePicture = '/auth/profile/picture';
+
   static const String logout = '/auth/logout';
+
+  /// `PUT /auth/change-password` — auth, `{currentPassword, newPassword}`.
+  ///
+  /// `newPassword` must be at least 6 characters. Answers 403 for the roles
+  /// whose password an administrator owns (staff and complex admins), which is
+  /// a message to show, not a bug to retry.
+  static const String changePassword = '/auth/change-password';
+
+  /// `POST /auth/forgot-password` — no auth, `{email}`. Always 200 once the
+  /// email is present, so the reply never reveals whether an account exists.
+  static const String forgotPassword = '/auth/forgot-password';
+
+  /// `POST /auth/reset-password` — no auth, `{token, newPassword}`.
+  static const String resetPassword = '/auth/reset-password';
 
   /// `GET /auth/staff-details` — the admin-entered record behind a staff login,
   /// so an EMPLOYEE or COACH can see their own employment details.
@@ -161,6 +208,14 @@ class ApiEndpoints {
   /// `POST /sports/{sportId}/assign-ground` — moves a sport to a complex.
   static String sportAssignGround(Object id) => '/sports/$id/assign-ground';
 
+  /// `GET /sports/ground/{sportComplexId}` — sports offered at one venue.
+  static String sportsByGroundId(Object sportComplexId) =>
+      '/sports/ground/$sportComplexId';
+
+  /// `GET /sports/programs?status=` — sports with their coaching programs
+  /// nested, so the coaching tab needs one call rather than one per sport.
+  static const String sportsWithPrograms = '/sports/programs';
+
   /// `POST /sports/upload-image` — multipart, field `image`.
   static const String sportUploadImage = '/sports/upload-image';
 
@@ -209,6 +264,13 @@ class ApiEndpoints {
   /// The staff queue, granted to ADMIN, COMPLEX_ADMIN and EMPLOYEE. Distinct
   /// from bare `GET /coaching-enquiries` (admin-wide) and from the coach's
   /// `/coaching-enquiries/coach/my-enquiries`.
+  /// `GET /coaching-enquiries/my-enquiries?page=&limit=` — auth.
+  ///
+  /// The signed-in user's own enquiries, newest first, paginated under
+  /// `data: {enquiries, total, page, limit, totalPages}` — note the nested
+  /// object, unlike the bare lists most of these routes return.
+  static const String myCoachingEnquiries = '/coaching-enquiries/my-enquiries';
+
   static const String coachingEnquiriesAll = '/coaching-enquiries/all';
 
   /// `GET /coaching-enquiries/stats` — the counters for the dashboard cards.
@@ -231,6 +293,15 @@ class ApiEndpoints {
   /// **not** sent: their parameter names have never been documented or
   /// captured, and guessing one would be silently ignored at best.
   static const String contactUsAdmin = '/contact-us/admin';
+
+  /// `POST /user-feedback` — auth. The signed-in user submits feedback.
+  static const String userFeedback = '/user-feedback';
+
+  /// `GET /user-feedback/mine` — auth. Their own feedback threads.
+  static const String myUserFeedback = '/user-feedback/mine';
+
+  /// `POST /user-feedback/{id}/reply` — auth. Reply on one's own thread.
+  static String userFeedbackReply(Object id) => '/user-feedback/$id/reply';
 
   // ---------------------------------------------------------------------------
   // Coach dashboard.
@@ -312,6 +383,10 @@ class ApiEndpoints {
   /// `POST /attendance` to mark.
   static const String attendance = '/attendance';
 
+  /// `GET /attendance/my` — the signed-in student's own attendance history,
+  /// newest first, as a bare list under `data`.
+  static const String myAttendance = '/attendance/my';
+
   /// `PATCH /attendance/{attendanceId}` — correct an already-marked record.
   static String attendanceRecord(Object id) => '/attendance/$id';
 
@@ -345,6 +420,10 @@ class ApiEndpoints {
   /// **also marks the student Present for today**, so it must never be called
   /// merely to look a pass up.
   static const String feesScanPass = '/fees/scan-pass';
+
+  /// `GET /fees/my` — auth. The signed-in student's approved gate passes, with
+  /// the pass code and QR URL already built server-side.
+  static const String myGatePasses = '/fees/my';
 
   /// `GET /fees/scan-logs?date=` — the date-wise log of gate-pass scans.
   static const String feesScanLogs = '/fees/scan-logs';
@@ -459,6 +538,10 @@ class ApiEndpoints {
 
   /// `GET | PUT | DELETE /event-passes/{eventPassId}`
   static String eventPass(Object id) => '/event-passes/$id';
+
+  /// `GET /event-passes/my-scan-stats` — auth. How many of the signed-in
+  /// user's event passes have been scanned in.
+  static const String myEventPassScanStats = '/event-passes/my-scan-stats';
 
   /// `POST /event-passes/upload-image` — multipart, field `image`.
   static const String eventPassUploadImage = '/event-passes/upload-image';
@@ -581,13 +664,15 @@ class ApiEndpoints {
   static const String reportsBookingsAll = '/reports/bookings/all';
 
   /// `GET /reports/bookings/filter-options`
-  static const String reportsBookingFilters = '/reports/bookings/filter-options';
+  static const String reportsBookingFilters =
+      '/reports/bookings/filter-options';
 
   /// `GET /reports/students/all?page=&limit=`
   static const String reportsStudentsAll = '/reports/students/all';
 
   /// `GET /reports/students/filter-options`
-  static const String reportsStudentFilters = '/reports/students/filter-options';
+  static const String reportsStudentFilters =
+      '/reports/students/filter-options';
 
   /// `GET /reports/students/new-retention`
   static const String reportsRetention = '/reports/students/new-retention';

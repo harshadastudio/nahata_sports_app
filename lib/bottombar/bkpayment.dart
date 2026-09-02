@@ -15,6 +15,10 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/config/api_config.dart';
+import '../core/utils/app_logger.dart';
+import '../core/utils/payment_amounts.dart';
+import '../models/coupon_model.dart';
+import '../repositories/coupon_repository.dart';
 import '../core/storage/token_storage.dart';
 import '../main.dart';
 import 'Custombottombar.dart';
@@ -23,6 +27,27 @@ import 'morescreen.dart';
 // Import your existing API service - uncomment when available
 // import '../services/api_service.dart';
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Whether a Razorpay order covers the basket it was raised for.
+///
+/// [orderAmount] is what `POST /payments/create-order` reported, in paise;
+/// [expectedRupees] is what the customer was shown. A short order means the
+/// server did not price every reserved slot, and every check after this point
+/// would still pass — the per-booking amount assertion compares against one
+/// slot's price, so equal-priced slots all confirm on a single slot's payment.
+/// This is the last place it can be caught.
+///
+/// A missing or unreadable amount returns true: the check needs a number, and
+/// refusing every checkout because a backend stopped reporting one would be
+/// worse than the risk it guards.
+bool orderCoversBasket(Object? orderAmount, int expectedRupees) {
+  final paise = orderAmount is num
+      ? orderAmount.round()
+      : int.tryParse('$orderAmount');
+
+  if (paise == null) return true;
+  return paise >= expectedRupees * 100;
+}
+
 class PaymentScreen extends StatefulWidget {
   final Map<String, dynamic> bookingDetails;
 
@@ -36,7 +61,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   late Razorpay _razorpay;
   String selectedPaymentMethod = 'online';
   bool isLoading = false;
-  bool agreedToTerms = false;  // Add this line
+  bool agreedToTerms = false; // Add this line
   bool _isVerifyingPayment = false;
 
   // 🔄 NEW API: base url + booking/order state carried across the Razorpay flow
@@ -46,7 +71,37 @@ class _PaymentScreenState extends State<PaymentScreen> {
   String? _rzpOrderId;
   String? _rzpKeyId;
 
+  // ── Coupons ───────────────────────────────────────────────────────────────
+  //
+  // `POST /courts/bookings/create` takes a `couponCode` and applies the
+  // discount itself, and `POST /payments/create-order` then reads the amount
+  // off the stored booking. So the code is only ever *previewed* here through
+  // `/coupons/validate`; the server remains the one that decides what is
+  // charged, and nothing the client computes can lower the bill.
+  final TextEditingController _couponController = TextEditingController();
+  List<CouponModel> _coupons = const [];
+  CouponModel? _appliedCoupon;
+  CouponValidation? _validation;
+  String? _couponError;
+  bool _applyingCoupon = false;
+  int _couponRequest = 0;
 
+  /// Coupon redemption happens once per created booking, and this screen
+  /// creates one booking per slot — so a code sent with a multi-slot booking
+  /// would burn one use per slot and discount each slot separately. Offered
+  /// only where it behaves correctly until the backend takes a whole basket.
+  bool get _couponSupported => _slotCount == 1;
+
+  int get _slotCount => (widget.bookingDetails['slots'] as List?)?.length ?? 0;
+
+  /// What the coupon takes off, as the server priced it. Zero when none is
+  /// applied — this figure is for display only.
+  int get _discount =>
+      (_validation?.discountAmount ?? 0).round().clamp(0, _baseTotal);
+
+  int get _baseTotal => (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
+
+  int get _payableTotal => (_baseTotal - _discount).clamp(0, _baseTotal);
 
   /// Access token from encrypted storage (refreshed automatically when stale).
   Future<String?> _getAuthToken() => TokenStorage.instance.accessToken;
@@ -55,6 +110,87 @@ class _PaymentScreenState extends State<PaymentScreen> {
     super.initState();
     _initializeRazorpay();
     _validateBookingDetails();
+    if (_couponSupported) {
+      _loadCoupons();
+
+      // A code applied on the booking screen travels here in the payload. It
+      // is re-validated rather than trusted, so the discount shown is still
+      // the server's own figure.
+      final carried = widget.bookingDetails['couponCode']?.toString();
+      if (carried != null && carried.trim().isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _applyCouponCode(carried),
+        );
+      }
+    }
+  }
+
+  /// Offers for court bookings. A failure here just means no offers strip, so
+  /// it never blocks the screen.
+  Future<void> _loadCoupons() async {
+    // Same reason as the event screen: a coupon issued for one venue or one
+    // sport only comes back when the request names them.
+    final booking = widget.bookingDetails;
+    final coupons = await CouponRepository.instance.fetchActiveCoupons(
+      appliesTo: 'Court',
+      sportComplexId: (booking['sportComplexId'] as num?)?.toInt(),
+      sportId: (booking['sportId'] as num?)?.toInt(),
+    );
+    if (!mounted) return;
+    setState(() => _coupons = coupons);
+  }
+
+  /// `POST /coupons/validate` — the server decides whether the code applies to
+  /// this booking and how much comes off. Preview only; the booking call sends
+  /// the code again and the backend re-checks it there.
+  Future<void> _applyCouponCode(String code) async {
+    final trimmed = code.trim();
+    if (trimmed.isEmpty) {
+      setState(() => _couponError = 'Enter a coupon code');
+      return;
+    }
+
+    // Only the newest reply may write back.
+    final request = ++_couponRequest;
+    setState(() {
+      _applyingCoupon = true;
+      _couponError = null;
+    });
+
+    final booking = widget.bookingDetails;
+    final result = await CouponRepository.instance.validateCoupon(
+      code: trimmed,
+      amount: _baseTotal,
+      appliesTo: 'Court',
+      sportComplexId: (booking['sportComplexId'] as num?)?.toInt(),
+      // A coupon issued for one sport must not come off another's booking.
+      sportId: (booking['sportId'] as num?)?.toInt(),
+    );
+
+    if (!mounted || request != _couponRequest) return;
+
+    setState(() {
+      _applyingCoupon = false;
+      if (result.isValid) {
+        _appliedCoupon = result.coupon;
+        _validation = result;
+        _couponError = null;
+        _couponController.text = result.coupon?.code ?? trimmed;
+      } else {
+        _appliedCoupon = null;
+        _validation = null;
+        _couponError = result.message ?? 'Invalid coupon code';
+      }
+    });
+  }
+
+  void _removeCoupon() {
+    setState(() {
+      _appliedCoupon = null;
+      _validation = null;
+      _couponError = null;
+      _couponController.clear();
+    });
   }
 
   void _initializeRazorpay() {
@@ -90,15 +226,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
       });
     }
 
+    // A zero price is a free court, not a broken booking — only a missing or
+    // negative one is an error.
     final price = widget.bookingDetails['price'];
     if (price == null ||
         (price is! int && price is! double) ||
-        (price is num && price <= 0)) {
+        (price is num && price < 0)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showErrorDialog("Invalid price. Must be a positive number.");
+        _showErrorDialog("Invalid price.");
       });
     }
   }
+
   Future<String?> _getUserEmail() async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -109,10 +248,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
       return null;
     } catch (e) {
-      print("❌ SharedPreferences error: $e");
+      AppLogger.debug("❌ SharedPreferences error: $e", name: 'bkpayment');
       return null;
     }
   }
+
   Future<String?> _getUserName() async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -121,17 +261,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (userJson != null) {
         final userData = jsonDecode(userJson);
         final name = userData['name']?.toString();
-        print("👤 User Name: $name");
+        AppLogger.debug("👤 User Name: $name", name: 'bkpayment');
         return name;
       }
 
       return null;
     } catch (e) {
-      print("❌ SharedPreferences error (name): $e");
+      AppLogger.debug("❌ SharedPreferences error (name): $e", name: 'bkpayment');
       return null;
     }
   }
-
 
   Future<void> showBookingConfirmedNotification({
     required String date,
@@ -139,17 +278,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
     required int totalAmount,
   }) async {
     const AndroidNotificationDetails androidDetails =
-    AndroidNotificationDetails(
-      'booking_channel',
-      'Booking Notifications',
-      channelDescription: 'Booking confirmation notifications',
-      importance: Importance.high,
-      priority: Priority.high,
-      icon: '@mipmap/ic_launcher',
+        AndroidNotificationDetails(
+          'booking_channel',
+          'Booking Notifications',
+          channelDescription: 'Booking confirmation notifications',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        );
+
+    const DarwinNotificationDetails darwinDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
     );
 
-    const NotificationDetails notificationDetails =
-    NotificationDetails(android: androidDetails);
+    const NotificationDetails notificationDetails = NotificationDetails(
+      android: androidDetails,
+      iOS: darwinDetails,
+      macOS: darwinDetails,
+    );
 
     await flutterLocalNotificationsPlugin.show(
       DateTime.now().millisecondsSinceEpoch ~/ 1000,
@@ -224,13 +372,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final List<int> ids = [];
     for (final s in slots) {
       final body = {
-        "sportComplexId": s['sportComplexId'] ??
-            widget.bookingDetails['sportComplexId'],
+        "sportComplexId":
+            s['sportComplexId'] ?? widget.bookingDetails['sportComplexId'],
         "sportId": s['sportId'] ?? widget.bookingDetails['sportId'],
         "date": s['date'],
         "startTime": s['startTime'],
         "endTime": s['endTime'],
         "totalAmount": (s['price'] as num?)?.toInt() ?? 0,
+        // The server re-validates the code, applies the discount to the stored
+        // booking and charges the order off that — so this is the only place
+        // the coupon actually takes effect. Sent only for a single-slot
+        // booking; see [_couponSupported].
+        if (_appliedCoupon?.code != null) "couponCode": _appliedCoupon!.code,
       };
 
       final res = await http.post(
@@ -243,7 +396,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         body: jsonEncode(body),
       );
 
-      print("📦 create booking (${res.statusCode}): ${res.body}");
+      AppLogger.debug("📦 create booking (${res.statusCode}): ${res.body}", name: 'bkpayment');
 
       if (res.statusCode == 200 || res.statusCode == 201) {
         final data = jsonDecode(res.body);
@@ -263,9 +416,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   // POST /payments/create-order  -> { orderId, amount(paise), keyId }
+  /// `POST /payments/create-order` for the whole basket.
+  ///
+  /// Every reserved slot is its own Booking row, so all of their ids go up:
+  /// the server sums them and raises one order for the lot. Sending only the
+  /// first is what produced an order for one slot while the customer was shown
+  /// — and the other slots confirmed against — the full total.
+  ///
+  /// `bookingId` is still sent for a backend that predates `bookingIds`; that
+  /// one bills the first slot only, which is exactly what [_assertOrderCovers]
+  /// downstream refuses to hand to Razorpay.
   Future<Map<String, dynamic>?> _createOrder({
     required String? token,
-    required int bookingId,
+    required List<int> bookingIds,
     required int amount, // rupees
   }) async {
     final res = await http.post(
@@ -277,12 +440,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
       },
       body: jsonEncode({
         "bookingType": _bookingType,
-        "bookingId": bookingId,
+        "bookingId": bookingIds.first,
+        "bookingIds": bookingIds,
         "amount": amount,
       }),
     );
 
-    print("📦 create-order (${res.statusCode}): ${res.body}");
+    AppLogger.debug("📦 create-order (${res.statusCode}): ${res.body}", name: 'bkpayment');
 
     if (res.statusCode == 200 || res.statusCode == 201) {
       final data = jsonDecode(res.body);
@@ -291,7 +455,54 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return null;
   }
 
+  /// True when [orderData] is for at least [expectedRupees].
+  ///
+  /// The server returns Razorpay's own `amount`, in paise. Anything short of
+  /// the basket total means the order does not cover every slot, and every
+  /// downstream check would still pass: the per-booking amount assertion
+  /// compares against one slot's price, so equal-priced slots all confirm on
+  /// a single slot's payment. This is the one place that can catch it.
+  ///
+  /// A backend that does not report an amount is not second-guessed — the
+  /// check needs a number to compare.
+  bool _assertOrderCovers(Map<String, dynamic> orderData, int expectedRupees) {
+    final covers = orderCoversBasket(orderData['amount'], expectedRupees);
 
+    if (!covers) {
+      AppLogger.error(
+        'Order undercharges the basket: order=${orderData['amount']} paise, '
+        'expected=₹$expectedRupees over ${_bookingIds.length} slot(s)',
+        name: 'Payment',
+      );
+    }
+    return covers;
+  }
+
+  /// Gives the reserved slots back after a checkout we refuse to open.
+  ///
+  /// `POST /courts/bookings/{id}/release` frees an unpaid hold immediately.
+  /// Failing to release is logged but never surfaced — the hold expires on its
+  /// own, and the user already has an error to read.
+  Future<void> _releaseHeldBookings(String? token) async {
+    for (final bookingId in _bookingIds) {
+      try {
+        await http.post(
+          Uri.parse("$_apiBase/courts/bookings/$bookingId/release"),
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            if (token != null) "Authorization": "Bearer $token",
+          },
+        );
+      } catch (e) {
+        AppLogger.debug(
+          'Could not release booking #$bookingId: $e',
+          name: 'Payment',
+        );
+      }
+    }
+    _bookingIds = [];
+  }
 
   /* ❌ Cash-only booking removed — online only (used old verify-payment-app API)
   Future<void> _storeBookingCashOnly({
@@ -333,7 +544,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       };
 
 
-      print("📤 CASH BOOKING PAYLOAD: $bookingData");
+      AppLogger.debug("📤 CASH BOOKING PAYLOAD: $bookingData", name: 'bkpayment');
 
       final res = await http.post(
          Uri.parse("https://nahatasports.com/api/verify-payment-app"),
@@ -344,10 +555,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
         },
         body: jsonEncode(bookingData),
       );
-      print("🧪 onlinePaid:  0| cashAmount: $cashAmount | total:0");
+      AppLogger.debug("🧪 onlinePaid:  0| cashAmount: $cashAmount | total:0", name: 'bkpayment');
 
-      print("📥 CASH API RESPONSE (${res.statusCode}): ${res.body}");
-      print(res);
+      AppLogger.debug("📥 CASH API RESPONSE (${res.statusCode}): ${res.body}", name: 'bkpayment');
+      AppLogger.debug('${res}', name: 'bkpayment');
       if (res.statusCode == 200) {
         // 🔔 Show booking notification
         final slotText = slots
@@ -375,10 +586,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   // 🔄 NEW API: verify the payment against every reserved booking id.
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
-    print("🎉 Payment Success");
-    print("PaymentId: ${response.paymentId}");
-    print("OrderId: ${response.orderId}");
-    print("Signature: ${response.signature}");
+    AppLogger.debug("🎉 Payment Success", name: 'bkpayment');
+    AppLogger.debug("PaymentId: ${response.paymentId}", name: 'bkpayment');
+    AppLogger.debug("OrderId: ${response.orderId}", name: 'bkpayment');
+    AppLogger.debug("Signature: ${response.signature}", name: 'bkpayment');
 
     final token = await _getAuthToken();
 
@@ -512,8 +723,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
   //
   // }
 
-
-
   // ---------------------- OLD API (commented out) ----------------------
   // Future<void> _verifyPayment(Map<String, dynamic> data) async {
   //   final res = await http.post(
@@ -558,12 +767,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
         }),
       );
 
-      print("📥 verify (${res.statusCode}): ${res.body}");
+      AppLogger.debug("📥 verify (${res.statusCode}): ${res.body}", name: 'bkpayment');
 
       final result = jsonDecode(res.body);
       return result["success"] == true;
     } catch (e) {
-      print("❌ verify error: $e");
+      AppLogger.debug("❌ verify error: $e", name: 'bkpayment');
       return false;
     }
   }
@@ -624,16 +833,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
   //   }
   // }
 
-
-
   void _handlePaymentError(PaymentFailureResponse response) {
     setState(() => isLoading = false);
 
-    print("❌ Payment Error: ${response.code} - ${response.message}");
+    AppLogger.debug("❌ Payment Error: ${response.code} - ${response.message}", name: 'bkpayment');
 
     if (response.code == 2) {
       _showErrorDialog(
-          "Payment was cancelled or not completed.\nPlease try again."
+        "Payment was cancelled or not completed.\nPlease try again.",
       );
     } else {
       _showErrorDialog(response.message ?? "Payment failed");
@@ -707,12 +914,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ),
     );
   }
-  void _handleExternalWallet(ExternalWalletResponse response) {
-    print("🔗 External Wallet: ${response.walletName}");
-    _showErrorDialog(
-        "Payment via ${response.walletName} is not supported currently.");
-  }
 
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    AppLogger.debug("🔗 External Wallet: ${response.walletName}", name: 'bkpayment');
+    _showErrorDialog(
+      "Payment via ${response.walletName} is not supported currently.",
+    );
+  }
 
   // 🔄 NEW API flow: reserve booking(s) -> create order -> open Razorpay.
   void _handleOnlinePayment() async {
@@ -723,17 +931,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return;
     }
 
-    final total = (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
+    // The discounted figure, so a fully-covered booking is not rejected below
+    // as "invalid amount". The charge itself is still the server's own: it
+    // reads the amount off the booking it stored, coupon already applied.
+    final total = _payableTotal;
     final cash = (widget.bookingDetails['cash'] as num?)?.toInt() ?? 0;
     final onlineAmount = total - cash;
 
-    if (onlineAmount <= 0) {
+    // Nothing to charge — a free court, or a coupon that covered it entirely.
+    // Razorpay would refuse a zero order anyway, and there is no signature to
+    // verify afterwards, so the gateway is skipped and the reservation stands
+    // on the booking alone.
+    final isFree = onlineAmount <= 0;
+    if (onlineAmount < 0) {
       _showErrorDialog("Invalid payment amount.");
       return;
     }
 
-    final slots =
-        List<Map<String, dynamic>>.from(widget.bookingDetails['slots'] ?? []);
+    final slots = List<Map<String, dynamic>>.from(
+      widget.bookingDetails['slots'] ?? [],
+    );
     if (slots.isEmpty) {
       _showErrorDialog("No slots selected.");
       return;
@@ -752,19 +969,78 @@ class _PaymentScreenState extends State<PaymentScreen> {
         return;
       }
 
+      // ✅ STEP 1a: FREE BOOKING — the reservation is the whole transaction.
+      // Stop before the gateway: there is no order to raise and no payment to
+      // verify, so the slots are already held and confirmed.
+      if (isFree) {
+        if (!mounted) return;
+        setState(() => isLoading = false);
+
+        final slotText = slots
+            .map((s) => s['time']?.toString() ?? '')
+            .where((t) => t.isNotEmpty)
+            .join(', ');
+        await showBookingConfirmedNotification(
+          date: widget.bookingDetails['date']?.toString() ?? '',
+          slot: slotText,
+          totalAmount: 0,
+        );
+        if (!mounted) return;
+        _showSuccessDialog();
+        return;
+      }
+
       // ✅ STEP 2: CREATE PAYMENT ORDER (for the total, against the first booking)
       // NOTE: multi-slot uses one order tied to the primary booking id, then
       // verifies every booking id on success. Adjust if the backend exposes a
       // dedicated multi-booking order endpoint.
       final orderData = await _createOrder(
         token: token,
-        bookingId: _bookingIds.first,
+        bookingIds: _bookingIds,
         amount: onlineAmount,
       );
 
       if (orderData == null || orderData['orderId'] == null) {
         setState(() => isLoading = false);
         _showErrorDialog("Unable to create order. Please try again.");
+        return;
+      }
+
+      // Never open a checkout for less than the basket is worth. The server
+      // decides the charge, so a short order means it did not see every slot
+      // — releasing the holds and stopping is the only safe response.
+      if (!_assertOrderCovers(orderData, onlineAmount)) {
+        await _releaseHeldBookings(token);
+        if (!mounted) return;
+        setState(() => isLoading = false);
+        _showErrorDialog(
+          "We could not price this booking correctly. "
+          "Please try again, or book the slots one at a time.",
+        );
+        return;
+      }
+
+      // …and never for more than the discounted total once a coupon is on the
+      // booking. [_assertOrderCovers] is deliberately one-sided so a bigger
+      // basket than expected still goes through, but that same leniency would
+      // wave through an order priced at the full amount because the backend
+      // did not honour the code — charging exactly the price the screen just
+      // promised the customer they would not pay.
+      if (_appliedCoupon != null &&
+          !orderMatchesExpected(orderData['amount'], onlineAmount)) {
+        AppLogger.error(
+          'Order ignores the coupon: order=${orderData['amount']} paise, '
+          'expected=₹$onlineAmount (₹$_baseTotal less ₹$_discount, '
+          'coupon ${_appliedCoupon?.code})',
+          name: 'Payment',
+        );
+        await _releaseHeldBookings(token);
+        if (!mounted) return;
+        setState(() => isLoading = false);
+        _showErrorDialog(
+          "Your coupon could not be applied to this booking. "
+          "Please try again, or remove the coupon to continue.",
+        );
         return;
       }
 
@@ -787,6 +1063,23 @@ class _PaymentScreenState extends State<PaymentScreen> {
           if (email.isNotEmpty) 'email': email,
           if (phone.isNotEmpty) 'contact': phone,
         },
+        // UPI apps (GPay / PhonePe / Paytm) surface because their packages are
+        // declared in AndroidManifest <queries> and iOS
+        // LSApplicationQueriesSchemes — not because of anything set here.
+        //
+        // Do NOT add 'prefill.method' or a 'config.display' block: both make the
+        // iOS checkout webview navigate straight at a UPI app scheme and it dies
+        // with "Webview error Frame load interrupted".
+        'method': const {
+          'upi': true,
+          'card': true,
+          'netbanking': true,
+          'wallet': true,
+        },
+        'timeout': 300,
+        'remember_customer': true,
+        'retry': const {'enabled': true, 'max_count': 2},
+        'theme': const {'color': '#1A237E'},
       };
 
       // ✅ Small delay prevents ANR
@@ -798,7 +1091,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
       _showErrorDialog('Payment gateway error: ${e.toString()}');
     }
   }
-
 
   /* ❌ Cash payment removed — online only
   void _handleCashPayment() async {
@@ -954,7 +1246,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
       builder: (_) => WillPopScope(
         onWillPop: () async => false,
         child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Column(
             children: [
               Container(
@@ -963,7 +1257,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   color: Colors.green[100],
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.check_circle, color: Colors.green[600], size: 48),
+                child: Icon(
+                  Icons.check_circle,
+                  color: Colors.green[600],
+                  size: 48,
+                ),
               ),
               SizedBox(height: 16),
               Text(
@@ -995,11 +1293,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-
                   Navigator.pushAndRemoveUntil(
                     context,
                     MaterialPageRoute(builder: (context) => CustomBottomNav()),
-                        (Route<dynamic> route) => false, // remove all previous routes
+                    (Route<dynamic> route) =>
+                        false, // remove all previous routes
                   );
                 },
                 child: Text("Continue"),
@@ -1013,20 +1311,193 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   void _showSnackBar(String message, {required bool isError}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message),
-      backgroundColor: isError ? Colors.red : Colors.green,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+      ),
+    );
   }
 
   @override
   void dispose() {
     _razorpay.clear();
+    _couponController.dispose();
     super.dispose();
   }
 
-  static const brandBlue = Color(0xFF1A237E);
+  /// Coupon entry plus the offers currently on this venue.
+  ///
+  /// The figures shown come from `/coupons/validate`; the money that is
+  /// actually charged is decided by the server when the booking is created.
+  Widget _buildCouponSection() {
+    final applied = _appliedCoupon;
 
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.local_offer_outlined, size: 18, color: brandBlue),
+              SizedBox(width: 8),
+              Text(
+                "Have a coupon?",
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 12),
+
+          if (applied != null)
+            // Applied: the code and what it saved, with one way to undo it.
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle,
+                    size: 18,
+                    color: Colors.green.shade700,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          applied.code ?? '',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.green.shade800,
+                          ),
+                        ),
+                        Text(
+                          "You saved ₹$_discount",
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: isLoading ? null : _removeCoupon,
+                    child: Text("Remove"),
+                  ),
+                ],
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _couponController,
+                    enabled: !_applyingCoupon && !isLoading,
+                    textCapitalization: TextCapitalization.characters,
+                    onSubmitted: _applyCouponCode,
+                    decoration: InputDecoration(
+                      hintText: "Enter coupon code",
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 10),
+                ElevatedButton(
+                  onPressed: _applyingCoupon || isLoading
+                      ? null
+                      : () => _applyCouponCode(_couponController.text),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: brandBlue,
+                    padding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: _applyingCoupon
+                      ? SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text("Apply", style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+
+          if (_couponError != null) ...[
+            SizedBox(height: 8),
+            Text(
+              _couponError!,
+              style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+            ),
+          ],
+
+          // Tap-to-apply offers, so a code never has to be typed from memory.
+          if (applied == null && _coupons.isNotEmpty) ...[
+            SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                // A coupon with no code cannot be applied, so it is not
+                // offered as a chip that would do nothing.
+                for (final coupon
+                    in _coupons.where((c) => (c.code ?? '').isNotEmpty).take(6))
+                  ActionChip(
+                    label: Text(
+                      coupon.code!,
+                      style: TextStyle(fontSize: 12, color: brandBlue),
+                    ),
+                    backgroundColor: Colors.white,
+                    side: BorderSide(color: Colors.grey.shade300),
+                    onPressed: _applyingCoupon || isLoading
+                        ? null
+                        : () => _applyCouponCode(coupon.code!),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static const brandBlue = Color(0xFF1A237E);
 
   @override
   Widget build(BuildContext context) {
@@ -1074,43 +1545,43 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Venue Rules Section
-                  Container(
-                    padding: EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Venue Rule & Cancellation Policy",
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          "• Check cancellation terms",
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.blue.shade700,
-                          ),
-                        ),
-                        Text(
-                          "• Know the venues T&Cs",
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.blue.shade700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  // Container(
+                  //   padding: EdgeInsets.all(16),
+                  //   decoration: BoxDecoration(
+                  //     color: Colors.blue.shade50,
+                  //     borderRadius: BorderRadius.circular(12),
+                  //   ),
+                  //   child: Column(
+                  //     crossAxisAlignment: CrossAxisAlignment.start,
+                  //     children: [
+                  //       Text(
+                  //         "Venue Rule & Cancellation Policy",
+                  //         style: TextStyle(
+                  //           fontSize: 14,
+                  //           fontWeight: FontWeight.w600,
+                  //           color: Colors.black87,
+                  //         ),
+                  //       ),
+                  //       SizedBox(height: 8),
+                  //       Text(
+                  //         "• Check cancellation terms",
+                  //         style: TextStyle(
+                  //           fontSize: 13,
+                  //           color: Colors.blue.shade700,
+                  //         ),
+                  //       ),
+                  //       Text(
+                  //         "• Know the venues T&Cs",
+                  //         style: TextStyle(
+                  //           fontSize: 13,
+                  //           color: Colors.blue.shade700,
+                  //         ),
+                  //       ),
+                  //     ],
+                  //   ),
+                  // ),
 
-                  SizedBox(height: 24),
+                  // SizedBox(height: 24),
 
                   // Slot Details Section
                   Text(
@@ -1121,7 +1592,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       color: Colors.black87,
                     ),
                   ),
-
 
                   SizedBox(height: 16),
 
@@ -1141,6 +1611,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ),
 
                   SizedBox(height: 16),
+
+                  if (_couponSupported) ...[
+                    _buildCouponSection(),
+                    SizedBox(height: 16),
+                  ],
 
                   // Summary Details
                   Container(
@@ -1168,12 +1643,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           "₹${total}",
                           isBold: true,
                         ),
+                        if (_discount > 0) ...[
+                          SizedBox(height: 12),
+                          _buildSummaryRow2(
+                            "Coupon (${_appliedCoupon?.code ?? ''})",
+                            "− ₹${_discount}",
+                          ),
+                        ],
                         SizedBox(height: 16),
                         Divider(height: 1, color: Colors.grey.shade300),
                         SizedBox(height: 16),
                         _buildSummaryRow2(
                           "Payable Amount",
-                          "₹${total}",
+                          "₹${_payableTotal}",
                           isBold: true,
                         ),
                       ],
@@ -1284,51 +1766,57 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ),
                   child: isLoading
                       ? Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(brandBlue),
-                        ),
-                      ),
-                      SizedBox(width: 12),
-                      Text(
-                        "Processing...",
-                        style: TextStyle(
-                          color: brandBlue,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  )
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  brandBlue,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Text(
+                              "Processing...",
+                              style: TextStyle(
+                                color: brandBlue,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        )
                       : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        "₹${total} Incl.Taxes",
-                        style: TextStyle(
-                          color: brandBlue,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              "₹${total} Incl.Taxes",
+                              style: TextStyle(
+                                color: brandBlue,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            SizedBox(width: 60),
+                            Text(
+                              "PROCEED TO PAY",
+                              style: TextStyle(
+                                color: brandBlue,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(width: 5),
+                            Icon(
+                              Icons.arrow_forward,
+                              color: brandBlue,
+                              size: 13,
+                            ),
+                          ],
                         ),
-                      ),
-                      SizedBox(width: 60),
-                      Text(
-                        "PROCEED TO PAY",
-                        style: TextStyle(
-                          color: brandBlue,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(width: 5),
-                      Icon(Icons.arrow_forward, color: brandBlue, size: 13),
-                    ],
-                  ),
                 ),
               ),
             ),
@@ -1450,14 +1938,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           color: Colors.black87,
                         ),
                       ),
-                      SizedBox(height: 4),
-                      Text(
-                        court,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
+                      // SizedBox(height: 4),
+                      // Text(
+                      //   court,
+                      //   style: TextStyle(
+                      //     fontSize: 12,
+                      //     color: Colors.grey.shade600,
+                      //   ),
+                      // ),
+
+
                     ],
                   ),
 
@@ -1465,18 +1955,21 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   GestureDetector(
                     onTap: () {
                       setState(() {
-                        (widget.bookingDetails['slots'] as List)
-                            .removeWhere((s) =>
-                        s['time'] == time &&
-                            s['court'] == court &&
-                            s['date'] == date);
+                        (widget.bookingDetails['slots'] as List).removeWhere(
+                          (s) =>
+                              s['time'] == time &&
+                              s['court'] == court &&
+                              s['date'] == date,
+                        );
                       });
 
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text("Slot removed successfully"),
-                        backgroundColor: Colors.green,
-                        duration: Duration(seconds: 2),
-                      ));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text("Slot removed successfully"),
+                          backgroundColor: Colors.green,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
                     },
                     child: Container(
                       padding: EdgeInsets.all(6),
@@ -1504,11 +1997,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
     required bool isSelected,
   }) {
     return GestureDetector(
-      onTap: isLoading ? null : () {
-        setState(() {
-          selectedPaymentMethod = value;
-        });
-      },
+      onTap: isLoading
+          ? null
+          : () {
+              setState(() {
+                selectedPaymentMethod = value;
+              });
+            },
       child: AnimatedContainer(
         duration: Duration(milliseconds: 200),
         padding: EdgeInsets.all(20),
@@ -1527,7 +2022,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             ),
             if (isSelected)
               BoxShadow(
-                color:Color(0xFF1A237E).withOpacity(0.1),
+                color: Color(0xFF1A237E).withOpacity(0.1),
                 blurRadius: 12,
                 offset: Offset(0, 4),
               ),
@@ -1539,12 +2034,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
               duration: Duration(milliseconds: 200),
               padding: EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: isSelected ? Color(0xFF1A237E).withOpacity(0.1) : Colors.grey[100],
+                color: isSelected
+                    ? Color(0xFF1A237E).withOpacity(0.1)
+                    : Colors.grey[100],
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
                 icon,
-                color: isSelected ? Color(0xFF1A237E): Colors.grey[600],
+                color: isSelected ? Color(0xFF1A237E) : Colors.grey[600],
                 size: 24,
               ),
             ),
@@ -1564,10 +2061,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
               ),
@@ -1579,22 +2073,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: isSelected ? Color(0xFF1A237E): Colors.grey[400]!,
+                  color: isSelected ? Color(0xFF1A237E) : Colors.grey[400]!,
                   width: 2,
                 ),
               ),
               child: isSelected
                   ? Center(
-                child: AnimatedContainer(
-                  duration: Duration(milliseconds: 200),
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Color(0xFF1A237E),
-                  ),
-                ),
-              )
+                      child: AnimatedContainer(
+                        duration: Duration(milliseconds: 200),
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFF1A237E),
+                        ),
+                      ),
+                    )
                   : null,
             ),
           ],
@@ -1610,23 +2104,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (slots is List && slots.isNotEmpty) {
         return slots
             .map((slot) {
-          if (slot is Map<String, dynamic>) {
-            final court = slot['court']?.toString() ?? 'Court';
-            final time = slot['time']?.toString() ?? 'Time';
-            return "$court ($time)";
-          }
-          return slot.toString();
-        })
+              if (slot is Map<String, dynamic>) {
+                final court = slot['court']?.toString() ?? 'Court';
+                final time = slot['time']?.toString() ?? 'Time';
+                return "$court ($time)";
+              }
+              return slot.toString();
+            })
             .join(", ");
       }
       return slots.toString();
     } catch (e) {
-      print("❌ Error formatting slots: $e");
+      AppLogger.debug("❌ Error formatting slots: $e", name: 'bkpayment');
       return 'Invalid slot format';
     }
   }
 }
-
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Widget build(BuildContext context) {
@@ -2010,10 +2503,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
 //   }
 // }
 //
-
-
-
-
 
 // void _handleOnlinePayment() async {
 //   if (isLoading) return;

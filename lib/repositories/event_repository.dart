@@ -24,8 +24,15 @@ class EventRepository {
   /// One page of event passes.
   ///
   /// [sportComplexId] limits results to a single venue.
+  ///
+  /// [timeframe] is the server-side split the events screen's two tabs run on:
+  /// `'upcoming'` for events that still have a date to come, `'past'` for ones
+  /// that are over. The backend decides which is which — passing null asks for
+  /// both, which is what the details page wants when it re-reads one event's
+  /// slots and does not know whether that event has already happened.
   Future<EventPassPage> fetchEventPassPage({
     String? status = 'Active',
+    String? timeframe,
     int page = 1,
     int limit = 50,
     int? sportComplexId,
@@ -34,6 +41,7 @@ class EventRepository {
       ApiEndpoints.eventPasses,
       query: {
         if (status != null && status.isNotEmpty) 'status': status,
+        if (timeframe != null && timeframe.isNotEmpty) 'timeframe': timeframe,
         'page': page,
         'limit': limit,
         if (sportComplexId != null) 'sportComplexId': sportComplexId,
@@ -54,6 +62,7 @@ class EventRepository {
   /// Every event pass, following pagination.
   Future<List<EventPassModel>> fetchEventPasses({
     String? status = 'Active',
+    String? timeframe,
     int? sportComplexId,
     int limit = 50,
     int maxPages = 20,
@@ -64,6 +73,7 @@ class EventRepository {
     while (page <= maxPages) {
       final result = await fetchEventPassPage(
         status: status,
+        timeframe: timeframe,
         page: page,
         limit: limit,
         sportComplexId: sportComplexId,

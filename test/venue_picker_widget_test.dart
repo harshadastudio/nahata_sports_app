@@ -127,24 +127,32 @@ void main() {
   Uri lastSportsCall() =>
       requests.lastWhere((u) => u.path.endsWith('/sports'));
 
-  testWidgets('shows "All venues" until a venue is chosen', (tester) async {
+  testWidgets('opens on the first venue when none was remembered',
+      (tester) async {
     await pumpScreen(tester);
 
     expect(find.text('Available coaches'), findsOneWidget);
-    expect(labelText(tester), 'All venues');
 
-    // Unfiltered: no ground parameter is sent.
-    expect(lastSportsCall().queryParameters.containsKey('ground'), isFalse);
+    // Coaching is always scoped to one ground, so the screen picks the first
+    // venue rather than sitting on an "all venues" state the filter no longer
+    // offers. `fetchVenues` sorts, so that is Gangadham Chowk — the default
+    // follows the API's own order rather than a name pinned in the client.
+    expect(labelText(tester), 'Gangadham Chowk');
+    expect(lastSportsCall().queryParameters['ground'], 'Gangadham Chowk');
+    expect(await SelectedGround.instance.read(), 'Gangadham Chowk');
   });
 
-  testWidgets('opening the picker lists every venue plus All venues',
+  testWidgets('the picker lists the real venues and nothing else',
       (tester) async {
     await pumpScreen(tester);
     await openPicker(tester);
 
-    expect(venueOption('__all_venues__'), findsOneWidget);
     expect(venueOption('Sinhagad Road'), findsOneWidget);
     expect(venueOption('Gangadham Chowk'), findsOneWidget);
+
+    // No "All venues" entry — it was removed so the grid is always scoped.
+    expect(venueOption('__all_venues__'), findsNothing);
+    expect(find.text('All venues'), findsNothing);
   });
 
   testWidgets('choosing a venue refetches sports for that ground',
@@ -183,18 +191,20 @@ void main() {
     expect(lastSportsCall().queryParameters['ground'], 'Sinhagad Road');
   });
 
-  testWidgets('switching back to All venues clears the filter',
+  testWidgets('the filter can never be cleared back to every venue',
       (tester) async {
     await SelectedGround.instance.save('Sinhagad Road');
     await pumpScreen(tester);
 
     await openPicker(tester);
-    await tester.tap(venueOption('__all_venues__'));
+
+    // The only way out of a venue is another venue.
+    await tester.tap(venueOption('Gangadham Chowk'));
     await tester.pumpAndSettle();
 
-    expect(labelText(tester), 'All venues');
-    expect(await SelectedGround.instance.read(), isNull);
-    expect(lastSportsCall().queryParameters.containsKey('ground'), isFalse);
+    expect(labelText(tester), 'Gangadham Chowk');
+    expect(await SelectedGround.instance.read(), 'Gangadham Chowk');
+    expect(lastSportsCall().queryParameters['ground'], 'Gangadham Chowk');
   });
 
   testWidgets('the grid shows the sports for the selected venue',

@@ -320,11 +320,35 @@ class ApiClient {
     // the venue id only.
     ApiTrace.context(uri.path);
 
+    // Kept so the failure block can show what was sent, not just what came
+    // back — a 400 is unreadable without the body that caused it.
+    final Object? loggedBody = isMultipart
+        ? {
+            'fields': fields ?? const <String, String>{},
+            'files': [
+              for (final file in files ?? const <UploadFile>[])
+                {
+                  'field': file.field,
+                  'filename':
+                      file.filename ??
+                      file.path.split(Platform.pathSeparator).last,
+                  'path': file.path,
+                  if (file.contentType != null) 'contentType': file.contentType,
+                },
+            ],
+          }
+        : body;
+
     AppLogger.request(
       method,
       uri,
-      body: isMultipart ? {'fields': fields, 'files': files?.length} : body,
+      // A multipart body has no single payload to print, so it is described:
+      // every text field verbatim, and every attachment by field, filename and
+      // type — enough to tell a missing field from a missing file.
+      body: loggedBody,
       headers: requestHeaders,
+      // The query is already folded into `uri` by this point; AppLogger reads
+      // it back off there.
     );
 
     final stopwatch = Stopwatch()..start();
@@ -356,43 +380,72 @@ class ApiClient {
         statusCode: response.statusCode,
         body: response.body,
         elapsed: stopwatch.elapsed,
+        headers: response.headers,
       );
+
+      // A non-2xx still reaches the caller as a typed exception, but the
+      // console gets the full failure block first — that is the only place
+      // the request body and the server's own words sit side by side.
+      if (response.statusCode >= 400) {
+        AppLogger.apiError(
+          method,
+          uri,
+          statusCode: response.statusCode,
+          requestBody: loggedBody,
+          responseBody: response.body,
+          error: 'HTTP ${response.statusCode}',
+        );
+      }
 
       return ApiResponse.parse(
         statusCode: response.statusCode,
         body: response.body,
         headers: response.headers,
       );
-    } on SocketException catch (e) {
-      AppLogger.error(
-        'Network unreachable for $uri after ${stopwatch.elapsedMilliseconds}ms',
-        error: e,
-      );
+    } on SocketException catch (e, s) {
+      _logFailure(method, uri, loggedBody, e, s, stopwatch);
       throw NoInternetException(cause: e);
-    } on HttpException catch (e) {
-      AppLogger.error('HTTP error for $uri', error: e);
+    } on HttpException catch (e, s) {
+      _logFailure(method, uri, loggedBody, e, s, stopwatch);
       throw UnknownApiException(message: AuthMessages.unknown, cause: e);
-    } on TimeoutException catch (e) {
-      AppLogger.error(
-        'Timeout for $uri after ${stopwatch.elapsedMilliseconds}ms',
-        error: e,
-      );
+    } on TimeoutException catch (e, s) {
+      _logFailure(method, uri, loggedBody, e, s, stopwatch);
       throw RequestTimeoutException(cause: e);
-    } on FormatException catch (e) {
-      AppLogger.error('Malformed response from $uri', error: e);
+    } on FormatException catch (e, s) {
+      _logFailure(method, uri, loggedBody, e, s, stopwatch);
       throw ParseException(
         'Received an unexpected response from the server.',
         cause: e,
       );
     } on ApiException {
+      // Already logged where it was raised; re-logging would double the block.
       rethrow;
     } catch (e, s) {
       // Anything else (a plugin error, a platform exception, an unexpected
       // transport failure) still reaches the caller as a typed ApiException,
       // so no screen ever sees a raw exception it cannot present.
-      AppLogger.error('Unexpected error for $uri', error: e, stackTrace: s);
+      _logFailure(method, uri, loggedBody, e, s, stopwatch);
       throw UnknownApiException(cause: e);
     }
+  }
+
+  /// One API ERROR block for a call that never produced a response.
+  static void _logFailure(
+    String method,
+    Uri uri,
+    Object? requestBody,
+    Object error,
+    StackTrace stackTrace,
+    Stopwatch stopwatch,
+  ) {
+    AppLogger.apiError(
+      method,
+      uri,
+      requestBody: requestBody,
+      responseBody: '(no response after ${stopwatch.elapsedMilliseconds}ms)',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   Future<http.Response> _sendSimple({
@@ -443,20 +496,150 @@ class ApiClient {
       ..fields.addAll(fields);
 
     for (final file in files) {
+      final contentType = await _contentTypeFor(file);
+
       request.files.add(
         await http.MultipartFile.fromPath(
           file.field,
           file.path,
-          filename: file.filename,
-          contentType: file.contentType == null
-              ? null
-              : MediaType.parse(file.contentType!),
+          filename: _filenameFor(file, contentType),
+          contentType: contentType,
         ),
       );
     }
 
     final streamed = await _client.send(request).timeout(timeout);
     return http.Response.fromStream(streamed);
+  }
+
+  /// Content type for one multipart attachment.
+  ///
+  /// `MultipartFile.fromPath` sends `application/octet-stream` when it is not
+  /// told otherwise, and an upload route that filters on `file.mimetype` — as
+  /// `/auth/profile/picture` does — rejects that however valid the image is.
+  ///
+  /// The bytes decide. The extension is only a fallback, because a photo the
+  /// picker re-encodes does not always get renamed to match, so the name on
+  /// disk is the least reliable thing about it.
+  static Future<MediaType?> _contentTypeFor(UploadFile file) async {
+    final declared = file.contentType?.trim();
+    if (declared != null && declared.isNotEmpty) {
+      try {
+        return MediaType.parse(declared);
+      } on FormatException {
+        // A malformed override is worth ignoring, not worth failing on.
+      }
+    }
+
+    return await _sniff(file.path) ?? _fromExtension(file.path);
+  }
+
+  /// The first bytes of [path], matched against the magic numbers of the types
+  /// these upload routes accept.
+  static Future<MediaType?> _sniff(String path) async {
+    List<int> head;
+    try {
+      final handle = await File(path).open();
+      try {
+        head = await handle.read(16);
+      } finally {
+        await handle.close();
+      }
+    } catch (_) {
+      // Unreadable here means unreadable to `fromPath` too, which reports it
+      // far better than a null content type would.
+      return null;
+    }
+
+    bool matches(List<int> signature, [int offset = 0]) {
+      if (head.length < offset + signature.length) return false;
+      for (var i = 0; i < signature.length; i++) {
+        if (head[offset + i] != signature[i]) return false;
+      }
+      return true;
+    }
+
+    if (matches([0xFF, 0xD8, 0xFF])) return MediaType('image', 'jpeg');
+    if (matches([0x89, 0x50, 0x4E, 0x47])) return MediaType('image', 'png');
+    if (matches([0x47, 0x49, 0x46, 0x38])) return MediaType('image', 'gif');
+    if (matches([0x25, 0x50, 0x44, 0x46]))
+      return MediaType('application', 'pdf');
+
+    // RIFF....WEBP
+    if (matches([0x52, 0x49, 0x46, 0x46]) &&
+        matches([0x57, 0x45, 0x42, 0x50], 8)) {
+      return MediaType('image', 'webp');
+    }
+
+    // ISO-BMFF: "ftyp" at offset 4, brand at 8. iOS hands these over whenever
+    // the picker is not asked to re-encode.
+    if (matches([0x66, 0x74, 0x79, 0x70], 4) && head.length >= 12) {
+      final brand = String.fromCharCodes(head.sublist(8, 12));
+      if (brand.startsWith('hei') || brand.startsWith('hev')) {
+        return MediaType('image', 'heic');
+      }
+      if (brand.startsWith('mif') || brand.startsWith('msf')) {
+        return MediaType('image', 'heif');
+      }
+    }
+
+    return null;
+  }
+
+  /// Extension → mime type. `MediaType` has no const constructor, so the table
+  /// holds the strings and the two readers parse what they need.
+  static const Map<String, String> _typesByExtension = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'webp': 'image/webp',
+    'gif': 'image/gif',
+    'heic': 'image/heic',
+    'heif': 'image/heif',
+    'svg': 'image/svg+xml',
+    'pdf': 'application/pdf',
+  };
+
+  static String? _extensionOf(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0 || dot == name.length - 1) return null;
+    return name.substring(dot + 1).toLowerCase();
+  }
+
+  static MediaType? _fromExtension(String path) {
+    final mime = _typesByExtension[_extensionOf(path) ?? ''];
+    return mime == null ? null : MediaType.parse(mime);
+  }
+
+  /// The filename to send, with its extension corrected to match [contentType].
+  ///
+  /// Routes commonly check the extension of `originalname` as well as the
+  /// mimetype, and the picker can hand back JPEG bytes under a `.png` name —
+  /// which passes the mimetype check and fails the extension one. Renaming is
+  /// safe: the extension only ever describes the bytes we are about to send.
+  static String? _filenameFor(UploadFile file, MediaType? contentType) {
+    final name = file.filename ?? file.path.split(Platform.pathSeparator).last;
+    if (contentType == null) return file.filename;
+
+    final mime = contentType.mimeType;
+
+    String? wanted;
+    for (final entry in _typesByExtension.entries) {
+      if (entry.value == mime) {
+        wanted = entry.key;
+        break;
+      }
+    }
+    if (wanted == null) return file.filename;
+
+    // 'jpg' and 'jpeg' are the same type; leave a name that is already right.
+    if (_typesByExtension[_extensionOf(name) ?? ''] == mime) {
+      return file.filename;
+    }
+
+    final dot = name.lastIndexOf('.');
+    final stem = dot < 0 ? name : name.substring(0, dot);
+    return '$stem.$wanted';
   }
 
   Future<Map<String, String>> _buildHeaders({

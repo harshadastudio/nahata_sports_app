@@ -1,0 +1,1140 @@
+{
+  "info": {
+    "_postman_id": "9f2b6d10-4c53-4a8e-b0e7-adm1nrep0rts01",
+    "name": "Nahata Sports - Admin Panel - Reports & Analytics API",
+    "description": "Every API behind **Dashboard > Reports & Analytics** in the admin panel\n(`/reports`), plus the drill-down modals it opens.\n\n---\n\n## Base URL\nSet the `baseUrl` collection variable - it already ends in `/api`.\n- Local: `http://localhost:5050/api`\n- Production: confirm the API host with the backend team\n\n---\n\n## Auth\n1. Run **00 - Auth > Login (Admin)** first; its test script stores the tokens.\n2. Everything else inherits `Authorization: Bearer {{accessToken}}`.\n\nThe admin panel logs in with `portal: \"admin\"` - only `ADMIN` and\n`COMPLEX_ADMIN` may use it.\n\n---\n\n## Who sees what\nEvery `/reports/*` route requires a token AND one of `ADMIN`,\n`COMPLEX_ADMIN`, `EMPLOYEE`. `COACH` and `USER` are rejected at the router.\n\n| Role | Scope | Coach share / Nahata turnover |\n|---|---|---|\n| ADMIN | All complexes, plus a per-complex breakdown | Yes |\n| COMPLEX_ADMIN | Pinned to their own complex | Yes |\n| EMPLOYEE | Pinned to their own complex | **No** - omitted from the payload, not just hidden |\n\nA scoped caller cannot widen their scope: passing `sportComplexId` only ever\nnarrows a super admin's view, and is overridden for everyone else.\n\n---\n\n## Dates\nEvery range-aware endpoint takes plain `startDate` / `endDate` (`yyyy-mm-dd`).\nThe API widens them to `00:00:00` and `23:59:59.999` of those local days, so -\nunlike some other modules - you do NOT append a time to `endDate` here.\nOmit both for all-time (`period.allTime === true`).\n\nThe page's dropdown maps to: `7days`, `30days`, `90days`, `1year`, `custom`.\nChart endpoints additionally accept that keyword as `range`, but explicit\ndates always win.\n\n---\n\n## Screen to endpoint\n\n| UI element | Endpoint |\n|---|---|\n| Header stat cards + trend badges | `GET /reports/overview` |\n| Total Turnover / Coach Share / Nahata Turnover + Turnover by Complex | `GET /reports/turnover` |\n| Coaching / Court / Event cards -> **View in Detail** | `GET /reports/turnover/breakdown` |\n| **Export Excel** | `GET /reports/export/excel` (streams .xlsx) |\n| Booking trends / Revenue by court / Peak hours charts | `GET /reports/booking-trends`, `/revenue-by-court`, `/peak-hours` |\n| Court performance table + its court filter | `GET /reports/court-performance` |\n| Bookings modal | `GET /reports/bookings/filter-options`, `/bookings/all` |\n| Students modal | `GET /reports/students/filter-options`, `/students/all` |\n| New Students modal | `GET /reports/students/new/filter-options`, `/students/new` |\n| Coaches modal | `GET /reports/coaches/filter-options`, `/coaches/all` |\n| Coach Retention card + modal | `GET /reports/coaches/retention` |\n\n---\n\n## Response envelope\n```json\n{ \"success\": true, \"data\": { } }\n```\nErrors add `message` and `error`. The Excel export is the one exception - it\nreturns a binary body.\n\n## Status codes\n| Code | Meaning |\n|---|---|\n| 200 | OK |\n| 401 | Missing / expired token, or the account is disabled |\n| 403 | Role not allowed on `/reports/*` (COACH, USER) |\n| 500 | Server error - `error` carries the detail |\n\nNote: every read here is defensive - a failing chart query returns an empty\narray rather than a 500, so an empty chart is not proof the request failed.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5050/api",
+      "type": "string",
+      "description": "API host INCLUDING /api. No trailing slash."
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@nahatasports.com",
+      "type": "string"
+    },
+    {
+      "key": "adminPassword",
+      "value": "YourPassword@123",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string",
+      "description": "Set automatically by Login."
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string",
+      "description": "Set automatically by Login."
+    },
+    {
+      "key": "startDate",
+      "value": "2026-08-03",
+      "type": "string",
+      "description": "yyyy-mm-dd."
+    },
+    {
+      "key": "endDate",
+      "value": "2026-09-02",
+      "type": "string",
+      "description": "yyyy-mm-dd."
+    }
+  ],
+  "item": [
+    {
+      "name": "00 - Auth",
+      "description": "Run Login first. The admin panel authenticates on `portal: \"admin\"`.",
+      "item": [
+        {
+          "name": "Login (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "The admin panel signs in with `portal: \"admin\"` - only `ADMIN` and\n`COMPLEX_ADMIN` are accepted there. Everyone else is 403'd and belongs on the\nwebsite portal (`\"main\"`).\n\n`identifier` takes an email or a 10-digit phone; `email` is still accepted as a\nlegacy alias.\n\nThe test script stores the tokens into collection variables, so every other\nrequest here works straight after.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"portal\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 - Logged in",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login"
+                  ]
+                },
+                "description": "The admin panel signs in with `portal: \"admin\"` - only `ADMIN` and\n`COMPLEX_ADMIN` are accepted there. Everyone else is 403'd and belongs on the\nwebsite portal (`\"main\"`).\n\n`identifier` takes an email or a 10-digit phone; `email` is still accepted as a\nlegacy alias.\n\nThe test script stores the tokens into collection variables, so every other\nrequest here works straight after.",
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"identifier\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"portal\": \"admin\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Login successful\",\n  \"data\": {\n    \"user\": {\n      \"id\": 1,\n      \"name\": \"Admin User\",\n      \"email\": \"admin@nahatasports.com\",\n      \"role\": \"ADMIN\",\n      \"sportComplexId\": null\n    },\n    \"accessToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n    \"refreshToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.success && r.data) {",
+                  "  pm.collectionVariables.set('accessToken', r.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', r.data.refreshToken);",
+                  "  console.log('Logged in as', r.data.user.email, '| role:', r.data.user.role,",
+                  "              '| complex:', r.data.user.sportComplexId);",
+                  "}",
+                  "pm.test('Login OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Access Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Swap the refresh token for a new access token once requests start 401ing.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.success && r.data && r.data.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', r.data.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 - Reports page load",
+      "description": "The five calls the Reports & Analytics screen fires on mount / on a range\nchange. All but the retention card follow the one date range shown under the\npage title.",
+      "item": [
+        {
+          "name": "Dashboard Overview (header stats)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/overview?startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "overview"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "Counts + trend badges for the range. Returns `data` with:\n\n`totalUsers`, `totalStudents`, `newStudentsCount`, `newStudentsPercentage`,\n`activeMemberships`, `totalBookings`, `totalRevenue`, `todayBookings`,\n`upcomingBookings`, `activeEnrollments`, `activeSportsComplexes`, `totalCourts`,\n`totalCoaches`, `period { startDate, endDate, comparedToStart }`,\n`periodCounts { bookings, bookingsPrior, students, ..., revenue, revenuePrior }`\nand the badge pairs `revenueChange` / `revenueTrendIsNew`, `bookingsTrend` /\n`bookingsTrendIsNew`, `studentsTrend`, `usersTrend`, `coachesTrend`.\n\n`*TrendIsNew` = there was no baseline in the prior period, so render **New**\ninstead of a fake +100%. That is the \"compared with the previous period of the\nsame length\" line under the page title.\n\n`totalUsers` is website-wide and NOT complex-scoped (Active accounts only);\neverything else is scoped."
+          },
+          "response": []
+        },
+        {
+          "name": "Turnover (the 3 headline cards)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/turnover?startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "turnover"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "Feeds **TOTAL TURNOVER**, **TOTAL COACH SHARE** and **NAHATA TURNOVER**, plus the\nTURNOVER BY COMPLEX table underneath.\n\n```\ndata = {\n  period: { startDate, endDate, allTime },\n  scope: 'all' | 'complex',  sportComplexId,\n  totalTurnover,\n  bySource: { coaching, court, event },   // the 3 drill-down cards\n  byComplex: [ { sportComplexId, name, city, totalTurnover, bySource,\n                 coachShare, nahataTurnover } ],\n  coachShare, nahataTurnover, diagnostics, reconciles   // ADMIN / COMPLEX_ADMIN only\n}\n```\n\n**Role visibility** - an `EMPLOYEE` gets Total Turnover only; `coachShare`,\n`nahataTurnover`, `diagnostics` and `reconciles` are omitted from the payload\nentirely, not merely hidden in the UI.\n\n`byComplex` is only built for an unscoped caller (super admin). A COMPLEX_ADMIN\ngets `[]` because their whole payload already is their complex.\n\n`reconciles` asserts `nahataTurnover + coachShare === totalTurnover` - if it ever\ncomes back false, the figures disagree and `diagnostics` says where.\n\nOmit both dates for an all-time figure (`period.allTime === true`)."
+          },
+          "response": [
+            {
+              "name": "200 - Last 30 days",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/reports/turnover?startDate={{startDate}}&endDate={{endDate}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "reports",
+                    "turnover"
+                  ],
+                  "query": [
+                    {
+                      "key": "startDate",
+                      "value": "{{startDate}}",
+                      "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "{{endDate}}",
+                      "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                    }
+                  ]
+                },
+                "description": "Feeds **TOTAL TURNOVER**, **TOTAL COACH SHARE** and **NAHATA TURNOVER**, plus the\nTURNOVER BY COMPLEX table underneath.\n\n```\ndata = {\n  period: { startDate, endDate, allTime },\n  scope: 'all' | 'complex',  sportComplexId,\n  totalTurnover,\n  bySource: { coaching, court, event },   // the 3 drill-down cards\n  byComplex: [ { sportComplexId, name, city, totalTurnover, bySource,\n                 coachShare, nahataTurnover } ],\n  coachShare, nahataTurnover, diagnostics, reconciles   // ADMIN / COMPLEX_ADMIN only\n}\n```\n\n**Role visibility** - an `EMPLOYEE` gets Total Turnover only; `coachShare`,\n`nahataTurnover`, `diagnostics` and `reconciles` are omitted from the payload\nentirely, not merely hidden in the UI.\n\n`byComplex` is only built for an unscoped caller (super admin). A COMPLEX_ADMIN\ngets `[]` because their whole payload already is their complex.\n\n`reconciles` asserts `nahataTurnover + coachShare === totalTurnover` - if it ever\ncomes back false, the figures disagree and `diagnostics` says where.\n\nOmit both dates for an all-time figure (`period.allTime === true`)."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"period\": {\n      \"startDate\": \"2026-08-03\",\n      \"endDate\": \"2026-09-02\",\n      \"allTime\": false\n    },\n    \"scope\": \"all\",\n    \"sportComplexId\": null,\n    \"totalTurnover\": 640878.5,\n    \"bySource\": {\n      \"coaching\": 31405,\n      \"court\": 609473.5,\n      \"event\": 0\n    },\n    \"coachShare\": 14800,\n    \"nahataTurnover\": 626078.5,\n    \"reconciles\": true,\n    \"byComplex\": [\n      {\n        \"sportComplexId\": 2,\n        \"name\": \"Gangadham Chowk\",\n        \"city\": \"Pune\",\n        \"totalTurnover\": 2380,\n        \"bySource\": {\n          \"coaching\": 2380,\n          \"court\": 0,\n          \"event\": 0\n        },\n        \"coachShare\": 600,\n        \"nahataTurnover\": 1780\n      },\n      {\n        \"sportComplexId\": 1,\n        \"name\": \"Sinhagad Road\",\n        \"city\": \"Pune\",\n        \"totalTurnover\": 638498.5,\n        \"bySource\": {\n          \"coaching\": 29025,\n          \"court\": 609473.5,\n          \"event\": 0\n        },\n        \"coachShare\": 14200,\n        \"nahataTurnover\": 624298.5\n      }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Turnover Breakdown (View in Detail)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/turnover/breakdown?startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "turnover",
+                "breakdown"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "Behind **View in Detail** on all three source cards. ONE call returns all three\ntrees, so the modal switches source and expands a node with no round trip - and\nthe Excel export builds every sheet from the same snapshot, so the workbook can\nnever mix data read at two different instants.\n\n```\ndata = {\n  period, scope, sportComplexId,\n  totals: { court, coaching, event, total },\n  sources: {\n    court:    { key, label, hint, levels: ['Complex','Sport','Court'],\n                countLabel: 'Bookings', hasCoachShare: false, total, nodes: [] },\n    coaching: { levels: ['Complex','Sport','Coach'], countLabel: 'Students',\n                hasCoachShare, total, coachShare, nahataRevenue, nodes: [] },\n    event:    { levels: ['Complex','Event','Pass / Slot'], countLabel: 'Passes',\n                total, nodes: [] }\n  }\n}\n```\n\nEach node is `{ id, name, subtitle, count, revenue, children[] }`, three levels\ndeep. For coaching, nodes also carry `coachShare` / `nahataRevenue` - stripped\nrecursively for an `EMPLOYEE`, along with `hasCoachShare: false`.\n\nCoaching money is dated by when it was **recorded** (`FeePayments.paidOn`), so a\nmonth renewal lands in the month it was collected, not the month the enrolment\nrow was created."
+          },
+          "response": [
+            {
+              "name": "200 - Trees",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/reports/turnover/breakdown?startDate={{startDate}}&endDate={{endDate}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "reports",
+                    "turnover",
+                    "breakdown"
+                  ],
+                  "query": [
+                    {
+                      "key": "startDate",
+                      "value": "{{startDate}}",
+                      "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "{{endDate}}",
+                      "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                    }
+                  ]
+                },
+                "description": "Behind **View in Detail** on all three source cards. ONE call returns all three\ntrees, so the modal switches source and expands a node with no round trip - and\nthe Excel export builds every sheet from the same snapshot, so the workbook can\nnever mix data read at two different instants.\n\n```\ndata = {\n  period, scope, sportComplexId,\n  totals: { court, coaching, event, total },\n  sources: {\n    court:    { key, label, hint, levels: ['Complex','Sport','Court'],\n                countLabel: 'Bookings', hasCoachShare: false, total, nodes: [] },\n    coaching: { levels: ['Complex','Sport','Coach'], countLabel: 'Students',\n                hasCoachShare, total, coachShare, nahataRevenue, nodes: [] },\n    event:    { levels: ['Complex','Event','Pass / Slot'], countLabel: 'Passes',\n                total, nodes: [] }\n  }\n}\n```\n\nEach node is `{ id, name, subtitle, count, revenue, children[] }`, three levels\ndeep. For coaching, nodes also carry `coachShare` / `nahataRevenue` - stripped\nrecursively for an `EMPLOYEE`, along with `hasCoachShare: false`.\n\nCoaching money is dated by when it was **recorded** (`FeePayments.paidOn`), so a\nmonth renewal lands in the month it was collected, not the month the enrolment\nrow was created."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"period\": {\n      \"startDate\": \"2026-08-03\",\n      \"endDate\": \"2026-09-02\",\n      \"allTime\": false\n    },\n    \"scope\": \"all\",\n    \"sportComplexId\": null,\n    \"totals\": {\n      \"court\": 609473.5,\n      \"coaching\": 31405,\n      \"event\": 0,\n      \"total\": 640878.5\n    },\n    \"sources\": {\n      \"coaching\": {\n        \"key\": \"coaching\",\n        \"label\": \"Coaching Turnover\",\n        \"hint\": \"Coaching fees received, counted on the date the money was recorded.\",\n        \"levels\": [\n          \"Complex\",\n          \"Sport\",\n          \"Coach\"\n        ],\n        \"countLabel\": \"Students\",\n        \"hasCoachShare\": true,\n        \"total\": 31405,\n        \"coachShare\": 14800,\n        \"nahataRevenue\": 16605,\n        \"nodes\": [\n          {\n            \"id\": 1,\n            \"name\": \"Sinhagad Road\",\n            \"subtitle\": \"Pune\",\n            \"count\": 42,\n            \"revenue\": 29025,\n            \"coachShare\": 14200,\n            \"nahataRevenue\": 14825,\n            \"children\": [\n              {\n                \"id\": 19,\n                \"name\": \"Badminton\",\n                \"subtitle\": null,\n                \"count\": 42,\n                \"revenue\": 29025,\n                \"coachShare\": 14200,\n                \"nahataRevenue\": 14825,\n                \"children\": [\n                  {\n                    \"id\": 23,\n                    \"name\": \"Dashrath Birhamane\",\n                    \"subtitle\": null,\n                    \"count\": 42,\n                    \"revenue\": 29025,\n                    \"coachShare\": 14200,\n                    \"nahataRevenue\": 14825,\n                    \"children\": []\n                  }\n                ]\n              }\n            ]\n          }\n        ]\n      },\n      \"court\": {\n        \"key\": \"court\",\n        \"label\": \"Court Booking Turnover\",\n        \"levels\": [\n          \"Complex\",\n          \"Sport\",\n          \"Court\"\n        ],\n        \"countLabel\": \"Bookings\",\n        \"hasCoachShare\": false,\n        \"total\": 609473.5,\n        \"nodes\": [\n          \"...\"\n        ]\n      },\n      \"event\": {\n        \"key\": \"event\",\n        \"label\": \"Event Turnover\",\n        \"levels\": [\n          \"Complex\",\n          \"Event\",\n          \"Pass / Slot\"\n        ],\n        \"countLabel\": \"Passes\",\n        \"hasCoachShare\": false,\n        \"total\": 0,\n        \"nodes\": []\n      }\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Export Excel (workbook download)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/export/excel?startDate={{startDate}}&endDate={{endDate}}&rangeLabel=Last 30 Days",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "export",
+                "excel"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                },
+                {
+                  "key": "rangeLabel",
+                  "value": "Last 30 Days",
+                  "description": "Cosmetic label printed inside the workbook."
+                }
+              ]
+            },
+            "description": "The green **Export Excel** button. Streams a four-sheet `.xlsx` built server-side:\n**Summary**, **Court Booking**, **Coaching**, **Events** - the full hierarchy and\nevery line item behind it, not just what the page happens to have fetched.\n\nNot a JSON endpoint. In Postman use **Send and Download**; in code request it as\na blob (`responseType: 'blob'`).\n\nResponse headers: `Content-Type: application/vnd.openxmlformats-officedocument.\nspreadsheetml.sheet`, `Content-Disposition: attachment; filename=\"...\"`, and\n`Access-Control-Expose-Headers: Content-Disposition` - without that last one a\ncross-origin XHR cannot read the filename the server chose.\n\n`rangeLabel` is cosmetic: it is printed inside the workbook (\"Last 30 Days\",\n\"Custom range\", ...). The coach-share columns are omitted for an `EMPLOYEE`.\n\nNote: once the workbook starts streaming the API cannot switch to a JSON error,\nso a mid-stream failure ends the response early rather than returning a 500 body."
+          },
+          "response": []
+        },
+        {
+          "name": "Coach Retention (headline card)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/coaches/retention",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "coaches",
+                "retention"
+              ]
+            },
+            "description": "Called once with NO filters on page load to feed the retention summary card; the\nmodal re-fetches the same endpoint with its own filters (see folder 03).\n\nDefaults to the current month when `month` is omitted."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - Charts & court performance",
+      "description": "The chart row and the table below it. Each takes both `range` and explicit\ndates; the explicit dates win when both are present.\n\nThese handlers swallow their own errors and return `[]`, so an empty chart\nmeans either no data or a query that failed quietly - check the API log.",
+      "item": [
+        {
+          "name": "Booking Trends (line chart)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/booking-trends?range=30days&startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "booking-trends"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "30days",
+                  "description": "7days | 30days | 90days | 1year. Ignored when startDate AND endDate are both sent."
+                },
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "`data` is an array of `{ date: 'yyyy-mm-dd', bookings, revenue }`, one row per\nday that had bookings.\n\nThe page sends BOTH `range` and the resolved `startDate`/`endDate`. When both\ndates are present they win and `range` is ignored; otherwise `range` is read as a\n\"last N days\" preset (7/30/90/365, default 30)."
+          },
+          "response": []
+        },
+        {
+          "name": "Revenue by Court (bar chart)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/revenue-by-court?range=30days&startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "revenue-by-court"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "30days",
+                  "description": "7days | 30days | 90days | 1year. Ignored when startDate AND endDate are both sent."
+                },
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "`data` is an array of `{ courtName, revenue, bookings }`.\nSame `range` + dates rule as Booking Trends."
+          },
+          "response": []
+        },
+        {
+          "name": "Peak Hours (chart)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/peak-hours?range=30days&startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "peak-hours"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "30days",
+                  "description": "7days | 30days | 90days | 1year. Ignored when startDate AND endDate are both sent."
+                },
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "`data` is one row per hour of the day (every hour present, zero-filled), so the\nchart has no gaps. Same `range` + dates rule as Booking Trends."
+          },
+          "response": []
+        },
+        {
+          "name": "Court Performance (table)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/court-performance?range=30days&startDate={{startDate}}&endDate={{endDate}}&courtId=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "court-performance"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "30days",
+                  "description": "7days | 30days | 90days | 1year. Ignored when startDate AND endDate are both sent."
+                },
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                },
+                {
+                  "key": "courtId",
+                  "value": "",
+                  "description": "Optional. Omit for all courts."
+                }
+              ]
+            },
+            "description": "The COURT PERFORMANCE table and the court filter dropdown above it.\n\n`data` is an array of `{ id, courtName, sportComplexName, totalBookings,\nbookedHours, openHoursPerDay, revenue, utilization }`.\n\n`utilization` is a percentage capped at 100. Omit `courtId` (the UI's \"all\") to\nget every court - the page also builds the dropdown from that unfiltered call."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 - Drill-down modals",
+      "description": "Each modal loads its filter options once, then pages the list. All are\ncomplex-scoped; `sportComplexId` narrows a super admin's view and is\noverridden for anyone already scoped.",
+      "item": [
+        {
+          "name": "Bookings - Filter Options",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/bookings/filter-options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "bookings",
+                "filter-options"
+              ]
+            },
+            "description": "Fills the Bookings modal's dropdowns.\n`data = { sources: ['Website','Admin','Khelomore',...], complexes: [{id,name,city}],\nsports: [{id,name}] }`.\n\nA COMPLEX_ADMIN only ever sees their own complex in `complexes`."
+          },
+          "response": []
+        },
+        {
+          "name": "Bookings - List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/bookings/all?month=&year=&sportComplexId=&sportId=&bookingSource=&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "bookings",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "",
+                  "description": "1-12."
+                },
+                {
+                  "key": "year",
+                  "value": "",
+                  "description": "e.g. 2026."
+                },
+                {
+                  "key": "sportComplexId",
+                  "value": "",
+                  "description": "Super admin only - narrows, never widens."
+                },
+                {
+                  "key": "sportId",
+                  "value": ""
+                },
+                {
+                  "key": "bookingSource",
+                  "value": "",
+                  "description": "One of the values from filter-options."
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "`data = { bookings: [...], total, page, totalPages }`, 20 per page in the UI,\nordered by date then start time, newest first.\n\n**`sportComplexId` cannot widen scope** - a COMPLEX_ADMIN's own complex always\nwins over whatever the param says. It only narrows for a super admin.\n\nOnly revenue-bearing bookings are counted (the same filter the turnover figures\nuse), so cancelled/unpaid rows do not appear."
+          },
+          "response": []
+        },
+        {
+          "name": "Students - Filter Options",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/students/filter-options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "students",
+                "filter-options"
+              ]
+            },
+            "description": "`data = { batches: [{id, name, schedule, days, sportComplexId, sport, sportComplex}],\ncomplexes: [{id,name,city}], statuses: ['Active','Inactive','Graduated','Transferred'] }`."
+          },
+          "response": []
+        },
+        {
+          "name": "Students - List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/students/all?month=&batchId=&sportComplexId=&status=&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "students",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "",
+                  "description": "1-12."
+                },
+                {
+                  "key": "batchId",
+                  "value": ""
+                },
+                {
+                  "key": "sportComplexId",
+                  "value": "",
+                  "description": "Super admin only - narrows, never widens."
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Active | Inactive | Graduated | Transferred."
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "`data = { students: [...], total, page, totalPages }`, ordered by enrollment date\ndescending.\n\nStudents are scoped through the batches they are enrolled in, so a complex filter\nforces the batch join to be required and out-of-complex students drop out."
+          },
+          "response": []
+        },
+        {
+          "name": "New Students - Filter Options",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/students/new/filter-options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "students",
+                "new",
+                "filter-options"
+              ]
+            },
+            "description": "`data = { batches, complexes, sports }`. Also used by the Coach Retention modal -\nthe two share one filter bar."
+          },
+          "response": []
+        },
+        {
+          "name": "New Students + Retention Rate",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/students/new?month=&batchId=&sportComplexId=&sportId=&retentionRatio=&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "students",
+                "new"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "",
+                  "description": "1-12. Defaults to the current month."
+                },
+                {
+                  "key": "batchId",
+                  "value": ""
+                },
+                {
+                  "key": "sportComplexId",
+                  "value": ""
+                },
+                {
+                  "key": "sportId",
+                  "value": ""
+                },
+                {
+                  "key": "retentionRatio",
+                  "value": "",
+                  "description": "continued | discontinued."
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "`data = { students: [...], total, page, totalPages, retentionRate,\nenrolledLastMonth, continuedThisMonth }`.\n\nRetention Rate (%) = students continued this month / students enrolled last\nmonth x 100.\n\nEvery student row carries a `continued` flag (true when their status is still\n`Active`). `retentionRatio=continued` filters to Active students,\n`discontinued` to everyone else."
+          },
+          "response": []
+        },
+        {
+          "name": "Coaches - Filter Options",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/coaches/filter-options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "coaches",
+                "filter-options"
+              ]
+            },
+            "description": "`data = { batches: [{id, name, sport}] }` - the Coaches modal only filters by batch."
+          },
+          "response": []
+        },
+        {
+          "name": "Coaches - List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/coaches/all?month=&year=&batchId=&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "coaches",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": ""
+                },
+                {
+                  "key": "year",
+                  "value": ""
+                },
+                {
+                  "key": "batchId",
+                  "value": ""
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "`data = { coaches: [...], total, page, totalPages, totalStudents, totalRevenue }`.\n\nEach coach carries `Batches[]` (id, name, fees, currentStudents, sport) plus a\nderived `totalStudents` and `totalRevenue`.\n\n**Caveat**: `totalRevenue` here is `currentStudents x batch fees` - a *potential*\nfigure computed from active batches, NOT money actually collected. Use\n`/reports/turnover/breakdown` (coaching tree) for real collected coaching revenue.\n\nFiltering by `batchId` drops coaches who have no matching batch, and `total` then\nreflects the filtered count rather than the raw query count."
+          },
+          "response": []
+        },
+        {
+          "name": "Coach Retention - Filtered (modal)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/coaches/retention?month=&year=&batchId=&sportComplexId=&sportId=&retentionRatio=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "coaches",
+                "retention"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "",
+                  "description": "1-12. Defaults to the current month."
+                },
+                {
+                  "key": "year",
+                  "value": ""
+                },
+                {
+                  "key": "batchId",
+                  "value": ""
+                },
+                {
+                  "key": "sportComplexId",
+                  "value": ""
+                },
+                {
+                  "key": "sportId",
+                  "value": ""
+                },
+                {
+                  "key": "retentionRatio",
+                  "value": "",
+                  "description": "continued | discontinued."
+                }
+              ]
+            },
+            "description": "\"Which coach keeps their students?\" for a chosen month M.\n\n- `base` = students whose enrolment in that coach's batch was live in **M-1**\n- `retained` = of those, still live in M (enrolment still valid, or they\n  re-enrolled with the same coach during M)\n- `dropped` = base - retained, `retentionRate` = retained / base x 100\n\n```\ndata = {\n  month, monthLabel, previousMonth, previousMonthLabel,\n  overall: { coaches, coachesWithBase, base, retained, dropped, newJoiners,\n             activeThisMonth, retentionRate, bestCoach },\n  coaches: [ { coachId, coachName, email, phone, sportComplex, sports[],\n               batchCount, base, retained, dropped, newJoiners, activeThisMonth,\n               retentionRate, students[] } ]\n}\n```\n\n\"Live in month X\" uses the enrolment's own window (enrollmentDate -> validTill,\nfalling back to the batch end date, a missing end meaning ongoing) - the same rule\nthe coach panel's Student Enrollments screen uses, so the two never disagree.\n\nCoaches are sorted best-retention first, and a coach with no base sinks below a\nreal 5/5 rather than outranking it on a 0/0. Passing `retentionRatio` also drops\ncoaches left with no matching students."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 - Other analytics endpoints",
+      "description": "The rest of the `/reports` module - same auth, roles, scoping and date rules.\nThese are defined in the admin panel's Redux slice but not rendered by the\ncurrent screen.",
+      "item": [
+        {
+          "name": "Revenue Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/revenue?startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "revenue"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "`data = { totalRevenue, revenueByMethod, revenueBySource, paymentStatusDist,\navgTransaction, dailyRevenue, totalTransactions, successRate }`.\n\nPayment-ledger based, so it answers a different question from `/reports/turnover`\n(which is booking/enrolment based). Expect the two to differ - do not treat this\nas the turnover figure.\n\nWired up in the admin panel's reports Redux slice; not called by the current\nReports screen, but live and role-gated exactly like the rest of the module."
+          },
+          "response": []
+        },
+        {
+          "name": "Booking Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/bookings?startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "Aggregate booking metrics for the range - status split, per-sport and per-court\ncounts, trend series.\n\nWired up in the admin panel's reports Redux slice; not called by the current\nReports screen, but live and role-gated exactly like the rest of the module."
+          },
+          "response": []
+        },
+        {
+          "name": "Membership Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/memberships?startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "memberships"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "Active / expired membership counts and revenue for the range.\n\nWired up in the admin panel's reports Redux slice; not called by the current\nReports screen, but live and role-gated exactly like the rest of the module."
+          },
+          "response": []
+        },
+        {
+          "name": "User Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/users?startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "User growth and activity for the range. Website-wide, not complex-scoped.\n\nWired up in the admin panel's reports Redux slice; not called by the current\nReports screen, but live and role-gated exactly like the rest of the module."
+          },
+          "response": []
+        },
+        {
+          "name": "Coaching Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/coaching?startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "coaching"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "Batch, enrolment and coaching-revenue metrics for the range.\n\nWired up in the admin panel's reports Redux slice; not called by the current\nReports screen, but live and role-gated exactly like the rest of the module."
+          },
+          "response": []
+        },
+        {
+          "name": "Facility Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/facilities?startDate={{startDate}}&endDate={{endDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "facilities"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 00:00:00 of that day."
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "yyyy-mm-dd. Widened server-side to 23:59:59.999, so a plain date is correct here."
+                }
+              ]
+            },
+            "description": "Court / complex utilisation metrics for the range.\n\nWired up in the admin panel's reports Redux slice; not called by the current\nReports screen, but live and role-gated exactly like the rest of the module."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

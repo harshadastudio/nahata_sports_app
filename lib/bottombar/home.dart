@@ -902,6 +902,7 @@
 //
 
 import 'dart:convert';
+import '../core/utils/app_logger.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_options.dart';
@@ -911,6 +912,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:nahata_app/core/network/http_logged.dart' as http;
 import 'package:nahata_app/bottombar/profile.dart';
+import 'package:nahata_app/bottombar/profile_details.dart';
 import 'package:nahata_app/bottombar/screen.dart';
 import 'package:nahata_app/bottombar/slotbook.dart';
 import 'package:nahata_app/bottombar/event.dart';
@@ -957,7 +959,7 @@ class _UserOptionsPageState extends State<UserOptionsPage> {
     if (await canLaunchUrl(phoneUri)) {
       await launchUrl(phoneUri);
     } else {
-      print("Cannot launch phone dialer");
+      AppLogger.debug("Cannot launch phone dialer", name: 'home');
     }
   }
 
@@ -1165,11 +1167,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final response = await ApiClient.instance.get(
         ApiEndpoints.sportsComplexes,
-        query: {
-          'status': 'Active',
-          'showOnFrontend': 'true',
-          'limit': 50,
-        },
+        query: {'status': 'Active', 'showOnFrontend': 'true', 'limit': 50},
       );
 
       final List complexes = response.payload['sportsComplexes'] as List? ?? [];
@@ -1190,7 +1188,10 @@ class _HomeScreenState extends State<HomeScreen> {
       _venues = [];
     }
 
-    if (mounted) setState(() { _loadingVenues = false; });
+    if (mounted)
+      setState(() {
+        _loadingVenues = false;
+      });
   }
 
   ProfileProvider? _profileProvider;
@@ -1230,7 +1231,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final initial = loggedIn ? provider.initial : '?';
     final image = loggedIn ? provider.imageUrl : null;
 
-    if (initial != userInitial || loggedIn != isLoggedIn || image != _avatarUrl) {
+    if (initial != userInitial ||
+        loggedIn != isLoggedIn ||
+        image != _avatarUrl) {
       setState(() {
         userInitial = initial;
         isLoggedIn = loggedIn;
@@ -1303,7 +1306,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final address = data['address'];
-        print("📍 Raw Address: $address");
+        AppLogger.debug("📍 Raw Address: $address", name: 'home');
 
         // Collect parts safely (skip nulls and duplicates)
         List parts =
@@ -1328,21 +1331,21 @@ class _HomeScreenState extends State<HomeScreen> {
         // Join nicely
         String formatted = parts.join(', ');
 
-        print("✅ Formatted Address: $formatted");
+        AppLogger.debug("✅ Formatted Address: $formatted", name: 'home');
 
         setState(() {
           _locationText = formatted;
           _isLoadingLocation = false;
         });
       } else {
-        print("⚠️ Error: ${response.statusCode}");
+        AppLogger.debug("⚠️ Error: ${response.statusCode}", name: 'home');
         setState(() {
           _locationText = 'Location Not Found';
           _isLoadingLocation = false;
         });
       }
     } catch (e) {
-      print("❌ Reverse geocode error: $e");
+      AppLogger.debug("❌ Reverse geocode error: $e", name: 'home');
       setState(() {
         _locationText = 'Location Error';
         _isLoadingLocation = false;
@@ -1615,7 +1618,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   // 👤 Profile Avatar
                   GestureDetector(
                     onTap: () async {
-                      print("🟢 Avatar tapped | isLoggedIn = $isLoggedIn");
+                      AppLogger.debug("🟢 Avatar tapped | isLoggedIn = $isLoggedIn", name: 'home');
 
                       if (isLoggedIn) {
                         // ✅ Live profile (cached instantly, refreshed if stale)
@@ -1625,7 +1628,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         final userId = provider.userId ?? '';
 
                         if (userId.isEmpty) {
-                          print("⚠️ No user ID found in stored user data");
+                          AppLogger.debug("⚠️ No user ID found in stored user data", name: 'home');
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
@@ -1636,14 +1639,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           return;
                         }
 
-                        // await Navigator.push(
-                        //   context,
-                        //   MaterialPageRoute(
-                        //     builder: (_) => Screen(studentId: userId),
-                        //   ),
-                        // );
+                        if (!context.mounted) return;
+
+                        // 👤 Full profile — `GET /auth/profile` plus the
+                        // student record, fetched by the screen itself.
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ProfileDetailsScreen(),
+                          ),
+                        );
 
                         // 🔁 After returning, pick up any profile edits.
+                        if (!context.mounted) return;
                         await provider.refresh(force: true);
                         _applyProfile();
                       } else {
@@ -1659,7 +1667,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           context,
                           MaterialPageRoute(builder: (_) => LoginScreen()),
                         );
-
                       }
                     },
                     child: CircleAvatar(
@@ -1667,7 +1674,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       backgroundColor: Colors.blueAccent,
                       // Photo when the profile has one, otherwise the initial —
                       // same circle, same size, same style either way.
-                      backgroundImage: (_avatarUrl != null && _avatarUrl!.isNotEmpty)
+                      backgroundImage:
+                          (_avatarUrl != null && _avatarUrl!.isNotEmpty)
                           ? CachedNetworkImageProvider(_avatarUrl!)
                           : null,
                       child: (_avatarUrl != null && _avatarUrl!.isNotEmpty)
@@ -1863,21 +1871,29 @@ class _HomeScreenState extends State<HomeScreen> {
                                   );
 
                                   // 👇 Print for debugging
-                                  print(
-                                    "🟢 Navigating to Viewgame for location: ${_venues[index]['name']}",
-                                  );
+                                  AppLogger.debug("🟢 Navigating to Viewgame for location: ${_venues[index]['name']}", name: 'home');
                                 },
                                 child: Stack(
                                   fit: StackFit.expand,
                                   children: [
                                     (() {
-                                      final img = (_venues[index]['image'] ?? '').toString();
+                                      final img =
+                                          (_venues[index]['image'] ?? '')
+                                              .toString();
                                       if (img.startsWith('http')) {
-                                        return Image.network(img, fit: BoxFit.cover);
+                                        return Image.network(
+                                          img,
+                                          fit: BoxFit.cover,
+                                        );
                                       } else if (img.isNotEmpty) {
-                                        return Image.asset(img, fit: BoxFit.cover);
+                                        return Image.asset(
+                                          img,
+                                          fit: BoxFit.cover,
+                                        );
                                       } else {
-                                        return Container(color: Colors.grey[300]);
+                                        return Container(
+                                          color: Colors.grey[300],
+                                        );
                                       }
                                     })(),
                                     Container(
@@ -3482,7 +3498,6 @@ class _LocationInfoPageState extends State<LocationInfoPage>
 //     ],
 //   );
 // }
-
 
 // class Screen extends StatefulWidget {
 //   final String studentId;

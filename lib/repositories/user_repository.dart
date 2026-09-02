@@ -1,7 +1,11 @@
 import '../core/config/api_config.dart';
 import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
+import '../core/network/api_response.dart';
 import '../core/utils/app_logger.dart';
+import '../models/attendance_record_model.dart';
+import '../models/enrollment_model.dart';
+import '../models/feedback_thread_model.dart';
 import '../models/student_profile_model.dart';
 
 /// Student dashboard payload (`GET /student_dashboard`).
@@ -66,8 +70,10 @@ class UserRepository {
     );
 
     if (!response.isOk) {
-      AppLogger.debug('Dashboard returned not-ok: ${response.message}',
-          name: 'Profile');
+      AppLogger.debug(
+        'Dashboard returned not-ok: ${response.message}',
+        name: 'Profile',
+      );
       return const StudentDashboard();
     }
 
@@ -95,6 +101,179 @@ class UserRepository {
       AppLogger.error('students/me failed', name: 'Profile', error: e);
       return null;
     }
+  }
+
+  /// `GET /attendance/my` — the signed-in student's attendance history.
+  ///
+  /// Returns a bare list under `data`, newest first. Null is "this account has
+  /// no attendance to show" — a staff login the route does not serve, or a
+  /// call that failed — which lets the profile drop the section rather than
+  /// render an error where a history should be. An empty list is a real
+  /// answer: enrolled, but not marked for anything yet.
+  Future<List<AttendanceRecord>?> fetchMyAttendance() async {
+    try {
+      final response = await _api.get(ApiEndpoints.myAttendance);
+      if (!response.isOk) return null;
+
+      final body = response.data;
+      final raw = body is Map ? body['data'] : null;
+      if (raw is! List) return null;
+
+      return raw
+          .whereType<Map>()
+          .map(
+            (row) => AttendanceRecord.fromJson(Map<String, dynamic>.from(row)),
+          )
+          .toList(growable: false);
+    } on ApiException catch (e) {
+      AppLogger.debug(
+        'attendance/my unavailable: ${e.message}',
+        name: 'Profile',
+      );
+      return null;
+    } catch (e) {
+      AppLogger.error('attendance/my failed', name: 'Profile', error: e);
+      return null;
+    }
+  }
+
+  /// `GET /students/me/enrollments` — the signed-in student's batches.
+  ///
+  /// Replaces the legacy `nahatasports.com/api/my-enrollments?user_id=`, which
+  /// took the id from a query string and no token at all. This one identifies
+  /// the student from the bearer token, so one account can no longer read
+  /// another's enrolments by changing a number in the URL.
+  ///
+  /// An account with no student record answers `{success: true, data: []}`,
+  /// so an empty list is a real answer and only a failure throws.
+  Future<List<EnrollmentModel>> fetchMyEnrollments() async {
+    final response = await _api.get(ApiEndpoints.myEnrollments);
+    if (!response.isOk) throw response.toException();
+
+    return _listOf(response, (row) => EnrollmentModel.fromJson(row));
+  }
+
+  /// `GET /fees/my` — approved enrolments as gate passes, QR already built.
+  Future<List<GatePassModel>> fetchMyGatePasses() async {
+    final response = await _api.get(ApiEndpoints.myGatePasses);
+    if (!response.isOk) throw response.toException();
+
+    return _listOf(response, (row) => GatePassModel.fromJson(row));
+  }
+
+  /// `GET /students/feedback` — feedback notifications for this student.
+  ///
+  /// Returns the raw notification rows: the shape is the shared `Notification`
+  /// model the notifications screen already renders, so wrapping it in a
+  /// second type here would only fork it.
+  Future<List<Map<String, dynamic>>> fetchMyFeedback() async {
+    final response = await _api.get(ApiEndpoints.myStudentFeedback);
+    if (!response.isOk) throw response.toException();
+
+    return _listOf(response, (row) => row);
+  }
+
+  /// `POST /students/feedback/read` — marks every feedback item read.
+  ///
+  /// Returns false rather than throwing: failing to clear a badge is not worth
+  /// interrupting the screen the user just opened.
+  Future<bool> markFeedbackRead() async {
+    try {
+      final response = await _api.post(ApiEndpoints.markStudentFeedbackRead);
+      return response.isOk;
+    } on ApiException catch (e) {
+      AppLogger.debug('feedback/read failed: ${e.message}', name: 'Profile');
+      return false;
+    }
+  }
+
+  /// `POST /user-feedback` — auth, `{subject, rating, message}`.
+  ///
+  /// Name and email come off the bearer token server-side, so they are not
+  /// sent. Answers 201 with the reference number the user quotes in a
+  /// follow-up.
+  Future<String?> submitFeedback({
+    required String subject,
+    required String message,
+    int? rating,
+  }) async {
+    if (subject.trim().isEmpty) {
+      throw const ValidationException('Please add a subject.');
+    }
+    if (message.trim().isEmpty) {
+      throw const ValidationException('Please write your feedback.');
+    }
+
+    final response = await _api.post(
+      ApiEndpoints.userFeedback,
+      body: {
+        'subject': subject.trim(),
+        'message': message.trim(),
+        if (rating != null) 'rating': rating,
+      },
+    );
+
+    if (!response.isOk) throw response.toException();
+    return response.payload['referenceNumber']?.toString();
+  }
+
+  /// `GET /user-feedback/mine` — the user's own threads.
+  ///
+  /// Wrapped as `data: {feedbacks: [...]}`, unlike the bare lists most of
+  /// these routes return, so the reader looks inside the envelope.
+  Future<List<FeedbackThread>> fetchMyFeedbackThreads() async {
+    final response = await _api.get(ApiEndpoints.myUserFeedback);
+    if (!response.isOk) throw response.toException();
+
+    final data = response.data;
+    final envelope = data is Map ? data['data'] : null;
+    final raw = envelope is Map ? envelope['feedbacks'] : envelope;
+    if (raw is! List) return const [];
+
+    return raw
+        .whereType<Map>()
+        .map((row) => FeedbackThread.fromJson(Map<String, dynamic>.from(row)))
+        .toList(growable: false);
+  }
+
+  /// `POST /user-feedback/{id}/reply` — auth, `{message}`.
+  ///
+  /// Answers 403 for someone else's thread, which the caller surfaces rather
+  /// than swallowing.
+  Future<bool> replyToFeedback({
+    required Object id,
+    required String message,
+  }) async {
+    if (message.trim().isEmpty) {
+      throw const ValidationException('Write a reply first.');
+    }
+
+    final response = await _api.post(
+      ApiEndpoints.userFeedbackReply(id),
+      body: {'message': message.trim()},
+    );
+
+    if (!response.isOk) throw response.toException();
+    return true;
+  }
+
+  /// The bare list these endpoints return under `data`, mapped through [build].
+  ///
+  /// A payload that is not a list is treated as empty rather than thrown on:
+  /// every one of these routes answers `data: []` for "nothing to show", and a
+  /// screen that renders an empty state is better than one that errors.
+  static List<T> _listOf<T>(
+    ApiResponse response,
+    T Function(Map<String, dynamic> row) build,
+  ) {
+    final body = response.data;
+    final raw = body is Map ? body['data'] : null;
+    if (raw is! List) return <T>[];
+
+    return raw
+        .whereType<Map>()
+        .map((row) => build(Map<String, dynamic>.from(row)))
+        .toList(growable: false);
   }
 
   /// `GET /{userId}/edit`

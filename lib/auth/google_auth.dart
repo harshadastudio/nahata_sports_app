@@ -1,3 +1,6 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../core/utils/app_logger.dart';
@@ -8,11 +11,31 @@ import '../core/utils/app_logger.dart';
 /// (`AuthRepository.googleLogin`) as `credential` — the backend verifies it
 /// against Google. The app never trusts it on its own.
 class GoogleAuthService {
+  /// Web client id — this is the `aud` the backend verifies the ID token
+  /// against. Lives in Google Cloud project **501667050692**.
+  static const String _serverClientId =
+      '501667050692-mcu5dljf0r6h2i9o3dbap4hvatgakr9i.apps.googleusercontent.com';
+
+  /// iOS OAuth client id, for bundle `com.nahata.nahataApp`.
+  ///
+  /// This MUST live in the same project as [_serverClientId] (501667050692),
+  /// otherwise Google rejects sign-in with
+  /// `invalid_audience: The audience client and the client need to be in the
+  /// same project.`
+  ///
+  /// It is passed explicitly because the iOS plugin would otherwise fall back
+  /// to `CLIENT_ID` in GoogleService-Info.plist, which belongs to the Firebase
+  /// project (966021820270) and is the wrong project. Android needs no
+  /// equivalent: it resolves its client from package name + SHA-1 instead.
+  static const String _iosClientId =
+      '501667050692-28p5a5j28ntbfp7ma1fl46fhdcv191iv.apps.googleusercontent.com';
+
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
-    // ✅ MUST be WEB CLIENT ID (Web client 2 in your case)
-    serverClientId:
-    '501667050692-mcu5dljf0r6h2i9o3dbap4hvatgakr9i.apps.googleusercontent.com',
+    serverClientId: _serverClientId,
+    clientId: (!kIsWeb && (Platform.isIOS || Platform.isMacOS))
+        ? _iosClientId
+        : null,
   );
 
   static Future<Map<String, dynamic>?> signInWithGoogle() async {

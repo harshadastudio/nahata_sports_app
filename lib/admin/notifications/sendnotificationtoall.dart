@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../core/utils/app_logger.dart';
 
 import 'package:flutter/material.dart';
 import 'package:nahata_app/core/network/http_logged.dart' as http;
@@ -68,7 +69,7 @@ class _SendNotificationToAllState
     );
 
     final data = jsonDecode(response.body);
-    print(data['message']);
+    AppLogger.debug('${data['message']}', name: 'sendnotificationtoall');
   }
 
   Future<void> _sendNotification() async {

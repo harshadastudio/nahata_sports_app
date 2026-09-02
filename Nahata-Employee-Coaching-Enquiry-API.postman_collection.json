@@ -1,0 +1,1049 @@
+{
+  "info": {
+    "_postman_id": "b71c0e42-59da-4f7d-9d1a-emp1coach3nq01",
+    "name": "Nahata Sports - Employee Panel - Coaching Enquiries API",
+    "description": "Every API behind **Dashboard > Coaching Enquiries** in the Employee panel\n(`/dashboard/coaching-enquiries`).\n\n---\n\n## Base URL\nSet the `baseUrl` collection variable - it already ends in `/api`.\n- Local: `http://localhost:5050/api`\n- Production: confirm the API host with the backend team\n\n---\n\n## Auth\n1. Run **00 - Auth > Login (Employee)** first; its test script stores the\n   tokens into the collection variables.\n2. Everything else inherits `Authorization: Bearer {{accessToken}}` from the\n   collection.\n\nEmployees log in on `portal: \"main\"` (the website), not `\"admin\"`.\n\n---\n\n## Two gates on every request\n| Gate | Effect |\n|---|---|\n| Role | `ADMIN`, `COMPLEX_ADMIN` and `EMPLOYEE` may call these routes |\n| Module permission | An EMPLOYEE additionally needs `employee_coaching_enquiries` granted in Roles Management, else 403 |\n\n**Complex scoping** - an EMPLOYEE only ever sees and touches their own\n`sportComplexId`. The server forces it on reads and writes, so never send\n`sportComplexId` from the client.\n\n---\n\n## Screen to endpoint\n\n| UI element | Endpoint |\n|---|---|\n| Table, count, Filters, Refresh | `GET /coaching-enquiries/all` |\n| Export Excel | the same endpoint at `limit=1000` - the file is built in the browser |\n| + Add Enquiry | `POST /coaching-enquiries/admin/create` |\n| Pencil (edit) | `PUT /coaching-enquiries/admin/:id` |\n| View / Approve | `POST /coaching-enquiries/:id/approve-and-enroll` |\n| Status change without enrolling | `PATCH /coaching-enquiries/:id/status` |\n| Bin (delete) | `DELETE /coaching-enquiries/:id` |\n| Sport / Batch / Coach dropdowns | `GET /sports`, `GET /batches`, `GET /coaches` |\n\n---\n\n## Response envelope\n```json\n{ \"success\": true, \"message\": \"...\", \"data\": { } }\n```\nA `500` adds an `error` key with the technical detail. Branch on the HTTP\nstatus, then show `message`.\n\n## Status codes\n| Code | Meaning |\n|---|---|\n| 200 / 201 | OK / Created |\n| 400 | Validation - missing field, bad email, bad status value, batch full, already approved |\n| 401 | Missing / expired token, or the staff account was disabled or deleted |\n| 403 | Wrong role, module permission not granted, or a record in another complex |\n| 404 | Enquiry not found |\n| 500 | Server error - includes the 10-digit phone rule violation |",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5050/api",
+      "type": "string",
+      "description": "API host INCLUDING /api. No trailing slash."
+    },
+    {
+      "key": "employeeEmail",
+      "value": "tavadeanita9@gmail.com",
+      "type": "string",
+      "description": "The employee account used by Login."
+    },
+    {
+      "key": "employeePassword",
+      "value": "YourPassword@123",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string",
+      "description": "Set automatically by Login."
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string",
+      "description": "Set automatically by Login."
+    },
+    {
+      "key": "enquiryId",
+      "value": "1",
+      "type": "string",
+      "description": "Set automatically by List Enquiries / Add Enquiry."
+    },
+    {
+      "key": "sportId",
+      "value": "19",
+      "type": "string"
+    },
+    {
+      "key": "batchId",
+      "value": "53",
+      "type": "string"
+    },
+    {
+      "key": "coachId",
+      "value": "23",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 - Auth",
+      "description": "Run Login first. Employees authenticate on the website portal (`portal: \"main\"`).",
+      "item": [
+        {
+          "name": "Login (Employee)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Employees sign in on the WEBSITE portal, so `portal` must be `\"main\"`.\nOnly ADMIN / COMPLEX_ADMIN use `\"admin\"`; sending `\"admin\"` here returns 403.\n\n`identifier` accepts an email OR a 10-digit phone number (`email` is still\naccepted as a legacy alias for it).\n\nThe test script stores `accessToken` / `refreshToken` into the collection\nvariables, so every other request in this collection just works after this one.\n\n| Code | When |\n|---|---|\n| 200 | Logged in |\n| 400 | identifier or password missing |\n| 401 | Wrong credentials, or the staff account was deleted / disabled |\n| 403 | Wrong portal for this role |",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{employeeEmail}}\",\n  \"password\": \"{{employeePassword}}\",\n  \"portal\": \"main\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 - Logged in",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login"
+                  ]
+                },
+                "description": "Employees sign in on the WEBSITE portal, so `portal` must be `\"main\"`.\nOnly ADMIN / COMPLEX_ADMIN use `\"admin\"`; sending `\"admin\"` here returns 403.\n\n`identifier` accepts an email OR a 10-digit phone number (`email` is still\naccepted as a legacy alias for it).\n\nThe test script stores `accessToken` / `refreshToken` into the collection\nvariables, so every other request in this collection just works after this one.\n\n| Code | When |\n|---|---|\n| 200 | Logged in |\n| 400 | identifier or password missing |\n| 401 | Wrong credentials, or the staff account was deleted / disabled |\n| 403 | Wrong portal for this role |",
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"identifier\": \"{{employeeEmail}}\",\n  \"password\": \"{{employeePassword}}\",\n  \"portal\": \"main\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Login successful\",\n  \"data\": {\n    \"user\": {\n      \"id\": 305,\n      \"name\": \"Anita Tavade\",\n      \"email\": \"tavadeanita9@gmail.com\",\n      \"role\": \"EMPLOYEE\",\n      \"sportComplexId\": 1\n    },\n    \"accessToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n    \"refreshToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\"\n  }\n}"
+            },
+            {
+              "name": "403 - Wrong portal",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login"
+                  ]
+                },
+                "description": "Employees sign in on the WEBSITE portal, so `portal` must be `\"main\"`.\nOnly ADMIN / COMPLEX_ADMIN use `\"admin\"`; sending `\"admin\"` here returns 403.\n\n`identifier` accepts an email OR a 10-digit phone number (`email` is still\naccepted as a legacy alias for it).\n\nThe test script stores `accessToken` / `refreshToken` into the collection\nvariables, so every other request in this collection just works after this one.\n\n| Code | When |\n|---|---|\n| 200 | Logged in |\n| 400 | identifier or password missing |\n| 401 | Wrong credentials, or the staff account was deleted / disabled |\n| 403 | Wrong portal for this role |",
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"identifier\": \"{{employeeEmail}}\",\n  \"password\": \"{{employeePassword}}\",\n  \"portal\": \"main\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"This portal is for administrators only. Please log in through the main Nahata Sports website.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.success && r.data) {",
+                  "  pm.collectionVariables.set('accessToken', r.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', r.data.refreshToken);",
+                  "  console.log('Logged in as', r.data.user.email, '| role:', r.data.user.role,",
+                  "              '| complex:', r.data.user.sportComplexId);",
+                  "}",
+                  "pm.test('Login OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Access Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Swap the refresh token for a new access token when requests start returning 401.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.success && r.data && r.data.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', r.data.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 - Coaching Enquiries",
+      "description": "Employee permission id: `employee_coaching_enquiries`.\n\n**All Sports** - send `isAllSports: true` (or `sportId: \"all\"`) and omit\nsport / batch / coach to file the enquiry against the whole complex. Every\nsports coach there sees it, and each can assign their own batch and enrol the\nsame student; the enquiry stays open until closed by hand.\n\n**Auto-registration** - creating an enquiry registers the student: a User +\nStudent are created when the email is new, and credentials are emailed. The\nresponse carries `studentAccount: { userId, studentId, isNewAccount }`.\n\n**enrolments[]** - each listed enquiry carries every batch the student is\nactually enrolled in, with `sportName`, `coachName`, `batchName` and `status`.\nOne student can train under several coaches across several sports.",
+      "item": [
+        {
+          "name": "List Enquiries (table + filters)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/coaching-enquiries/all?page=1&limit=10&status=&search=&fromDate=&toDate=&sportId=&batchId=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "coaching-enquiries",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "1-based page number. Default 1."
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Rows per page. The panel uses 10."
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Pending | Reviewed | Contacted | Approved | Rejected. Empty = All."
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "LIKE match on name, email OR phone - the single Search box."
+                },
+                {
+                  "key": "fromDate",
+                  "value": "",
+                  "description": "createdAt >= this. A plain yyyy-mm-dd date is fine."
+                },
+                {
+                  "key": "toDate",
+                  "value": "",
+                  "description": "createdAt <= this. MUST carry T23:59:59.999 - see the description."
+                },
+                {
+                  "key": "sportId",
+                  "value": "",
+                  "description": "Optional extra filter, not exposed in the UI."
+                },
+                {
+                  "key": "batchId",
+                  "value": "",
+                  "description": "Optional extra filter, not exposed in the UI."
+                }
+              ]
+            },
+            "description": "Backs the whole table, the header count (`data.total`), the Filters bar and Refresh.\n\n**Response shape**\n```\ndata = { enquiries: [...], total, page, limit, totalPages }\n```\n\n**toDate gotcha** - `toDate` is compared against `createdAt`, a *timestamp*. A bare\n`2026-09-02` means `00:00:00`, so everything logged during that day is excluded.\nThe panel always appends `T23:59:59.999`. Do the same.\n\n**Complex scoping** - an EMPLOYEE token is forced to its own `sportComplexId`;\nthere is no client-side way to widen it.\n\n**enrolments[]** - every row carries what the student is ACTUALLY enrolled in\n(`batchId`, `batchName`, `sportId`, `sportName`, `coachId`, `coachName`, `status`),\nwhich can span several sports and coaches. The enquiry's own `batch` / `sport` /\n`coach` is only what was asked for. This is what the ENROLLED UNDER column shows,\nand it is empty until the enquiry is approved.\n\n**isAllSports** - true means the enquiry was filed against the whole complex with\nno sport / batch / coach; render it as *All Sports*."
+          },
+          "response": [
+            {
+              "name": "200 - Page of enquiries",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/coaching-enquiries/all?page=1&limit=10&status=&search=&fromDate=&toDate=&sportId=&batchId=",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "coaching-enquiries",
+                    "all"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "1-based page number. Default 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10",
+                      "description": "Rows per page. The panel uses 10."
+                    },
+                    {
+                      "key": "status",
+                      "value": "",
+                      "description": "Pending | Reviewed | Contacted | Approved | Rejected. Empty = All."
+                    },
+                    {
+                      "key": "search",
+                      "value": "",
+                      "description": "LIKE match on name, email OR phone - the single Search box."
+                    },
+                    {
+                      "key": "fromDate",
+                      "value": "",
+                      "description": "createdAt >= this. A plain yyyy-mm-dd date is fine."
+                    },
+                    {
+                      "key": "toDate",
+                      "value": "",
+                      "description": "createdAt <= this. MUST carry T23:59:59.999 - see the description."
+                    },
+                    {
+                      "key": "sportId",
+                      "value": "",
+                      "description": "Optional extra filter, not exposed in the UI."
+                    },
+                    {
+                      "key": "batchId",
+                      "value": "",
+                      "description": "Optional extra filter, not exposed in the UI."
+                    }
+                  ]
+                },
+                "description": "Backs the whole table, the header count (`data.total`), the Filters bar and Refresh.\n\n**Response shape**\n```\ndata = { enquiries: [...], total, page, limit, totalPages }\n```\n\n**toDate gotcha** - `toDate` is compared against `createdAt`, a *timestamp*. A bare\n`2026-09-02` means `00:00:00`, so everything logged during that day is excluded.\nThe panel always appends `T23:59:59.999`. Do the same.\n\n**Complex scoping** - an EMPLOYEE token is forced to its own `sportComplexId`;\nthere is no client-side way to widen it.\n\n**enrolments[]** - every row carries what the student is ACTUALLY enrolled in\n(`batchId`, `batchName`, `sportId`, `sportName`, `coachId`, `coachName`, `status`),\nwhich can span several sports and coaches. The enquiry's own `batch` / `sport` /\n`coach` is only what was asked for. This is what the ENROLLED UNDER column shows,\nand it is empty until the enquiry is approved.\n\n**isAllSports** - true means the enquiry was filed against the whole complex with\nno sport / batch / coach; render it as *All Sports*."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"enquiries\": [\n      {\n        \"id\": 128,\n        \"userId\": 412,\n        \"batchId\": 53,\n        \"sportId\": 19,\n        \"coachId\": 23,\n        \"studentId\": null,\n        \"sportComplexId\": 1,\n        \"isAllSports\": false,\n        \"name\": \"Tanushree Sagar Lahoti\",\n        \"email\": \"swatilahoti83@gmail.com\",\n        \"phone\": \"9987550997\",\n        \"message\": \"Wants the evening batch\",\n        \"referenceNumber\": \"NSC-20260902-4F71C\",\n        \"status\": \"Pending\",\n        \"createdAt\": \"2026-09-02T04:40:12.000Z\",\n        \"updatedAt\": \"2026-09-02T04:40:12.000Z\",\n        \"user\": {\n          \"id\": 412,\n          \"name\": \"Tanushree Sagar Lahoti\",\n          \"email\": \"swatilahoti83@gmail.com\",\n          \"phone_number\": \"9987550997\"\n        },\n        \"batch\": {\n          \"id\": 53,\n          \"name\": \"Regular (Evening)\",\n          \"fees\": \"3000.00\",\n          \"duration\": \"1 Month\",\n          \"ageGroup\": \"8-14\",\n          \"maxStudents\": 30,\n          \"currentStudents\": 12\n        },\n        \"sport\": {\n          \"id\": 19,\n          \"name\": \"Badminton\",\n          \"image\": \"/uploads/sports/badminton.jpg\"\n        },\n        \"coach\": {\n          \"id\": 23,\n          \"name\": \"Dashrath Birhamane\",\n          \"email\": \"dashrath@example.com\",\n          \"phone\": \"9822011223\"\n        },\n        \"enrolments\": []\n      }\n    ],\n    \"total\": 73,\n    \"page\": 1,\n    \"limit\": 10,\n    \"totalPages\": 8\n  }\n}"
+            },
+            {
+              "name": "403 - Module not granted",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/coaching-enquiries/all?page=1&limit=10&status=&search=&fromDate=&toDate=&sportId=&batchId=",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "coaching-enquiries",
+                    "all"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "1-based page number. Default 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10",
+                      "description": "Rows per page. The panel uses 10."
+                    },
+                    {
+                      "key": "status",
+                      "value": "",
+                      "description": "Pending | Reviewed | Contacted | Approved | Rejected. Empty = All."
+                    },
+                    {
+                      "key": "search",
+                      "value": "",
+                      "description": "LIKE match on name, email OR phone - the single Search box."
+                    },
+                    {
+                      "key": "fromDate",
+                      "value": "",
+                      "description": "createdAt >= this. A plain yyyy-mm-dd date is fine."
+                    },
+                    {
+                      "key": "toDate",
+                      "value": "",
+                      "description": "createdAt <= this. MUST carry T23:59:59.999 - see the description."
+                    },
+                    {
+                      "key": "sportId",
+                      "value": "",
+                      "description": "Optional extra filter, not exposed in the UI."
+                    },
+                    {
+                      "key": "batchId",
+                      "value": "",
+                      "description": "Optional extra filter, not exposed in the UI."
+                    }
+                  ]
+                },
+                "description": "Backs the whole table, the header count (`data.total`), the Filters bar and Refresh.\n\n**Response shape**\n```\ndata = { enquiries: [...], total, page, limit, totalPages }\n```\n\n**toDate gotcha** - `toDate` is compared against `createdAt`, a *timestamp*. A bare\n`2026-09-02` means `00:00:00`, so everything logged during that day is excluded.\nThe panel always appends `T23:59:59.999`. Do the same.\n\n**Complex scoping** - an EMPLOYEE token is forced to its own `sportComplexId`;\nthere is no client-side way to widen it.\n\n**enrolments[]** - every row carries what the student is ACTUALLY enrolled in\n(`batchId`, `batchName`, `sportId`, `sportName`, `coachId`, `coachName`, `status`),\nwhich can span several sports and coaches. The enquiry's own `batch` / `sport` /\n`coach` is only what was asked for. This is what the ENROLLED UNDER column shows,\nand it is empty until the enquiry is approved.\n\n**isAllSports** - true means the enquiry was filed against the whole complex with\nno sport / batch / coach; render it as *All Sports*."
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"You do not have permission to access this module.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "if (r.success && r.data && r.data.enquiries && r.data.enquiries.length) {",
+                  "  pm.collectionVariables.set('enquiryId', r.data.enquiries[0].id);",
+                  "  console.log('total enquiries:', r.data.total, '| pages:', r.data.totalPages);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Export Excel (same endpoint, limit=1000)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/coaching-enquiries/all?page=1&limit=1000&status=&search=&fromDate=2026-08-01&toDate=2026-08-31T23:59:59.999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "coaching-enquiries",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "1000"
+                },
+                {
+                  "key": "status",
+                  "value": ""
+                },
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "fromDate",
+                  "value": "2026-08-01"
+                },
+                {
+                  "key": "toDate",
+                  "value": "2026-08-31T23:59:59.999"
+                }
+              ]
+            },
+            "description": "The **Export Excel** button is NOT a separate API. The panel re-calls this same\nlist endpoint with the current filters at `page=1&limit=1000`, then builds the\nfile in the browser from the rows it gets back.\n\nExported columns: #, Reference, Student Name, Email, Phone, Sport, Batch, Coach,\nEnrolled Sports, Enrolled Coaches, Enrolled Batches, Status, Message, Date & Time.\n\nMind the 1000-row ceiling - past that you have to page."
+          },
+          "response": []
+        },
+        {
+          "name": "Add Enquiry",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/coaching-enquiries/admin/create",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "coaching-enquiries",
+                "admin",
+                "create"
+              ]
+            },
+            "description": "The **+ Add Enquiry** drawer.\n\n**Required**: `name`, `email`, `phone` - plus `batchId` unless `isAllSports` is\ntrue. `sportId` and `coachId` are derived from the batch when omitted.\n\n**phone must be exactly 10 digits** (no `+91`, no spaces). A violation surfaces as\na 500 with `error: \"Validation error: Phone number must be exactly 10 digits\"`, so\nstrip non-digits client-side.\n\n**The email is the student's identity.** Do not send the staff member's own\n`userId` - the server matches an existing User by email and that always wins.\n\n**Side effects**: a User + Student are created when the email is new and login\ncredentials are emailed to the student; a reference number `NSC-YYYYMMDD-XXXXX` is\ngenerated; `status` starts at `Pending`; `sportComplexId` is derived from the\nbatch; a bell notification fires to the admins. Mail failures never fail the call.\n\nRead `studentAccount.isNewAccount` to tell staff whether a fresh account was made.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ravi Deshmukh\",\n  \"email\": \"ravi.deshmukh@example.com\",\n  \"phone\": \"9876543210\",\n  \"sportId\": 19,\n  \"batchId\": 53,\n  \"coachId\": 23,\n  \"message\": \"Walk-in enquiry taken at the desk\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "201 - Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/coaching-enquiries/admin/create",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "coaching-enquiries",
+                    "admin",
+                    "create"
+                  ]
+                },
+                "description": "The **+ Add Enquiry** drawer.\n\n**Required**: `name`, `email`, `phone` - plus `batchId` unless `isAllSports` is\ntrue. `sportId` and `coachId` are derived from the batch when omitted.\n\n**phone must be exactly 10 digits** (no `+91`, no spaces). A violation surfaces as\na 500 with `error: \"Validation error: Phone number must be exactly 10 digits\"`, so\nstrip non-digits client-side.\n\n**The email is the student's identity.** Do not send the staff member's own\n`userId` - the server matches an existing User by email and that always wins.\n\n**Side effects**: a User + Student are created when the email is new and login\ncredentials are emailed to the student; a reference number `NSC-YYYYMMDD-XXXXX` is\ngenerated; `status` starts at `Pending`; `sportComplexId` is derived from the\nbatch; a bell notification fires to the admins. Mail failures never fail the call.\n\nRead `studentAccount.isNewAccount` to tell staff whether a fresh account was made.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Ravi Deshmukh\",\n  \"email\": \"ravi.deshmukh@example.com\",\n  \"phone\": \"9876543210\",\n  \"sportId\": 19,\n  \"batchId\": 53,\n  \"coachId\": 23,\n  \"message\": \"Walk-in enquiry taken at the desk\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Enquiry created. The student has been registered and sent their login details.\",\n  \"data\": {\n    \"id\": 129,\n    \"userId\": 412,\n    \"batchId\": 53,\n    \"sportId\": 19,\n    \"coachId\": 23,\n    \"studentId\": null,\n    \"sportComplexId\": 1,\n    \"isAllSports\": false,\n    \"name\": \"Ravi Deshmukh\",\n    \"email\": \"ravi.deshmukh@example.com\",\n    \"phone\": \"9876543210\",\n    \"message\": \"Wants the evening batch\",\n    \"referenceNumber\": \"NSC-20260902-9A2D1\",\n    \"status\": \"Pending\",\n    \"createdAt\": \"2026-09-02T04:40:12.000Z\",\n    \"updatedAt\": \"2026-09-02T04:40:12.000Z\",\n    \"user\": {\n      \"id\": 412,\n      \"name\": \"Tanushree Sagar Lahoti\",\n      \"email\": \"swatilahoti83@gmail.com\",\n      \"phone_number\": \"9987550997\"\n    },\n    \"batch\": {\n      \"id\": 53,\n      \"name\": \"Regular (Evening)\",\n      \"fees\": \"3000.00\",\n      \"duration\": \"1 Month\",\n      \"ageGroup\": \"8-14\",\n      \"maxStudents\": 30,\n      \"currentStudents\": 12\n    },\n    \"sport\": {\n      \"id\": 19,\n      \"name\": \"Badminton\",\n      \"image\": \"/uploads/sports/badminton.jpg\"\n    },\n    \"coach\": {\n      \"id\": 23,\n      \"name\": \"Dashrath Birhamane\",\n      \"email\": \"dashrath@example.com\",\n      \"phone\": \"9822011223\"\n    },\n    \"enrolments\": []\n  },\n  \"studentAccount\": {\n    \"userId\": 413,\n    \"studentId\": 207,\n    \"isNewAccount\": true\n  }\n}"
+            },
+            {
+              "name": "400 - Missing fields",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/coaching-enquiries/admin/create",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "coaching-enquiries",
+                    "admin",
+                    "create"
+                  ]
+                },
+                "description": "The **+ Add Enquiry** drawer.\n\n**Required**: `name`, `email`, `phone` - plus `batchId` unless `isAllSports` is\ntrue. `sportId` and `coachId` are derived from the batch when omitted.\n\n**phone must be exactly 10 digits** (no `+91`, no spaces). A violation surfaces as\na 500 with `error: \"Validation error: Phone number must be exactly 10 digits\"`, so\nstrip non-digits client-side.\n\n**The email is the student's identity.** Do not send the staff member's own\n`userId` - the server matches an existing User by email and that always wins.\n\n**Side effects**: a User + Student are created when the email is new and login\ncredentials are emailed to the student; a reference number `NSC-YYYYMMDD-XXXXX` is\ngenerated; `status` starts at `Pending`; `sportComplexId` is derived from the\nbatch; a bell notification fires to the admins. Mail failures never fail the call.\n\nRead `studentAccount.isNewAccount` to tell staff whether a fresh account was made.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Ravi Deshmukh\",\n  \"email\": \"ravi.deshmukh@example.com\",\n  \"phone\": \"9876543210\",\n  \"sportId\": 19,\n  \"batchId\": 53,\n  \"coachId\": 23,\n  \"message\": \"Walk-in enquiry taken at the desk\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Name, email and phone are required\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.success && r.data) pm.collectionVariables.set('enquiryId', r.data.id);",
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add Enquiry (All Sports)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/coaching-enquiries/admin/create",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "coaching-enquiries",
+                "admin",
+                "create"
+              ]
+            },
+            "description": "What the Sport dropdown's **All Sports** option sends: no sport, no batch, no coach.\n\nThe enquiry is filed against the complex, so every sports coach there sees it and\neach can assign their own batch and enrol the same student. It is never auto-closed\nby one approval - it stays open until the status is changed by hand.\n\nEither send `isAllSports: true`, or the sentinel `\"sportId\": \"all\"` - the API\naccepts both.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Undecided Walk-in\",\n  \"email\": \"walkin@example.com\",\n  \"phone\": \"9876543210\",\n  \"isAllSports\": true,\n  \"message\": \"Has not picked a sport yet\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Edit Enquiry (pencil)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/coaching-enquiries/admin/{{enquiryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "coaching-enquiries",
+                "admin",
+                "{{enquiryId}}"
+              ]
+            },
+            "description": "Every field is optional - only what you send is changed.\n\nMoving the enquiry to another `batchId` re-derives sport, coach AND complex from\nthat batch. Send `batchId` alone, with no `sportId` / `coachId`, to let the batch\ndecide both.\n\n**Approved enquiries cannot be edited** (400). An approval has already produced a\nUser, a Student and a batch enrolment, and editing here would not move any of\nthem - so the API refuses rather than let the two drift apart.\n\nChanging `email` re-points the enquiry at whichever User owns that address.\n\n| Code | When |\n|---|---|\n| 200 | Updated |\n| 400 | Blank name/phone, bad email, unknown batch, or already Approved |\n| 403 | The enquiry or the target batch belongs to another complex |\n| 404 | No such enquiry |",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ravi Deshmukh\",\n  \"email\": \"ravi.deshmukh@example.com\",\n  \"phone\": \"9876543210\",\n  \"sportId\": 19,\n  \"batchId\": 53,\n  \"coachId\": 23,\n  \"message\": \"Updated note\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "400 - Already approved",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/coaching-enquiries/admin/{{enquiryId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "coaching-enquiries",
+                    "admin",
+                    "{{enquiryId}}"
+                  ]
+                },
+                "description": "Every field is optional - only what you send is changed.\n\nMoving the enquiry to another `batchId` re-derives sport, coach AND complex from\nthat batch. Send `batchId` alone, with no `sportId` / `coachId`, to let the batch\ndecide both.\n\n**Approved enquiries cannot be edited** (400). An approval has already produced a\nUser, a Student and a batch enrolment, and editing here would not move any of\nthem - so the API refuses rather than let the two drift apart.\n\nChanging `email` re-points the enquiry at whichever User owns that address.\n\n| Code | When |\n|---|---|\n| 200 | Updated |\n| 400 | Blank name/phone, bad email, unknown batch, or already Approved |\n| 403 | The enquiry or the target batch belongs to another complex |\n| 404 | No such enquiry |",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Ravi Deshmukh\",\n  \"email\": \"ravi.deshmukh@example.com\",\n  \"phone\": \"9876543210\",\n  \"sportId\": 19,\n  \"batchId\": 53,\n  \"coachId\": 23,\n  \"message\": \"Updated note\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"This enquiry is already approved and enrolled - it can no longer be edited.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/coaching-enquiries/{{enquiryId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "coaching-enquiries",
+                "{{enquiryId}}",
+                "status"
+              ]
+            },
+            "description": "Move an enquiry along without enrolling anybody.\n\n`status` must be one of `Pending`, `Reviewed`, `Contacted`, `Approved`, `Rejected`.\nAnything else is a 400.\n\nSetting `Rejected` fires a rejection email to the student (fire-and-forget).\n\nUse **Approve & Enroll** rather than setting `Approved` here - this route only\nflips the flag, it does NOT create the student or the enrolment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Contacted\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve & Enroll",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/coaching-enquiries/{{enquiryId}}/approve-and-enroll",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "coaching-enquiries",
+                "{{enquiryId}}",
+                "approve-and-enroll"
+              ]
+            },
+            "description": "The **View / Approve** drawer's green action. Runs in one transaction:\n\n1. Finds or creates the User (a brand-new one gets a generated password),\n2. Finds or creates the Student record,\n3. Enrols them into the enquiry's batch and bumps `currentStudents`,\n4. Marks the enquiry `Approved`,\n5. Emails the approval - plus the login credentials when the account is new.\n\nThe body is entirely optional; the defaults are shown.\n\nFor an **All Sports** enquiry there is no batch on the record - the enrolment goes\ninto the calling coach's own assignment, and the enquiry stays open so the other\ncoaches can each take the same student.\n\n| Code | When |\n|---|---|\n| 200 | Approved and enrolled |\n| 400 | Already approved, no batch on the enquiry, or the batch is full |\n| 403 | Enquiry belongs to another complex |\n| 404 | No such enquiry |\n\nThe UI greys the button out when `batch.currentStudents >= batch.maxStudents`; the\nAPI enforces it too.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentStatus\": \"Pending\",\n  \"amountPaid\": 0,\n  \"notes\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 - Enrolled",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/coaching-enquiries/{{enquiryId}}/approve-and-enroll",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "coaching-enquiries",
+                    "{{enquiryId}}",
+                    "approve-and-enroll"
+                  ]
+                },
+                "description": "The **View / Approve** drawer's green action. Runs in one transaction:\n\n1. Finds or creates the User (a brand-new one gets a generated password),\n2. Finds or creates the Student record,\n3. Enrols them into the enquiry's batch and bumps `currentStudents`,\n4. Marks the enquiry `Approved`,\n5. Emails the approval - plus the login credentials when the account is new.\n\nThe body is entirely optional; the defaults are shown.\n\nFor an **All Sports** enquiry there is no batch on the record - the enrolment goes\ninto the calling coach's own assignment, and the enquiry stays open so the other\ncoaches can each take the same student.\n\n| Code | When |\n|---|---|\n| 200 | Approved and enrolled |\n| 400 | Already approved, no batch on the enquiry, or the batch is full |\n| 403 | Enquiry belongs to another complex |\n| 404 | No such enquiry |\n\nThe UI greys the button out when `batch.currentStudents >= batch.maxStudents`; the\nAPI enforces it too.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"paymentStatus\": \"Pending\",\n  \"amountPaid\": 0,\n  \"notes\": \"\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Enquiry approved, student created, and enrolled successfully\",\n  \"data\": {\n    \"enquiry\": {\n      \"id\": 128,\n      \"userId\": 412,\n      \"batchId\": 53,\n      \"sportId\": 19,\n      \"coachId\": 23,\n      \"studentId\": 207,\n      \"sportComplexId\": 1,\n      \"isAllSports\": false,\n      \"name\": \"Tanushree Sagar Lahoti\",\n      \"email\": \"swatilahoti83@gmail.com\",\n      \"phone\": \"9987550997\",\n      \"message\": \"Wants the evening batch\",\n      \"referenceNumber\": \"NSC-20260902-4F71C\",\n      \"status\": \"Approved\",\n      \"createdAt\": \"2026-09-02T04:40:12.000Z\",\n      \"updatedAt\": \"2026-09-02T04:40:12.000Z\",\n      \"user\": {\n        \"id\": 412,\n        \"name\": \"Tanushree Sagar Lahoti\",\n        \"email\": \"swatilahoti83@gmail.com\",\n        \"phone_number\": \"9987550997\"\n      },\n      \"batch\": {\n        \"id\": 53,\n        \"name\": \"Regular (Evening)\",\n        \"fees\": \"3000.00\",\n        \"duration\": \"1 Month\",\n        \"ageGroup\": \"8-14\",\n        \"maxStudents\": 30,\n        \"currentStudents\": 12\n      },\n      \"sport\": {\n        \"id\": 19,\n        \"name\": \"Badminton\",\n        \"image\": \"/uploads/sports/badminton.jpg\"\n      },\n      \"coach\": {\n        \"id\": 23,\n        \"name\": \"Dashrath Birhamane\",\n        \"email\": \"dashrath@example.com\",\n        \"phone\": \"9822011223\"\n      },\n      \"enrolments\": []\n    },\n    \"studentId\": 207,\n    \"userId\": 412,\n    \"isNewUser\": false\n  }\n}"
+            },
+            {
+              "name": "400 - Batch full",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/coaching-enquiries/{{enquiryId}}/approve-and-enroll",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "coaching-enquiries",
+                    "{{enquiryId}}",
+                    "approve-and-enroll"
+                  ]
+                },
+                "description": "The **View / Approve** drawer's green action. Runs in one transaction:\n\n1. Finds or creates the User (a brand-new one gets a generated password),\n2. Finds or creates the Student record,\n3. Enrols them into the enquiry's batch and bumps `currentStudents`,\n4. Marks the enquiry `Approved`,\n5. Emails the approval - plus the login credentials when the account is new.\n\nThe body is entirely optional; the defaults are shown.\n\nFor an **All Sports** enquiry there is no batch on the record - the enrolment goes\ninto the calling coach's own assignment, and the enquiry stays open so the other\ncoaches can each take the same student.\n\n| Code | When |\n|---|---|\n| 200 | Approved and enrolled |\n| 400 | Already approved, no batch on the enquiry, or the batch is full |\n| 403 | Enquiry belongs to another complex |\n| 404 | No such enquiry |\n\nThe UI greys the button out when `batch.currentStudents >= batch.maxStudents`; the\nAPI enforces it too.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"paymentStatus\": \"Pending\",\n  \"amountPaid\": 0,\n  \"notes\": \"\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Batch is full - cannot enroll\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delete Enquiry (bin)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/coaching-enquiries/{{enquiryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "coaching-enquiries",
+                "{{enquiryId}}"
+              ]
+            },
+            "description": "Soft delete - `deletedAt` is stamped, the row is never dropped.\n\nA complex-scoped employee can only delete inside their own complex; anything else\nis a 403. Returns 404 when the id does not exist.\n\nDeleting an approved enquiry does NOT undo the enrolment it produced."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - Form dropdowns",
+      "description": "The three lists the Add / Edit drawer loads once, in parallel. All are already\nfiltered to the employee's own complex.\n\nEach wraps its rows differently, so unwrap defensively:\n`json.data?.[key] ?? json.data ?? []`.",
+      "item": [
+        {
+          "name": "Sports (dropdown)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sports?limit=200",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sports"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "200"
+                }
+              ]
+            },
+            "description": "Fills the Sport dropdown in the Add / Edit drawer.\nReturns `data: [ ...sports ]` with a SIBLING `pagination` object.\nThe panel prepends its own **All Sports** sentinel option client-side."
+          },
+          "response": []
+        },
+        {
+          "name": "Batches (dropdown)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/batches?limit=200",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "batches"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "200"
+                }
+              ]
+            },
+            "description": "Fills the Batch dropdown. Returns\n`data: { batches, currentPage, totalPages, totalItems, itemsPerPage }`.\n\nAlready scoped to the employee's own complex - and the create/update routes reject\na batch from any other complex, so this list is the whole scope story for the form."
+          },
+          "response": []
+        },
+        {
+          "name": "Coaches (dropdown)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/coaches?limit=200",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "coaches"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "200"
+                }
+              ]
+            },
+            "description": "Fills the Coach dropdown. Returns\n`data: { coaches, currentPage, totalPages, totalItems, itemsPerPage }`.\n\nOptional on the form - left empty, the coach is taken from the chosen batch."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

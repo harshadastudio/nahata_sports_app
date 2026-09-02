@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../core/utils/app_logger.dart';
 import 'package:nahata_app/core/network/http_logged.dart' as http;
 
 class ApiService {
@@ -6,7 +7,7 @@ class ApiService {
     final uri = Uri.parse('https://nahatasports.com/sports_list');
     final response = await http.get(uri);
 
-    print("API response: ${response.body}");
+    AppLogger.debug("API response: ${response.body}", name: 'location_api');
 
     if (response.statusCode == 200) {
       final Map<String, dynamic> jsonMap = json.decode(response.body);
@@ -16,8 +17,8 @@ class ApiService {
       }
 
       final availableKeys = jsonMap['data'].keys;
-      print('Requested location: "$location"');
-      print('Available keys: $availableKeys');
+      AppLogger.debug('Requested location: "$location"', name: 'location_api');
+      AppLogger.debug('Available keys: $availableKeys', name: 'location_api');
 
       final matchedKey = availableKeys.firstWhere(
             (k) => k.toLowerCase().trim() == location.toLowerCase().trim(),

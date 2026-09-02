@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,6 +12,7 @@ import '../models/sports_complex_model.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/sports_complex_repository.dart';
 // The per-role dashboards are reached through `RoleRouter`, not imported here.
+import 'apple_auth.dart';
 import 'google_auth.dart';
 import 'login.dart';
 
@@ -143,6 +145,65 @@ class _RegisterScreenState extends State<RegisterScreen> {
   //     return false;
   //   }
   // }
+  /// Sign up with Apple — `POST /auth/apple-login`, the same call the login
+  /// screen makes; signing up with Apple and signing in with Apple are one
+  /// endpoint, because Apple's stable `sub` decides which it is.
+  ///
+  /// This screen has to offer it: guideline 4.8 requires an equivalent
+  /// privacy-preserving login option **wherever** a third-party login is
+  /// offered, and this screen offers Google. Submission 5133b760 was rejected
+  /// for exactly that.
+  Future<void> _handleAppleSignUp() async {
+    final appleUser = await AppleAuthService.signInWithApple();
+
+    if (appleUser == null) {
+      _showMessage(
+        "Apple sign-in cancelled or failed.",
+        tone: AppMessageTone.error,
+      );
+      return;
+    }
+
+    _showMessage("Verifying your Apple account…");
+
+    // The name is here on the first authorization only — Apple never sends it
+    // again — so this is the one chance to give the account a real name.
+    final success = await ApiService.appleLogin(
+      appleUser["identityToken"]!,
+      firstName: appleUser["firstName"],
+      lastName: appleUser["lastName"],
+    );
+
+    if (!success) {
+      _showMessage(
+        ApiService.lastErrorMessage ?? "Apple sign-up failed. Try again.",
+        tone: AppMessageTone.error,
+      );
+      return;
+    }
+
+    final profile = ApiService.currentProfile;
+    final role = (profile?.roleLabel.isNotEmpty ?? false)
+        ? profile!.roleLabel
+        : (ApiService.currentUser?['role']?.toString() ?? 'user');
+    final screen = _getScreenForRole(role);
+
+    // Apple never provides a phone number, so a fresh Apple account arrives
+    // with `needsPhone` — and booking confirmations go to that number.
+    _showMessage(
+      profile?.needsPhone == true
+          ? "Account created. Add your WhatsApp number in your profile to receive booking confirmations."
+          : "Login successful",
+      tone: AppMessageTone.success,
+    );
+
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => screen),
+    );
+  }
+
   /// Same role → screen table as the login screen, so a Google sign-up that
   /// returns an existing staff account lands on that account's own console.
   Widget _getScreenForRole(String role) => RoleRouter.screenFor(role);
@@ -251,6 +312,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ),
                   ),
+
+                  // Guideline 4.8: wherever a third-party login is offered —
+                  // Google, right above — Apple's equivalent has to sit beside
+                  // it on iOS. It is not decoration: the sign-up screen is a
+                  // login service in its own right.
+                  if (AppleAuthService.isAvailable) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: SignInWithAppleButton(
+                        text: "Sign Up with Apple",
+                        borderRadius: BorderRadius.circular(8),
+                        style: SignInWithAppleButtonStyle.black,
+                        onPressed: _handleAppleSignUp,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
 
                   // Upload Photo

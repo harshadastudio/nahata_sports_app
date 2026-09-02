@@ -17,10 +17,8 @@ import '../widgets/gate_feedback.dart';
 import '../widgets/gate_scan_result_sheet.dart';
 
 /// Runs one scan and reports the verdict.
-typedef GateScanHandler = Future<GateScanResult> Function(
-  String passCode,
-  GateDirection direction,
-);
+typedef GateScanHandler =
+    Future<GateScanResult> Function(String passCode, GateDirection direction);
 
 /// The gate scanner, shared by all four modules.
 ///
@@ -109,7 +107,8 @@ class GateScannerPage extends StatefulWidget {
   State<GateScannerPage> createState() => _GateScannerPageState();
 }
 
-class _GateScannerPageState extends State<GateScannerPage> {
+class _GateScannerPageState extends State<GateScannerPage>
+    with WidgetsBindingObserver {
   final GlobalKey _qrKey = GlobalKey(debugLabel: 'GateScannerQR');
   final TextEditingController _manual = TextEditingController();
 
@@ -135,6 +134,7 @@ class _GateScannerPageState extends State<GateScannerPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AdminLog.life('GateScannerPage mounted (${widget.kind.name})');
     final prefilled = (widget.initialCode ?? '').trim();
     if (prefilled.isNotEmpty) _manual.text = prefilled;
@@ -156,6 +156,7 @@ class _GateScannerPageState extends State<GateScannerPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // The QRViewController disposes itself when the QRView unmounts — calling
     // it here as well is deprecated and would double-dispose the native view.
     _manual.dispose();
@@ -165,6 +166,20 @@ class _GateScannerPageState extends State<GateScannerPage> {
 
   bool get _cameraSupported =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  /// Re-checks the camera permission when the app comes back to the
+  /// foreground.
+  ///
+  /// The denied state offers "Open settings", and without this the user grants
+  /// the permission, returns, and still sees the same refusal until they leave
+  /// the screen and come back — which reads as the grant not having worked.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed && !_cameraAllowed) {
+      _requestCamera();
+    }
+  }
 
   Future<void> _requestCamera() async {
     if (!_cameraSupported) {
@@ -561,35 +576,32 @@ class _CameraPanel extends StatelessWidget {
           child: !checked
               ? const Center(child: CircularProgressIndicator())
               : allowed
-                    ? Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          QRView(
-                            key: qrKey,
-                            onQRViewCreated: onCreated,
-                            overlay: QrScannerOverlayShape(
-                              borderColor: tokens.accent,
-                              borderRadius: AdminTokens.radiusMd,
-                              borderLength: 32,
-                              borderWidth: 8,
-                              cutOutSize:
-                                  MediaQuery.sizeOf(context).width * 0.62,
-                            ),
-                          ),
-                          if (processing)
-                            ColoredBox(
-                              color: Colors.black.withValues(alpha: 0.55),
-                              child: const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                            ),
-                        ],
-                      )
-                    : _CameraUnavailable(
-                        supported: supported,
-                        permanentlyDenied: permanentlyDenied,
-                        onRetry: onRetryPermission,
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    QRView(
+                      key: qrKey,
+                      onQRViewCreated: onCreated,
+                      overlay: QrScannerOverlayShape(
+                        borderColor: tokens.accent,
+                        borderRadius: AdminTokens.radiusMd,
+                        borderLength: 32,
+                        borderWidth: 8,
+                        cutOutSize: MediaQuery.sizeOf(context).width * 0.62,
                       ),
+                    ),
+                    if (processing)
+                      ColoredBox(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                  ],
+                )
+              : _CameraUnavailable(
+                  supported: supported,
+                  permanentlyDenied: permanentlyDenied,
+                  onRetry: onRetryPermission,
+                ),
         ),
       ),
     );
