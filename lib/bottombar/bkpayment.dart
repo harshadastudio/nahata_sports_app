@@ -16,7 +16,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/config/api_config.dart';
 import '../core/utils/app_logger.dart';
-import '../core/utils/payment_amounts.dart';
 import '../models/coupon_model.dart';
 import '../repositories/coupon_repository.dart';
 import '../core/storage/token_storage.dart';
@@ -46,6 +45,39 @@ bool orderCoversBasket(Object? orderAmount, int expectedRupees) {
 
   if (paise == null) return true;
   return paise >= expectedRupees * 100;
+}
+
+/// Whether a Razorpay order respects the coupon the customer applied.
+///
+/// The coupon is redeemed server-side, at `POST /courts/bookings/create` — the
+/// order is then raised off the stored booking. So an order for materially
+/// *more* than the discounted total means the backend did not honour the code
+/// (expired between preview and checkout, usage limit reached, not applicable
+/// to this booking). [orderCoversBasket] cannot catch that: it only guards the
+/// floor, and the undiscounted amount clears a floor set at the discounted one.
+///
+/// Opening that checkout would bill the original price for a booking the
+/// customer was quoted a discount on, which is the one failure this whole
+/// screen must not have.
+///
+/// [orderAmount] is in paise, [expectedRupees] is the discounted figure shown
+/// to the customer. [tolerancePaise] absorbs rounding between the rupee
+/// amounts the client sends and the server's own arithmetic — a rupee, which
+/// is far below the size of an unhonoured discount.
+///
+/// A missing or unreadable amount returns true for the same reason
+/// [orderCoversBasket] does: the check needs a number to compare against.
+bool orderHonoursCoupon(
+  Object? orderAmount,
+  int expectedRupees, {
+  int tolerancePaise = 100,
+}) {
+  final paise = orderAmount is num
+      ? orderAmount.round()
+      : int.tryParse('$orderAmount');
+
+  if (paise == null) return true;
+  return paise <= expectedRupees * 100 + tolerancePaise;
 }
 
 class PaymentScreen extends StatefulWidget {
@@ -110,26 +142,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
     super.initState();
     _initializeRazorpay();
     _validateBookingDetails();
-    if (_couponSupported) {
-      _loadCoupons();
-
-      // A code applied on the booking screen travels here in the payload. It
-      // is re-validated rather than trusted, so the discount shown is still
-      // the server's own figure.
-      final carried = widget.bookingDetails['couponCode']?.toString();
-      if (carried != null && carried.trim().isNotEmpty) {
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => _applyCouponCode(carried),
-        );
-      }
-    }
+    if (_couponSupported) _loadCoupons();
   }
 
   /// Offers for court bookings. A failure here just means no offers strip, so
   /// it never blocks the screen.
   Future<void> _loadCoupons() async {
-    // Same reason as the event screen: a coupon issued for one venue or one
-    // sport only comes back when the request names them.
+    // Venue and sport are sent for the same reason the validate call sends
+    // them: the server filters offers on both, and omitting them returns only
+    // the coupons that apply to every venue and every sport.
     final booking = widget.bookingDetails;
     final coupons = await CouponRepository.instance.fetchActiveCoupons(
       appliesTo: 'Court',
@@ -226,14 +247,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
       });
     }
 
-    // A zero price is a free court, not a broken booking — only a missing or
-    // negative one is an error.
     final price = widget.bookingDetails['price'];
     if (price == null ||
         (price is! int && price is! double) ||
-        (price is num && price < 0)) {
+        (price is num && price <= 0)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showErrorDialog("Invalid price.");
+        _showErrorDialog("Invalid price. Must be a positive number.");
       });
     }
   }
@@ -392,6 +411,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
           "Content-Type": "application/json",
           "Accept": "application/json",
           if (token != null) "Authorization": "Bearer $token",
+          // Redemption is platform-gated just like validation is. Without this
+          // an App-only coupon passes /coupons/validate (which does send the
+          // header) and is then refused here, where it actually counts.
+          ...ApiConfig.platformHeader,
         },
         body: jsonEncode(body),
       );
@@ -476,6 +499,30 @@ class _PaymentScreenState extends State<PaymentScreen> {
       );
     }
     return covers;
+  }
+
+  /// True when [orderData] is for no more than [expectedRupees].
+  ///
+  /// Only meaningful once a coupon is applied — without one there is nothing
+  /// to under-apply, and an order above the basket total is the existing
+  /// [_assertOrderCovers] contract's business, not this one's.
+  bool _assertCouponHonoured(
+    Map<String, dynamic> orderData,
+    int expectedRupees,
+  ) {
+    if (_appliedCoupon == null) return true;
+
+    final honoured = orderHonoursCoupon(orderData['amount'], expectedRupees);
+
+    if (!honoured) {
+      AppLogger.error(
+        'Order ignores coupon ${_appliedCoupon?.code}: '
+        'order=${orderData['amount']} paise, expected=₹$expectedRupees '
+        '(₹$_baseTotal less ₹$_discount)',
+        name: 'Payment',
+      );
+    }
+    return honoured;
   }
 
   /// Gives the reserved slots back after a checkout we refuse to open.
@@ -614,7 +661,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
     setState(() => isLoading = false);
 
     if (allVerified) {
-      final total = (widget.bookingDetails['price'] as num?)?.toInt() ?? 0;
+      // What was actually charged, not the pre-coupon price — the notification
+      // is the customer's receipt for this booking.
+      final total = _payableTotal;
       final List slots = widget.bookingDetails['slots'] ?? [];
       final slotText = slots
           .map((s) => (s is Map ? s['time']?.toString() : s.toString()) ?? '')
@@ -938,12 +987,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final cash = (widget.bookingDetails['cash'] as num?)?.toInt() ?? 0;
     final onlineAmount = total - cash;
 
-    // Nothing to charge — a free court, or a coupon that covered it entirely.
-    // Razorpay would refuse a zero order anyway, and there is no signature to
-    // verify afterwards, so the gateway is skipped and the reservation stands
-    // on the booking alone.
-    final isFree = onlineAmount <= 0;
-    if (onlineAmount < 0) {
+    if (onlineAmount <= 0) {
       _showErrorDialog("Invalid payment amount.");
       return;
     }
@@ -966,27 +1010,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (_bookingIds.isEmpty) {
         setState(() => isLoading = false);
         _showErrorDialog("Unable to reserve the slot(s). Please try again.");
-        return;
-      }
-
-      // ✅ STEP 1a: FREE BOOKING — the reservation is the whole transaction.
-      // Stop before the gateway: there is no order to raise and no payment to
-      // verify, so the slots are already held and confirmed.
-      if (isFree) {
-        if (!mounted) return;
-        setState(() => isLoading = false);
-
-        final slotText = slots
-            .map((s) => s['time']?.toString() ?? '')
-            .where((t) => t.isNotEmpty)
-            .join(', ');
-        await showBookingConfirmedNotification(
-          date: widget.bookingDetails['date']?.toString() ?? '',
-          slot: slotText,
-          totalAmount: 0,
-        );
-        if (!mounted) return;
-        _showSuccessDialog();
         return;
       }
 
@@ -1020,26 +1043,25 @@ class _PaymentScreenState extends State<PaymentScreen> {
         return;
       }
 
-      // …and never for more than the discounted total once a coupon is on the
-      // booking. [_assertOrderCovers] is deliberately one-sided so a bigger
-      // basket than expected still goes through, but that same leniency would
-      // wave through an order priced at the full amount because the backend
-      // did not honour the code — charging exactly the price the screen just
-      // promised the customer they would not pay.
-      if (_appliedCoupon != null &&
-          !orderMatchesExpected(orderData['amount'], onlineAmount)) {
-        AppLogger.error(
-          'Order ignores the coupon: order=${orderData['amount']} paise, '
-          'expected=₹$onlineAmount (₹$_baseTotal less ₹$_discount, '
-          'coupon ${_appliedCoupon?.code})',
-          name: 'Payment',
-        );
+      // The other direction: an order above the discounted total means the
+      // coupon was not applied to the stored booking, so paying it would cost
+      // the full price the customer was told they would not pay. Release and
+      // stop rather than charge it.
+      if (!_assertCouponHonoured(orderData, onlineAmount)) {
         await _releaseHeldBookings(token);
         if (!mounted) return;
-        setState(() => isLoading = false);
+        setState(() {
+          isLoading = false;
+          _appliedCoupon = null;
+          _validation = null;
+          _couponError =
+              "This coupon could not be applied to your booking. "
+              "Please remove it or try a different code.";
+        });
         _showErrorDialog(
-          "Your coupon could not be applied to this booking. "
-          "Please try again, or remove the coupon to continue.",
+          "Your coupon could not be applied to this booking, so we stopped "
+          "the payment rather than charge you the full amount. "
+          "Please try again.",
         );
         return;
       }
@@ -1545,43 +1567,43 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Venue Rules Section
-                  // Container(
-                  //   padding: EdgeInsets.all(16),
-                  //   decoration: BoxDecoration(
-                  //     color: Colors.blue.shade50,
-                  //     borderRadius: BorderRadius.circular(12),
-                  //   ),
-                  //   child: Column(
-                  //     crossAxisAlignment: CrossAxisAlignment.start,
-                  //     children: [
-                  //       Text(
-                  //         "Venue Rule & Cancellation Policy",
-                  //         style: TextStyle(
-                  //           fontSize: 14,
-                  //           fontWeight: FontWeight.w600,
-                  //           color: Colors.black87,
-                  //         ),
-                  //       ),
-                  //       SizedBox(height: 8),
-                  //       Text(
-                  //         "• Check cancellation terms",
-                  //         style: TextStyle(
-                  //           fontSize: 13,
-                  //           color: Colors.blue.shade700,
-                  //         ),
-                  //       ),
-                  //       Text(
-                  //         "• Know the venues T&Cs",
-                  //         style: TextStyle(
-                  //           fontSize: 13,
-                  //           color: Colors.blue.shade700,
-                  //         ),
-                  //       ),
-                  //     ],
-                  //   ),
-                  // ),
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Venue Rule & Cancellation Policy",
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          "• Check cancellation terms",
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                        Text(
+                          "• Know the venues T&Cs",
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
-                  // SizedBox(height: 24),
+                  SizedBox(height: 24),
 
                   // Slot Details Section
                   Text(
@@ -1938,16 +1960,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           color: Colors.black87,
                         ),
                       ),
-                      // SizedBox(height: 4),
-                      // Text(
-                      //   court,
-                      //   style: TextStyle(
-                      //     fontSize: 12,
-                      //     color: Colors.grey.shade600,
-                      //   ),
-                      // ),
-
-
+                      SizedBox(height: 4),
+                      Text(
+                        court,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
                     ],
                   ),
 

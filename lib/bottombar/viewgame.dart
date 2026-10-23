@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter/material.dart';
 import 'package:nahata_app/core/network/http_logged.dart' as http;
-import 'package:nahata_app/bottombar/slotbook.dart';
+import 'package:nahata_app/bottombar/book_a_court_screen.dart';
 
 import '../core/widgets/app_shimmer.dart';
 import 'Custombottombar.dart';
@@ -315,7 +315,7 @@ class _ViewgameState extends State<Viewgame>
                     context,
                     MaterialPageRoute(
                       // 🔄 NEW API: forward resolved sportId & sportComplexId
-                      builder: (_) => SlotBookingScreen(
+                      builder: (_) => BookACourtScreen(
                         game: title,
                         location: widget.locationName,
                         sportId: sport.id,

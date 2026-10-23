@@ -381,6 +381,26 @@ class _FakeSlotRepository implements CourtSlotRepository {
   Future<void> deleteSlot(int courtId, int slotId) async {}
 
   @override
+  Future<void> blockSlotForDate({
+    required int courtId,
+    required int slotId,
+    required String date,
+    String? notes,
+    bool countAsRevenue = false,
+    num? amount,
+  }) async {}
+
+  @override
+  Future<void> unblockSlotForDate({
+    required int courtId,
+    required int slotId,
+    required String date,
+  }) async {}
+
+  @override
+  Future<void> setSlotStatus(int courtId, int slotId, String status) async {}
+
+  @override
   Future<List<AvailableSlot>> fetchAvailableSlots(
     int courtId,
     DateTime date,

@@ -50,6 +50,10 @@ class EventBookingRepository {
     try {
       final response = await _api.post(
         ApiEndpoints.eventBookingCreate,
+        // Coupon redemption happens here and is platform-gated, the same as
+        // `/coupons/validate`. Without the header an App-only coupon would
+        // validate on the previous screen and then be refused at redemption.
+        headers: ApiConfig.platformHeader,
         body: {
           // Field names taken from the booking record returned by
           // `/event-passes/bookings/my`.
@@ -62,15 +66,14 @@ class EventBookingRepository {
           if (couponCode != null && couponCode.isNotEmpty)
             'couponCode': couponCode,
           if (sportComplexId != null) 'sportComplexId': sportComplexId,
-          // The event's own questions, as `[{key, value}]`. Sent only when the
-          // event defines some — an empty list would be noise on the many
-          // events that ask nothing. The server echoes each answer back with
-          // its label attached.
+          // The organiser's extra questions, echoed back as the documented
+          // `[{key, value}]` list. Omitted entirely when the event asks
+          // nothing, so events without custom fields send exactly what they
+          // sent before.
           if (customFieldValues != null && customFieldValues.isNotEmpty)
-            'customFieldValues': [
-              for (final entry in customFieldValues.entries)
-                {'key': entry.key, 'value': entry.value},
-            ],
+            'customFieldValues': customFieldValues.entries
+                .map((e) => {'key': e.key, 'value': e.value})
+                .toList(growable: false),
         },
       );
 

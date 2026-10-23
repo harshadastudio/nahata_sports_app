@@ -942,15 +942,20 @@ void main() {
         '/reports/overview',
         '/reports/revenue',
         '/reports/bookings',
-        '/reports/students/new-retention',
+        '/reports/students/new',
         '/reports/memberships',
         '/reports/users',
         '/reports/coaching',
         '/reports/facilities',
+        '/reports/turnover',
+        // Coach Retention ignores the window entirely — it is month-scoped
+        // and called with no query, so it is excluded from the loop below.
+        '/reports/coaches/retention',
       ]);
-      for (final query in calls.values) {
-        expect(query['from'], '2026-08-01');
-        expect(query['to'], '2026-08-31');
+      for (final entry in calls.entries) {
+        if (entry.key.endsWith('/reports/coaches/retention')) continue;
+        expect(entry.value['startDate'], '2026-08-01');
+        expect(entry.value['endDate'], '2026-08-31');
       }
     });
 
@@ -1004,7 +1009,7 @@ void main() {
       expect(captured.path, endsWith('/reports/bookings/all'));
       expect(captured.queryParameters['page'], '2');
       expect(captured.queryParameters['limit'], '50');
-      expect(captured.queryParameters['from'], '2026-08-01');
+      expect(captured.queryParameters['startDate'], '2026-08-01');
       expect(captured.queryParameters['sport'], '8');
       expect(captured.queryParameters['search'], 'rahul');
     });
@@ -1053,7 +1058,7 @@ void main() {
       expect(paths.map((path) => path.replaceFirst('/api', '')), [
         '/reports/bookings/filter-options',
         '/reports/students/filter-options',
-        '/reports/students/new-retention/filter-options',
+        '/reports/students/new/filter-options',
         '/reports/coaches/filter-options',
       ]);
     });

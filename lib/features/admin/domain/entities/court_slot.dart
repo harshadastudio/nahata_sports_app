@@ -359,6 +359,12 @@ class AvailableSlot {
     this.isBlocked,
     this.statusRaw,
     this.price,
+    this.isUserBooked = false,
+    this.blockedBy,
+    this.blockId,
+    this.blockNotes,
+    this.blockBilled = false,
+    this.blockAmount = 0,
     this.raw = const {},
   });
 
@@ -374,7 +380,47 @@ class AvailableSlot {
   final String? statusRaw;
   final num? price;
 
+  /// A paying customer holds it. Never blockable or releasable from here; the
+  /// booking has to be cancelled instead.
+  final bool isUserBooked;
+
+  /// `Admin` | `KheloMore` | `Huddle` | `Template` | null.
+  final String? blockedBy;
+
+  final int? blockId;
+  final String? blockNotes;
+
+  /// Whether the block was billed as revenue (BOOK, not BLOCK).
+  final bool blockBilled;
+
+  /// What it was billed for. `0` unless [blockBilled].
+  final num blockAmount;
+
   final Map<String, dynamic> raw;
+
+  /// Unavailable for **any** reason — a customer booking, a block, or an
+  /// Inactive template. Derived rather than read off the wire so it always
+  /// agrees with [isUserBooked] and [isBlocked].
+  bool get isBooked => isUserBooked || (isBlocked ?? false) || isAvailable == false;
+
+  /// Held by an aggregator feed. Releasable — the venue must never be locked
+  /// out of its own courts by a partner.
+  bool get isPartnerBlock =>
+      (isBlocked ?? false) &&
+      (blockedBy ?? '').isNotEmpty &&
+      blockedBy != 'Admin' &&
+      blockedBy != 'Template';
+
+  /// The slot **template** was set Inactive, so there is no date row to
+  /// release. Unblocking it reopens every date the slot runs on.
+  bool get isRecurringBlock => blockedBy == 'Template';
+
+  String get stateLabel {
+    if (isUserBooked) return 'Booked by user';
+    if (isPartnerBlock) return 'Blocked by $blockedBy';
+    if (isBlocked ?? false) return 'Blocked';
+    return 'Available';
+  }
 
   SlotTime? get startTime => SlotTime.parse(startTimeRaw);
   SlotTime? get endTime => SlotTime.parse(endTimeRaw);

@@ -78,6 +78,14 @@ class VisitorPassQrSource {
   ///
   /// Returns null for a remote image — those are shared as a link instead of
   /// being downloaded and re-uploaded.
+  ///
+  /// [QrPainter] only paints the dark modules and leaves everything else
+  /// transparent, which is invisible on screen (it sits on a white plate) but
+  /// not once the PNG leaves the app: WhatsApp flattens a shared image to
+  /// JPEG for its preview/thumbnail, and a transparent background flattens to
+  /// black — making the black QR modules disappear into it, both in the chat
+  /// preview and in a saved copy. A white background is painted in first so
+  /// the exported PNG always has real contrast, not just the widget.
   Future<Uint8List?> pngBytes({double size = 640}) async {
     final inline = imageBytes;
     if (inline != null) return inline;
@@ -99,10 +107,16 @@ class VisitorPassQrSource {
       ),
     );
 
-    final bytes = await painter.toImageData(
-      size,
-      format: ui.ImageByteFormat.png,
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size, size),
+      Paint()..color = Colors.white,
     );
+    painter.paint(canvas, Size(size, size));
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
     return bytes?.buffer.asUint8List();
   }
 

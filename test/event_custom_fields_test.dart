@@ -78,7 +78,7 @@ void main() {
       expect(parent.displayLabel, 'Enter Parents Name');
       expect(parent.required, isTrue);
       expect(parent.placeholder, 'Enter Parents Name');
-      expect(parent.isChoice, isFalse);
+      expect(parent.isSelect, isFalse);
     });
 
     test('an event that asks nothing has no fields', () {
@@ -119,7 +119,7 @@ void main() {
         ],
       });
 
-      expect(pass.customFields[0].isChoice, isTrue);
+      expect(pass.customFields[0].isSelect, isTrue);
       expect(pass.customFields[0].options, ['S', 'M', 'L']);
       expect(pass.customFields[1].options, ['veg', 'non_veg']);
     });
@@ -156,7 +156,7 @@ void main() {
       });
 
       final field = pass.customFields.single;
-      expect(field.isChoice, isFalse);
+      expect(field.isSelect, isFalse);
       expect(field.isDate, isFalse);
       expect(field.isNumber, isFalse);
     });

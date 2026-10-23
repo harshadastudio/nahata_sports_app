@@ -168,6 +168,23 @@ class AvailableSlotMapper {
       price: CourtMapper.number(
         JsonReader.pick(json, const ['price', 'amount', 'priceOverride']),
       ),
+      isUserBooked: JsonReader.boolean(json, const [
+            'isUserBooked',
+            'is_user_booked',
+          ]) ??
+          false,
+      blockedBy: JsonReader.string(json, const ['blockedBy', 'blocked_by']),
+      blockId: JsonReader.integer(json, const ['blockId', 'block_id']),
+      blockNotes: JsonReader.string(json, const ['blockNotes', 'block_notes']),
+      blockBilled: JsonReader.boolean(json, const [
+            'blockBilled',
+            'block_billed',
+          ]) ??
+          false,
+      blockAmount: CourtMapper.number(
+            JsonReader.pick(json, const ['blockAmount', 'block_amount']),
+          ) ??
+          0,
       raw: json,
     );
   }

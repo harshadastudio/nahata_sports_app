@@ -54,7 +54,14 @@ void main() {
   Future<void> openTab(WidgetTester tester, String label) async {
     // The switcher sits above the body, so its label is the first match — the
     // same word also appears on cards and column headings below it.
-    await tester.tap(find.text(label).first);
+    //
+    // The switcher is a horizontally scrolling pill row, and with ten tabs
+    // on a phone-width screen a later one (e.g. "Bookings") sits past the
+    // right edge until scrolled into view.
+    final finder = find.text(label).first;
+    await tester.ensureVisible(finder);
+    await tester.pump();
+    await tester.tap(finder);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
   }

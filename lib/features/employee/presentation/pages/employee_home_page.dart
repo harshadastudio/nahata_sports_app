@@ -10,8 +10,12 @@ import 'employee_batches_page.dart';
 import 'employee_blocked_slots_page.dart';
 import 'employee_bookings_page.dart';
 import 'employee_coaches_page.dart';
+import 'employee_contact_enquiries_page.dart';
+import 'employee_coupons_page.dart';
 import 'employee_courts_page.dart';
 import 'employee_enquiries_page.dart';
+import 'employee_event_bookings_page.dart';
+import 'employee_events_page.dart';
 import 'employee_fees_approval_page.dart';
 import 'employee_fees_management_page.dart';
 import 'employee_notifications_page.dart';
@@ -20,13 +24,15 @@ import 'employee_payments_page.dart';
 import 'employee_profile_page.dart';
 import 'employee_slots_page.dart';
 import 'employee_sports_page.dart';
+import 'employee_students_page.dart';
 import 'employee_users_page.dart';
+import 'employee_visitor_passes_page.dart';
 
 /// The employee's home — the menu every other employee screen is reached from.
 ///
 /// Mirrors the `EMPLOYEE` block of the website's sidebar entry-for-entry, but
-/// bucketed under two headings: seventeen flat rows works in a sidebar and does
-/// not on a phone.
+/// bucketed under headings: a flat list of two dozen rows works in a sidebar
+/// and does not on a phone.
 class EmployeeHomePage extends StatefulWidget {
   const EmployeeHomePage({super.key});
 
@@ -84,15 +90,22 @@ class _EmployeeHomePageState extends State<EmployeeHomePage> {
       EmployeeDestination.attendance => const EmployeeAttendancePage(),
       EmployeeDestination.coaches => const EmployeeCoachesPage(),
       EmployeeDestination.enquiries => const EmployeeEnquiriesPage(),
+      EmployeeDestination.students => const EmployeeStudentsPage(),
       EmployeeDestination.feesApproval => const EmployeeFeesApprovalPage(),
       EmployeeDestination.users => const EmployeeUsersPage(),
       EmployeeDestination.notifications => const EmployeeNotificationsPage(),
+      EmployeeDestination.visitorPasses => const EmployeeVisitorPassesPage(),
+      EmployeeDestination.eventBookings => const EmployeeEventBookingsPage(),
+      EmployeeDestination.contactEnquiries =>
+        const EmployeeContactEnquiriesPage(),
       EmployeeDestination.blockedSlots => const EmployeeBlockedSlotsPage(),
       EmployeeDestination.feesManagement => const EmployeeFeesManagementPage(),
       EmployeeDestination.sports => const EmployeeSportsPage(),
       EmployeeDestination.courts => const EmployeeCourtsPage(),
       EmployeeDestination.slots => const EmployeeSlotsPage(),
       EmployeeDestination.batches => const EmployeeBatchesPage(),
+      EmployeeDestination.events => const EmployeeEventsPage(),
+      EmployeeDestination.coupons => const EmployeeCouponsPage(),
       EmployeeDestination.profile => const EmployeeProfilePage(),
     };
 

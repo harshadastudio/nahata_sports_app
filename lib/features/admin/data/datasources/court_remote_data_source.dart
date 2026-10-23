@@ -119,6 +119,59 @@ class CourtRemoteDataSource {
     return _api.delete(ApiEndpoints.courtSlot(courtId, slotId));
   }
 
+  /// `POST /courts/{courtId}/slots/{slotId}/block` — that date only.
+  ///
+  /// `countAsRevenue: true` (BOOK) records the block as a paid booking;
+  /// re-posting with the opposite value on an already-blocked slot is the
+  /// un-bill/re-bill correction — it changes only the billed flag.
+  Future<ApiResponse> blockSlot({
+    required int courtId,
+    required int slotId,
+    required String date,
+    String? notes,
+    bool countAsRevenue = false,
+    num? amount,
+  }) {
+    final body = <String, dynamic>{
+      'date': date,
+      'countAsRevenue': countAsRevenue,
+      if ((notes ?? '').trim().isNotEmpty) 'notes': notes!.trim(),
+      if (amount != null) 'amount': amount,
+    };
+
+    AdminLog.call('POST ${ApiEndpoints.courtSlotBlock(courtId, slotId)} $body');
+    return _api.post(ApiEndpoints.courtSlotBlock(courtId, slotId), body: body);
+  }
+
+  /// `POST /courts/{courtId}/slots/{slotId}/unblock` — that date only.
+  Future<ApiResponse> unblockSlot({
+    required int courtId,
+    required int slotId,
+    required String date,
+  }) {
+    AdminLog.call(
+      'POST ${ApiEndpoints.courtSlotUnblock(courtId, slotId)} date=$date',
+    );
+    return _api.post(
+      ApiEndpoints.courtSlotUnblock(courtId, slotId),
+      body: {'date': date},
+    );
+  }
+
+  /// `PATCH /courts/{courtId}/slots/{slotId}/toggle` with an explicit status —
+  /// distinct from [toggleSlot], which flips whatever the slot currently is.
+  /// Used to force-reactivate a recurring block, where flipping blindly would
+  /// be wrong if the template were somehow already Active.
+  Future<ApiResponse> setSlotStatus(int courtId, int slotId, String status) {
+    AdminLog.call(
+      'PATCH ${ApiEndpoints.courtSlotToggle(courtId, slotId)} → $status',
+    );
+    return _api.patch(
+      ApiEndpoints.courtSlotToggle(courtId, slotId),
+      body: {'status': status},
+    );
+  }
+
   /// `GET /courts/{courtId}/available-slots?date=yyyy-MM-dd`
   Future<ApiResponse> availableSlots(int courtId, String date) {
     AdminLog.call(

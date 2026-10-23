@@ -16,15 +16,18 @@ class CouponRepository {
   ///
   /// Returns an empty list rather than throwing — an offers strip is never
   /// worth failing a screen over.
-  /// [sportComplexId], [sportId] and [eventPassId] say what the shopper is
-  /// actually looking at. They are not merely a narrowing filter — the server
-  /// matches each one as "the coupon is unscoped **or** it is scoped to this",
-  /// so a coupon tied to one venue, sport or event can only come back when the
-  /// request names that venue, sport or event. Omitting them does not return
-  /// everything; it returns only the coupons scoped to nothing, which is why a
-  /// perfectly valid offer could sit in the admin list and never reach the
-  /// screen. `/coupons/validate` has always sent them, which is why typing the
-  /// code by hand worked while the offers strip stayed empty.
+  /// The scope ids matter more than "optional" suggests: the server filters on
+  /// `<scope> IS NULL OR = requested`, so leaving one out matches only the
+  /// coupons that apply everywhere. A scoped offer is dropped — which is why
+  /// the app showed no offers while the website, which sends them, showed the
+  /// same coupons fine.
+  ///
+  /// Which ids matter depends on [appliesTo], because the two scopes are
+  /// mutually exclusive on the record: a Court coupon carries
+  /// [sportComplexId]/[sportId] with `eventPassId` null, and an Event coupon
+  /// carries [eventPassId] with the other two null. Passing all three is
+  /// harmless — the null column matches anything — but an Event coupon pinned
+  /// to one event is invisible unless [eventPassId] is sent.
   Future<List<CouponModel>> fetchActiveCoupons({
     String appliesTo = 'Event',
     int? sportComplexId,
@@ -36,8 +39,6 @@ class CouponRepository {
         ApiEndpoints.activeCoupons,
         query: {
           'appliesTo': appliesTo,
-          // Sent only when known. An explicit null here would narrow the match
-          // to unscoped coupons, which is the very bug this fixes.
           if (sportComplexId != null) 'sportComplexId': sportComplexId,
           if (sportId != null) 'sportId': sportId,
           if (eventPassId != null) 'eventPassId': eventPassId,
@@ -47,14 +48,10 @@ class CouponRepository {
         headers: ApiConfig.platformHeader,
       );
 
-      // A refused call and a genuinely empty offers list both end up as "no
-      // offers right now" on screen, which makes them impossible to tell apart
-      // when one is reported. The reason is logged so they can be.
       if (!response.isOk) {
         AppLogger.error(
-          'No $appliesTo coupons: the request was refused '
-          '(${response.statusCode}) — ${response.message ?? 'no message'}. '
-          'This endpoint needs a signed-in user.',
+          'Coupons request rejected (appliesTo=$appliesTo, '
+          'platform=${ApiConfig.clientPlatform}): ${response.message}',
           name: 'Coupons',
         );
         return const <CouponModel>[];
@@ -66,31 +63,32 @@ class CouponRepository {
       // `data` is a bare list today; tolerate a paginated wrapper too.
       final raw = data is Map ? (data['coupons'] ?? data['data']) : data;
 
-      final parsed = CouponModel.listFrom(raw);
-      final usable = parsed.where((c) => c.isUsable).toList();
+      final all = CouponModel.listFrom(raw);
+      final usable = all.where((c) => c.isUsable).toList();
 
-      // `/coupons/active` already filters to live coupons, so [isUsable]
-      // should never remove one. When it does, the two disagree about a
-      // coupon the server was willing to offer — say which, rather than
-      // showing the user a shorter list for no visible reason.
-      if (usable.length != parsed.length) {
-        final dropped = parsed
-            .where((c) => !c.isUsable)
-            .map((c) => '${c.code} (status=${c.status}, '
-                'validTill=${c.validTill}, '
-                'used=${c.usedCount}/${c.usageLimit})')
-            .join('; ');
-        AppLogger.error(
-          'Dropped ${parsed.length - usable.length} of ${parsed.length} '
-          '$appliesTo coupons the server offered: $dropped',
+      // "No coupons in the app when the web shows them" has two very different
+      // causes and they are indistinguishable from an empty list: either the
+      // backend withheld them — it filters on `appliesTo` and on the
+      // `x-client-platform` header, so an App-only coupon and a mislabelled
+      // platform both come back as nothing — or they arrived and the
+      // `isUsable` filter below dropped them. Say which.
+      if (all.isEmpty) {
+        AppLogger.debug(
+          'No coupons returned for appliesTo=$appliesTo '
+          '(platform=${ApiConfig.clientPlatform}) — the backend sent none',
+          name: 'Coupons',
+        );
+      } else if (usable.length != all.length) {
+        final dropped = all.where((c) => !c.isUsable).map(
+              (c) => '${c.code}(status=${c.status}, from=${c.validFrom}, '
+                  'till=${c.validTill}, used=${c.usedCount}/${c.usageLimit})',
+            );
+        AppLogger.debug(
+          'Filtered ${all.length - usable.length} of ${all.length} coupons as '
+          'unusable: ${dropped.join(', ')}',
           name: 'Coupons',
         );
       }
-
-      AppLogger.debug(
-        '$appliesTo coupons: ${usable.length} offered',
-        name: 'Coupons',
-      );
 
       return usable;
     } catch (e) {

@@ -2,6 +2,7 @@ import '../../../../core/network/api_exception.dart';
 import '../../core/coach_log.dart';
 import '../../domain/entities/coach_attendance.dart';
 import '../../domain/entities/coach_batch.dart';
+import '../../domain/entities/coach_earnings.dart';
 import '../../domain/entities/coach_enquiry.dart';
 import '../../domain/entities/coach_enrollment.dart';
 import '../../domain/entities/coach_fee.dart';
@@ -73,6 +74,19 @@ class CoachDashboardRepositoryImpl implements CoachDashboardRepository {
     return performers;
   }
 
+  @override
+  Future<CoachEarnings> getEarnings({String? startDate, String? endDate}) async {
+    final response = await _remote.earnings(
+      startDate: startDate,
+      endDate: endDate,
+    );
+    if (!response.isOk) throw response.toException();
+
+    final earnings = CoachMappers.earnings(response.data);
+    CoachLog.data('Earnings → $earnings');
+    return earnings;
+  }
+
   // ---------------------------------------------------------------------------
   // Students
   // ---------------------------------------------------------------------------
@@ -126,6 +140,58 @@ class CoachDashboardRepositoryImpl implements CoachDashboardRepository {
     final view = CoachMappers.enrollmentMonth(response.data);
     CoachLog.data('Enrollments by month → $view');
     return view;
+  }
+
+  @override
+  Future<CoachRenewalPreview> getRenewalPreview({
+    String? fromMonth,
+    String? toMonth,
+  }) async {
+    final response = await _remote.renewalPreview(
+      fromMonth: fromMonth,
+      toMonth: toMonth,
+    );
+    if (!response.isOk) throw response.toException();
+
+    final preview = CoachMappers.renewalPreview(response.data);
+    CoachLog.data('Renewal preview → $preview');
+    return preview;
+  }
+
+  @override
+  Future<CoachRenewMonthResult> renewMonth(
+    CoachRenewMonthRequest request,
+  ) async {
+    if (request.toMonth.trim().isEmpty) {
+      throw const ValidationException('Choose the month to renew into.');
+    }
+    if (request.items.isEmpty) {
+      throw const ValidationException('Select at least one student to renew.');
+    }
+
+    final response = await _remote.renewMonth(request.toJson());
+    if (!response.isOk) throw response.toException();
+
+    final result = CoachMappers.renewMonthResult(
+      response.data,
+      message: response.message,
+    );
+    CoachLog.success('Renewed ${result.renewedCount} student(s) into '
+        '${request.toMonth}');
+    return result;
+  }
+
+  @override
+  Future<void> removeEnrollmentFromMonth({
+    required int enrollmentId,
+    required String month,
+  }) async {
+    final response = await _remote.removeEnrollmentMonth(
+      enrollmentId,
+      month: month,
+    );
+    if (!response.isOk) throw response.toException();
+    CoachLog.success('Removed enrollment $enrollmentId from $month');
   }
 
   // ---------------------------------------------------------------------------

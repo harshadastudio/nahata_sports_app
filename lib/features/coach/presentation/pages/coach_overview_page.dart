@@ -4,6 +4,7 @@ import '../../../../core/services/permission_service.dart';
 import '../../../../core/storage/profile_cache.dart';
 import '../../core/coach_log.dart';
 import '../../data/repositories/coach_dashboard_repository_impl.dart';
+import '../../domain/entities/coach_earnings.dart';
 import '../../domain/entities/coach_enquiry.dart';
 import '../../domain/entities/coach_overview.dart';
 import '../../domain/repositories/coach_dashboard_repository.dart';
@@ -170,6 +171,8 @@ class _CoachOverviewPageState extends State<CoachOverviewPage> {
         _banner(),
         const SizedBox(height: CoachTokens.space5),
         _statsSection(),
+        const CoachSectionHeader(title: 'My Earnings'),
+        _earningsSection(),
         const CoachSectionHeader(title: "Today's Schedule"),
         _scheduleSection(),
         if (PermissionService.instance
@@ -348,6 +351,124 @@ class _CoachOverviewPageState extends State<CoachOverviewPage> {
       ],
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // My Earnings
+  // ---------------------------------------------------------------------------
+
+  Widget _earningsSection() {
+    if (_controller.earningsState.isLoading && _controller.earnings.isEmpty) {
+      return const CoachStatsShimmer();
+    }
+
+    if (_controller.earningsState.isFailed) {
+      return CoachCard(
+        child: CoachErrorView(
+          compact: true,
+          message: _controller.earningsError ?? 'Could not load your earnings.',
+          onRetry: _controller.refresh,
+        ),
+      );
+    }
+
+    final earnings = _controller.earnings;
+
+    return CoachCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: CoachTokens.space2,
+            runSpacing: CoachTokens.space2,
+            children: CoachEarningsRange.values
+                .map((range) => ChoiceChip(
+                      label: Text(range.label),
+                      selected: _controller.earningsRange == range,
+                      onSelected: (_) => _controller.setEarningsRange(range),
+                      labelStyle: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _controller.earningsRange == range
+                            ? Colors.white
+                            : CoachTokens.textBody,
+                      ),
+                      selectedColor: CoachTokens.brand,
+                      backgroundColor: CoachTokens.brandSoft,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(CoachTokens.radiusPill),
+                        side: BorderSide.none,
+                      ),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: CoachTokens.space4),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            mainAxisSpacing: CoachTokens.space3,
+            crossAxisSpacing: CoachTokens.space3,
+            childAspectRatio: 1.9,
+            children: [
+              _earningsTile(
+                'Total collected',
+                _rupee(earnings.totalCollected),
+                CoachTokens.info,
+              ),
+              _earningsTile(
+                'Your share (${earnings.sharePercentLabel})',
+                _rupee(earnings.totalEarnings),
+                CoachTokens.success,
+              ),
+              _earningsTile(
+                'Nahata share',
+                _rupee(earnings.nahataShare),
+                CoachTokens.brand,
+              ),
+              _earningsTile(
+                'Reversed by refunds',
+                _rupee(earnings.reversedByRefunds),
+                CoachTokens.danger,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _earningsTile(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(CoachTokens.space3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(CoachTokens.radiusSm),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11.5, color: CoachTokens.textMuted),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _rupee(num amount) => '₹${amount.round()}';
 
   // ---------------------------------------------------------------------------
   // Today's schedule

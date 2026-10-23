@@ -1,5 +1,6 @@
 import '../entities/coach_attendance.dart';
 import '../entities/coach_batch.dart';
+import '../entities/coach_earnings.dart';
 import '../entities/coach_enquiry.dart';
 import '../entities/coach_enrollment.dart';
 import '../entities/coach_fee.dart';
@@ -34,6 +35,10 @@ abstract class CoachDashboardRepository {
   /// The five highest-scoring students on this coach's roster.
   Future<List<CoachTopPerformer>> getTopPerformers();
 
+  /// The My Earnings card. Omit both dates for all time; the UI's range chips
+  /// map to `startDate`/`endDate` client-side.
+  Future<CoachEarnings> getEarnings({String? startDate, String? endDate});
+
   // ---------------------------------------------------------------------------
   // Students
   // ---------------------------------------------------------------------------
@@ -59,6 +64,26 @@ abstract class CoachDashboardRepository {
     String? month,
     String? search,
     String? status,
+  });
+
+  /// Copy to Next Month, step 1 — nothing is written. Builds the editable
+  /// batch-wise list of who can be carried from [fromMonth] into [toMonth].
+  Future<CoachRenewalPreview> getRenewalPreview({
+    String? fromMonth,
+    String? toMonth,
+  });
+
+  /// Copy to Next Month, step 2 — commits only the rows the coach left
+  /// ticked. Per-row failures do not fail the whole request; read
+  /// [CoachRenewMonthResult.failed].
+  Future<CoachRenewMonthResult> renewMonth(CoachRenewMonthRequest request);
+
+  /// Removes one student's enrollment from exactly one month. Throws a
+  /// `ConflictException` (409) — with the server's guidance message — when an
+  /// earlier month must be removed first.
+  Future<void> removeEnrollmentFromMonth({
+    required int enrollmentId,
+    required String month,
   });
 
   // ---------------------------------------------------------------------------

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/network/api_exception.dart';
 import '../../data/repositories/coach_dashboard_repository_impl.dart';
 import '../../domain/entities/coach_enrollment.dart';
 import '../../domain/repositories/coach_dashboard_repository.dart';
 import '../state/coach_enrollments_controller.dart';
 import '../state/coach_view_state.dart';
 import '../theme/coach_theme.dart';
+import '../widgets/coach_renewal_sheet.dart';
 import '../widgets/coach_states.dart';
 
 /// Student Enrollments — one month's roster, grouped batch-wise.
@@ -62,12 +64,18 @@ class _CoachEnrollmentsPageState extends State<CoachEnrollmentsPage> {
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
         actions: [
-          if (_controller.batches.isNotEmpty)
+          if (_controller.batches.isNotEmpty) ...[
+            IconButton(
+              tooltip: 'Copy to Next Month',
+              onPressed: _openRenewalSheet,
+              icon: const Icon(Icons.copy_all_outlined),
+            ),
             IconButton(
               tooltip: 'Collapse all',
               onPressed: _controller.collapseAll,
               icon: const Icon(Icons.unfold_less_rounded),
             ),
+          ],
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(2),
@@ -87,6 +95,110 @@ class _CoachEnrollmentsPageState extends State<CoachEnrollmentsPage> {
         ],
       ),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Copy to Next Month
+  // ---------------------------------------------------------------------------
+
+  Future<void> _openRenewalSheet() async {
+    await _controller.loadRenewalPreview();
+    if (!mounted) return;
+
+    if (_controller.renewalState.isFailed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _controller.renewalError ?? 'Could not load the preview.',
+          ),
+          backgroundColor: CoachTokens.danger,
+        ),
+      );
+      return;
+    }
+
+    final result = await showCoachRenewalSheet(
+      context: context,
+      preview: _controller.renewalPreview,
+      onConfirm: _controller.commitRenewal,
+    );
+
+    if (!mounted || result == null) return;
+
+    final message = result.failedCount > 0
+        ? '${result.renewedCount} renewed, ${result.skippedCount} skipped, '
+            '${result.failedCount} failed.'
+        : '${result.renewedCount} student'
+            '${result.renewedCount == 1 ? '' : 's'} carried into '
+            '${result.toLabel}.';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor:
+            result.failedCount > 0 ? CoachTokens.warning : CoachTokens.success,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Remove student from a month
+  // ---------------------------------------------------------------------------
+
+  Future<void> _removeEnrollment(CoachEnrollment enrollment) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(CoachTokens.radiusMd),
+        ),
+        title: const Text(
+          'Remove from this month?',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          '${enrollment.displayName} will be removed from '
+          '${_controller.monthLabel}. Earlier months are unaffected.',
+          style: const TextStyle(fontSize: 13.5, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            style: TextButton.styleFrom(foregroundColor: CoachTokens.textMuted),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: CoachTokens.danger),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _controller.removeEnrollment(enrollment);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            '${enrollment.displayName} removed from ${_controller.monthLabel}',
+          ),
+          backgroundColor: CoachTokens.success,
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            e is ApiException ? e.message : 'Could not remove that student.',
+          ),
+          backgroundColor: CoachTokens.danger,
+        ),
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -643,6 +755,16 @@ class _CoachEnrollmentsPageState extends State<CoachEnrollmentsPage> {
                   const Divider(height: 1, color: CoachTokens.border),
                 ],
               ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Remove from this month',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _removeEnrollment(enrollment),
+            icon: const Icon(
+              Icons.delete_outline_rounded,
+              size: 19,
+              color: CoachTokens.textMuted,
             ),
           ),
         ],

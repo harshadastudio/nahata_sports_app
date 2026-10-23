@@ -1,3 +1,8 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/widgets.dart';
+
 import '../core/config/api_config.dart';
 import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
@@ -21,27 +26,74 @@ class EnquiryResult {
   final int? id;
 }
 
-/// Resolves an image reference from the API to something `Image.network` can
-/// actually load.
+/// Resolves an image reference from the API to something renderable.
 ///
-/// The API is inconsistent here: some routes return a full URL, others a bare
-/// filename. Handing a bare filename straight to `Image.network` is why coach
-/// and sport pictures rendered as placeholders. An already-absolute URL is
-/// returned untouched.
+/// The API is inconsistent here: some routes return a full URL, some a bare
+/// filename, and `/coaches` an inlined `data:` URI. Handing a bare filename
+/// straight to `Image.network` is why coach and sport pictures rendered as
+/// placeholders. An already-absolute URL and a `data:` URI are both returned
+/// untouched.
+///
+/// The result is *not* necessarily loadable by `Image.network` — pass it to
+/// [mediaImageProvider], which picks the right provider for each shape.
 String? resolveMediaUrl(String? raw) {
   final value = raw?.trim();
   if (value == null || value.isEmpty) return null;
   if (value.startsWith('http://') || value.startsWith('https://')) {
     return value;
   }
-  // Some coach records store the picture inline as a base64 `data:` URI rather
-  // than as an uploaded file. That is already the whole image — prefixing the
-  // media host would turn it into a nonsense URL that can never load. It is
-  // passed through for [MediaImage] to decode.
+  // `/coaches` inlines the picture as a `data:image/...;base64,...` URI. It is
+  // already the image — treating it as a filename produced
+  // `<mediaBaseUrl>/data:image/png;base64,...`, a 404, and a placeholder where
+  // the coach's photo should be. Pass it through for [mediaImageProvider] to
+  // decode.
   if (value.startsWith('data:')) return value;
 
   final path = value.startsWith('/') ? value.substring(1) : value;
   return '${ApiConfig.mediaBaseUrl}/$path';
+}
+
+/// The bytes of a base64 `data:` URI, or null if [value] is not one.
+///
+/// Only base64 payloads are decoded; a percent-encoded `data:` URI returns
+/// null rather than a corrupt image.
+Uint8List? decodeDataUri(String? value) {
+  final text = value?.trim();
+  if (text == null || !text.startsWith('data:')) return null;
+
+  final comma = text.indexOf(',');
+  if (comma < 0) return null;
+  if (!text.substring(0, comma).contains(';base64')) return null;
+
+  try {
+    // The wire form can carry newlines; base64Decode rejects them.
+    return base64Decode(text.substring(comma + 1).replaceAll(RegExp(r'\s'), ''));
+  } catch (_) {
+    AppLogger.debug('Undecodable data URI image', name: 'Coaching');
+    return null;
+  }
+}
+
+/// An [ImageProvider] for either shape the API sends: an absolute URL, or a
+/// `data:` URI carrying the bytes inline.
+///
+/// `Image.network` cannot load a data URI — it hands the whole string to the
+/// HTTP stack — so anything that might be inlined has to go through here
+/// rather than straight to `Image.network`.
+///
+/// Returns null when there is nothing to show, which callers render as their
+/// own placeholder.
+ImageProvider? mediaImageProvider(String? source) {
+  final value = source?.trim();
+  if (value == null || value.isEmpty) return null;
+
+  final bytes = decodeDataUri(value);
+  if (bytes != null) return MemoryImage(bytes);
+
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return NetworkImage(value);
+  }
+  return null;
 }
 
 /// A coach's own record from `GET /coaches/sport/{sportId}`.
@@ -58,9 +110,9 @@ class CoachProfile {
     this.experience,
     this.qualifications,
     this.specialization,
+    this.ground,
     this.certification,
     this.availability,
-    this.ground,
   });
 
   final int? id;
@@ -74,15 +126,9 @@ class CoachProfile {
   final String? experience;
   final String? qualifications;
   final String? specialization;
-
-  /// Free text from the coach record, e.g. "ALL India Basketball Cert".
-  final String? certification;
-
-  /// The coach's own weekly availability, e.g. "Monday,Tuesday,Sunday".
-  /// Distinct from a batch's schedule, which belongs to the batch.
-  final String? availability;
-
   final String? ground;
+  final String? certification;
+  final String? availability;
 
   bool get hasImage => (image ?? '').isNotEmpty;
 
@@ -124,14 +170,13 @@ class CoachProfile {
       specialization: _str(json['specialization'] ??
           json['specialisation'] ??
           json['speciality']),
-      certification:
-          _str(json['certification'] ?? json['certifications']),
-      availability: _str(json['availability']),
       ground: _str(
         json['ground'] ??
             (complex is Map ? complex['name'] : null) ??
             (sport is Map ? sport['ground'] : null),
       ),
+      certification: _str(json['certification'] ?? json['certifications']),
+      availability: _str(json['availability']),
     );
   }
 

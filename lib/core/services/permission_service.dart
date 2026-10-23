@@ -86,6 +86,18 @@ class EmployeePermissions {
   static const String slots = 'employee_slots';
   static const String batches = 'employee_batches';
 
+  // ── Back-office modules. Complex-scoped like the block above: the
+  //    controllers call `complexScope`, and EMPLOYEE is in
+  //    `COMPLEX_SCOPED_ROLES`, so each one only ever shows the employee's own
+  //    complex. The slugs match `EMPLOYEE_PERMISSIONS` in
+  //    `employeePermission.js`, which enforces the same set on the API. ──────
+  static const String students = 'employee_students';
+  static const String coupons = 'employee_coupons';
+  static const String visitorList = 'employee_visitor_list';
+  static const String events = 'employee_events';
+  static const String eventPasses = 'employee_event_passes';
+  static const String contactEnquiries = 'employee_contact_enquiries';
+
   static const String logout = 'employee_logout';
 
   /// Not employee-specific — the website marks the profile entry `alwaysShow`,

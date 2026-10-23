@@ -93,6 +93,13 @@ enum AdminDestination {
     subtitle: 'Courts, surfaces and availability',
     ready: true,
   ),
+  blockedSlots(
+    label: 'Blocked Slots',
+    icon: Icons.block_outlined,
+    activeIcon: Icons.block_rounded,
+    subtitle: 'Close a court for a date — maintenance or an event',
+    ready: true,
+  ),
   events(
     label: 'Event Passes',
     shortLabel: 'Events',

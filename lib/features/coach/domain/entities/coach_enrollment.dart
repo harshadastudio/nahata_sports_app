@@ -292,3 +292,257 @@ class CoachEnrollmentMonthView {
       'CoachEnrollmentMonthView($month, ${batches.length} batches, '
       '${summary.totalStudents} students)';
 }
+
+/// One student row inside a [CoachRenewalBatchGroup] — Copy to Next Month's
+/// preview, from `GET /coach/dashboard/students/renewal-preview`.
+class CoachRenewalLine {
+  const CoachRenewalLine({
+    required this.enrollmentId,
+    this.studentId = 0,
+    this.name = '',
+    this.email = '',
+    this.phone = '',
+    this.statusRaw,
+    this.paymentStatusRaw,
+    this.approvalStatusRaw,
+    this.amountPaid = 0,
+    this.alreadyCovered = false,
+    this.alreadyRenewed = false,
+    this.note = '',
+    this.suggestedFee = 0,
+    this.defaultSelected = false,
+  });
+
+  final int enrollmentId;
+  final int studentId;
+  final String name;
+  final String email;
+  final String phone;
+
+  final String? statusRaw;
+  final String? paymentStatusRaw;
+  final String? approvalStatusRaw;
+  final num amountPaid;
+
+  /// Already valid into the target month — still listed, just flagged rather
+  /// than hidden.
+  final bool alreadyCovered;
+
+  /// The target month was already renewed **and** paid.
+  final bool alreadyRenewed;
+
+  /// A ready-made explanation to show verbatim next to the row, e.g. "Already
+  /// valid through Oct 2026." Empty for a plain continuing student.
+  final String note;
+
+  /// Pre-fill for the fee input — the batch fee, or `0` when the batch has
+  /// none.
+  final num suggestedFee;
+
+  /// The tick state to start with: false for already-covered / already-renewed
+  /// / Dropped rows.
+  final bool defaultSelected;
+
+  String get displayName => name.trim().isEmpty ? 'Unknown' : name.trim();
+
+  String get statusLabel => (statusRaw ?? '').trim();
+
+  @override
+  String toString() => 'CoachRenewalLine($enrollmentId, $name)';
+}
+
+/// One batch's students inside a Copy to Next Month preview.
+class CoachRenewalBatchGroup {
+  const CoachRenewalBatchGroup({
+    required this.batchId,
+    this.name = '',
+    this.sportName,
+    this.schedule,
+    this.days,
+    this.startTime,
+    this.endTime,
+    this.fees,
+    this.batchEndDate,
+    this.students = const [],
+    this.count = 0,
+  });
+
+  final int batchId;
+  final String name;
+  final String? sportName;
+  final String? schedule;
+  final String? days;
+  final String? startTime;
+  final String? endTime;
+  final num? fees;
+
+  /// So the UI can warn when a renewal would run past the batch's own end
+  /// date.
+  final String? batchEndDate;
+
+  final List<CoachRenewalLine> students;
+  final int count;
+
+  String get displayName =>
+      name.trim().isEmpty ? 'Batch #$batchId' : name.trim();
+
+  @override
+  String toString() => 'CoachRenewalBatchGroup($batchId, $name)';
+}
+
+/// Copy to Next Month, step 1 — the whole editable preview.
+class CoachRenewalPreview {
+  const CoachRenewalPreview({
+    this.fromMonth = '',
+    this.fromLabel = '',
+    this.toMonth = '',
+    this.toLabel = '',
+    this.defaultValidTill,
+    this.candidates = 0,
+    this.selectedByDefault = 0,
+    this.alreadyCovered = 0,
+    this.alreadyRenewed = 0,
+    this.feeIfAllCollected = 0,
+    this.batches = const [],
+  });
+
+  final String fromMonth;
+  final String fromLabel;
+  final String toMonth;
+  final String toLabel;
+
+  /// Last day of [toMonth] — pre-fill the "valid till" input with this.
+  final String? defaultValidTill;
+
+  final int candidates;
+  final int selectedByDefault;
+  final int alreadyCovered;
+  final int alreadyRenewed;
+
+  /// Rupee total if every pre-ticked row is marked collected at its
+  /// suggested fee.
+  final num feeIfAllCollected;
+
+  final List<CoachRenewalBatchGroup> batches;
+
+  static const CoachRenewalPreview empty = CoachRenewalPreview();
+
+  bool get isEmpty => batches.isEmpty;
+
+  @override
+  String toString() =>
+      'CoachRenewalPreview($fromMonth → $toMonth, $candidates candidates)';
+}
+
+/// One ticked row in the Copy to Next Month commit request.
+class CoachRenewItem {
+  const CoachRenewItem({
+    required this.enrollmentId,
+    this.collected = false,
+    this.fee,
+    this.validTill,
+    this.paymentMode,
+  });
+
+  final int enrollmentId;
+
+  /// `true` records a fee payment (and coach earnings); `false` extends the
+  /// month without money changing hands.
+  final bool collected;
+
+  /// Defaults server-side to the batch fee when omitted.
+  final num? fee;
+
+  /// `yyyy-MM-dd`. Defaults server-side to the last day of the target month.
+  final String? validTill;
+
+  /// `Cash | UPI | Card | BankTransfer | Cheque | Other`. Only meaningful
+  /// with [collected].
+  final String? paymentMode;
+
+  Map<String, dynamic> toJson() => {
+        'enrollmentId': enrollmentId,
+        'collected': collected,
+        if (fee != null) 'fee': fee,
+        if ((validTill ?? '').trim().isNotEmpty) 'validTill': validTill!.trim(),
+        if (collected && (paymentMode ?? '').trim().isNotEmpty)
+          'paymentMode': paymentMode!.trim(),
+      };
+}
+
+/// Copy to Next Month, step 2 — the commit request body.
+class CoachRenewMonthRequest {
+  const CoachRenewMonthRequest({required this.toMonth, required this.items});
+
+  final String toMonth;
+  final List<CoachRenewItem> items;
+
+  Map<String, dynamic> toJson() => {
+        'toMonth': toMonth,
+        'items': items.map((i) => i.toJson()).toList(growable: false),
+      };
+}
+
+/// One outcome row from a Copy to Next Month commit.
+class CoachRenewOutcome {
+  const CoachRenewOutcome({
+    required this.enrollmentId,
+    this.name = '',
+    this.reason,
+    this.feeCharged = 0,
+    this.collected = false,
+  });
+
+  final int enrollmentId;
+  final String name;
+
+  /// Present on `skipped`/`failed` rows — the server's explanation.
+  final String? reason;
+
+  final num feeCharged;
+  final bool collected;
+
+  @override
+  String toString() => 'CoachRenewOutcome($enrollmentId, $name)';
+}
+
+/// The response after committing Copy to Next Month.
+class CoachRenewMonthResult {
+  const CoachRenewMonthResult({
+    this.toMonth = '',
+    this.toLabel = '',
+    this.validTill,
+    this.renewedCount = 0,
+    this.skippedCount = 0,
+    this.failedCount = 0,
+    this.feeCollected = 0,
+    this.feePending = 0,
+    this.renewed = const [],
+    this.skipped = const [],
+    this.failed = const [],
+    this.message = '',
+  });
+
+  final String toMonth;
+  final String toLabel;
+  final String? validTill;
+
+  final int renewedCount;
+  final int skippedCount;
+  final int failedCount;
+  final num feeCollected;
+  final num feePending;
+
+  final List<CoachRenewOutcome> renewed;
+  final List<CoachRenewOutcome> skipped;
+  final List<CoachRenewOutcome> failed;
+
+  final String message;
+
+  static const CoachRenewMonthResult empty = CoachRenewMonthResult();
+
+  @override
+  String toString() =>
+      'CoachRenewMonthResult(renewed: $renewedCount, skipped: $skippedCount, '
+      'failed: $failedCount)';
+}

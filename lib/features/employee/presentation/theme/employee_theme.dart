@@ -83,6 +83,10 @@ class EmployeeTokens {
       case 'confirmed':
       case 'present':
       case 'active':
+      // A contact enquiry that has been answered, and a visitor who has been
+      // through the gate and back out: both are done with.
+      case 'replied':
+      case 'checked_out':
         return success;
 
       // Waiting on somebody.
@@ -91,6 +95,8 @@ class EmployeeTokens {
       case 'late':
       case 'reviewed':
       case 'upcoming':
+      // Arrived and unanswered.
+      case 'new':
         return warning;
 
       // Refused, failed, gone.
@@ -100,6 +106,7 @@ class EmployeeTokens {
       case 'absent':
       case 'overdue':
       case 'blocked':
+      case 'expired':
         return danger;
 
       // In flight, or informational.
@@ -107,6 +114,9 @@ class EmployeeTokens {
       case 'refunded':
       case 'completed':
       case 'inactive':
+      // Seen but not yet answered; on site right now.
+      case 'read':
+      case 'checked_in':
         return info;
 
       default:
@@ -159,6 +169,7 @@ class EmployeeCard extends StatelessWidget {
     this.padding = const EdgeInsets.all(EmployeeTokens.space4),
     this.margin,
     this.onTap,
+    this.onLongPress,
     this.accentColor,
   });
 
@@ -166,6 +177,10 @@ class EmployeeCard extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final EdgeInsetsGeometry? margin;
   final VoidCallback? onTap;
+
+  /// Starts a multi-select on the screens that have one. Null everywhere else,
+  /// so a long press stays a no-op rather than a hidden gesture.
+  final VoidCallback? onLongPress;
 
   /// Draws a 4px stripe down the leading edge — used to colour-code a row by
   /// status without adding another badge.
@@ -202,7 +217,7 @@ class EmployeeCard extends StatelessWidget {
       ),
     );
 
-    if (onTap == null) {
+    if (onTap == null && onLongPress == null) {
       return Container(margin: margin, child: content);
     }
 
@@ -213,6 +228,7 @@ class EmployeeCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(EmployeeTokens.radiusMd),
         child: InkWell(
           onTap: onTap,
+          onLongPress: onLongPress,
           borderRadius: BorderRadius.circular(EmployeeTokens.radiusMd),
           child: content,
         ),

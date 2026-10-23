@@ -113,6 +113,17 @@ class ApiEndpoints {
   /// `GET /students?page=&limit=&search=` — the staff-facing student list.
   /// Complex-scoped for EMPLOYEE, so it needs no complex filter of its own.
   static const String students = '/students';
+
+  /// `GET | PUT | DELETE /students/{studentId}` — the staff-facing single
+  /// student. The DELETE arrived with the Employee Panel student module; the
+  /// row it removes is complex-scoped, so an employee can only delete their
+  /// own complex's students.
+  static String student(Object id) => '/students/$id';
+
+  /// `POST /students/{studentId}/feedback` — `{title?, message}`. The student
+  /// sees it on their own dashboard.
+  static String studentFeedback(Object id) => '/students/$id/feedback';
+
   static const String refresh = '/auth/refresh';
   static const String profile = '/auth/profile';
 
@@ -273,6 +284,20 @@ class ApiEndpoints {
 
   static const String coachingEnquiriesAll = '/coaching-enquiries/all';
 
+  /// `POST /coaching-enquiries/admin/create` — a walk-in enquiry typed at the
+  /// desk. Required: `name`, `email`, `phone`, and `batchId` unless
+  /// `isAllSports` is true; `sportId` and `coachId` are derived from the batch
+  /// when omitted.
+  static const String coachingEnquiryAdminCreate =
+      '/coaching-enquiries/admin/create';
+
+  /// `PUT /coaching-enquiries/admin/{enquiryId}` — edit a staff-entered
+  /// enquiry. Every field is optional; moving it to another batch re-derives
+  /// the sport, coach and complex. Answers 400 once the enquiry is Approved,
+  /// because the enrolment already exists and editing here would not move it.
+  static String coachingEnquiryAdmin(Object id) =>
+      '/coaching-enquiries/admin/$id';
+
   /// `GET /coaching-enquiries/stats` — the counters for the dashboard cards.
   ///
   /// Declared before [coachingEnquiry] would match it: `/stats` is a fixed
@@ -293,6 +318,14 @@ class ApiEndpoints {
   /// **not** sent: their parameter names have never been documented or
   /// captured, and guessing one would be silently ignored at best.
   static const String contactUsAdmin = '/contact-us/admin';
+
+  /// `GET | DELETE /contact-us/admin/{enquiryId}` — one enquiry. The delete is
+  /// a soft delete server-side.
+  static String contactUsAdminEnquiry(Object id) => '/contact-us/admin/$id';
+
+  /// `PATCH /contact-us/admin/{enquiryId}/status` — `{status}`.
+  static String contactUsAdminEnquiryStatus(Object id) =>
+      '/contact-us/admin/$id/status';
 
   /// `POST /user-feedback` — auth. The signed-in user submits feedback.
   static const String userFeedback = '/user-feedback';
@@ -331,6 +364,33 @@ class ApiEndpoints {
 
   /// `GET /coach/dashboard/schedule/batches?page=&limit=&status=&sportId=`
   static const String coachBatches = '/coach/dashboard/schedule/batches';
+
+  /// `GET /coach/dashboard/earnings?startDate=&endDate=` — the My Earnings
+  /// card. Omit both dates for all-time; figures come off frozen coach-share
+  /// ledger rows, so a later split-% change never rewrites past earnings.
+  static const String coachEarnings = '/coach/dashboard/earnings';
+
+  /// `GET /coach/dashboard/students/renewal-preview?fromMonth=&toMonth=`
+  ///
+  /// Step 1 of Copy to Next Month. Nothing is written — builds the editable,
+  /// batch-wise list of who can be carried from `fromMonth` into `toMonth`.
+  static const String coachRenewalPreview =
+      '/coach/dashboard/students/renewal-preview';
+
+  /// `POST /coach/dashboard/students/renew-month`
+  ///
+  /// Step 2 of Copy to Next Month — commits only the rows the coach left
+  /// ticked. Body: `{ toMonth, items: [{ enrollmentId, collected, fee,
+  /// validTill, paymentMode }] }`.
+  static const String coachRenewMonth =
+      '/coach/dashboard/students/renew-month';
+
+  /// `DELETE /coach/dashboard/students/enrollments/{enrollmentId}?month=`
+  ///
+  /// The row trash icon — takes one student off the roster for ONE month.
+  /// `:id` is the StudentBatches (enrollment) id, not the student id.
+  static String coachEnrollmentRecord(Object id) =>
+      '/coach/dashboard/students/enrollments/$id';
 
   /// `GET | POST /coach/dashboard/performance/progress`
   static const String coachProgress = '/coach/dashboard/performance/progress';
@@ -563,6 +623,28 @@ class ApiEndpoints {
 
   /// `GET /event-passes/bookings/all?page=&limit=` — every event booking.
   static const String allEventBookings = '/event-passes/bookings/all';
+
+  /// `DELETE /event-passes/bookings` — `{ids: [..]}`, the bulk delete behind
+  /// the multi-select on the Issue Event Pass screen.
+  ///
+  /// Declared apart from [eventBooking] on purpose: the bulk route takes no id
+  /// segment at all, and building it through the single-id helper with an
+  /// empty string would produce a trailing slash the router does not match.
+  static const String eventBookings = '/event-passes/bookings';
+
+  /// `DELETE /event-passes/bookings/{eventBookingId}` — one booking and every
+  /// pass issued against it.
+  ///
+  /// There is no `/passes` sibling: a booking row carries its own
+  /// `individualPasses[]`, each with the id
+  /// [eventPassIndividualSendEmail] needs.
+  static String eventBooking(Object id) => '/event-passes/bookings/$id';
+
+  /// `POST /event-passes/individual-passes/{passId}/send-email` —
+  /// `{email, recipientName?}`. Emails one pass and its QR code. The panel
+  /// sends a whole booking by calling this once per pass.
+  static String eventPassIndividualSendEmail(Object id) =>
+      '/event-passes/individual-passes/$id/send-email';
 
   /// Creates the pending booking whose id `/payments/create-order` needs.
   ///
@@ -836,6 +918,21 @@ class ApiEndpoints {
   /// offer the image field the batch form specifies. A failure here is
   /// surfaced in the field and never blocks saving the batch itself.
   static const String batchUploadImage = '/batches/upload-image';
+
+  // Revenue splits — coach/venue payout rules for `/revenue-splits`.
+  static const String revenueSplits = '/revenue-splits';
+  static const String revenueSplitOptions = '/revenue-splits/options';
+  static const String revenueSplitCoverage = '/revenue-splits/coverage';
+  static const String revenueSplitResolve = '/revenue-splits/resolve';
+  static String revenueSplit(Object id) => '/revenue-splits/$id';
+  static String revenueSplitDeactivate(Object id) =>
+      '/revenue-splits/$id/deactivate';
+  static const String revenueSplitBackfillDryRun =
+      '/revenue-splits/backfill/dry-run';
+  static const String revenueSplitBackfillApply =
+      '/revenue-splits/backfill/apply';
+  static const String revenueSplitBackfillRollback =
+      '/revenue-splits/backfill/rollback';
 
   // Application settings. `GET /settings` answers with every group at once;
   // each group is written back through its own route.

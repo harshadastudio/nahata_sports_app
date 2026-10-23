@@ -8,10 +8,9 @@ import '../../../../core/services/permission_service.dart';
 /// one-for-one — same order, same names, same permission slugs — so an employee
 /// sees the same menu on the phone as on the web.
 ///
-/// The six entries after Notifications are the complex-scoped operations
-/// modules. Their slugs are enforced **on the API** as well by
-/// `employeePermission.js`, so hiding an ungranted one is not merely cosmetic:
-/// the server would answer 403 anyway.
+/// Every entry below Coaching Enquiries is a complex-scoped module whose slug
+/// is enforced **on the API** as well by `employeePermission.js`, so hiding an
+/// ungranted one is not merely cosmetic: the server would answer 403 anyway.
 enum EmployeeDestination {
   overview(
     label: 'Dashboard',
@@ -55,6 +54,13 @@ enum EmployeeDestination {
     permission: EmployeePermissions.coachingEnquiries,
     group: EmployeeMenuGroup.operations,
   ),
+  students(
+    label: 'Student List',
+    description: 'The roster — details, feedback, records',
+    icon: Icons.school_outlined,
+    permission: EmployeePermissions.students,
+    group: EmployeeMenuGroup.operations,
+  ),
   feesApproval(
     label: 'Fees Approval',
     description: 'Sign off collections and unlock gate passes',
@@ -74,6 +80,27 @@ enum EmployeeDestination {
     description: 'Your inbox, and broadcasting to the complex',
     icon: Icons.notifications_none_rounded,
     permission: EmployeePermissions.notifications,
+    group: EmployeeMenuGroup.operations,
+  ),
+  visitorPasses(
+    label: 'Visitor List',
+    description: 'Issue a gate pass and email it',
+    icon: Icons.badge_outlined,
+    permission: EmployeePermissions.visitorList,
+    group: EmployeeMenuGroup.operations,
+  ),
+  eventBookings(
+    label: 'Issue Event Pass',
+    description: 'Event bookings, and the passes on each',
+    icon: Icons.confirmation_number_outlined,
+    permission: EmployeePermissions.eventPasses,
+    group: EmployeeMenuGroup.operations,
+  ),
+  contactEnquiries(
+    label: 'Contact Enquiries',
+    description: 'Messages sent through the website',
+    icon: Icons.mark_email_unread_outlined,
+    permission: EmployeePermissions.contactEnquiries,
     group: EmployeeMenuGroup.operations,
   ),
 
@@ -118,6 +145,20 @@ enum EmployeeDestination {
     description: 'Coaching batches, schedules and fees',
     icon: Icons.groups_outlined,
     permission: EmployeePermissions.batches,
+    group: EmployeeMenuGroup.setup,
+  ),
+  events(
+    label: 'Events',
+    description: 'Events, their slots and booking questions',
+    icon: Icons.celebration_outlined,
+    permission: EmployeePermissions.events,
+    group: EmployeeMenuGroup.setup,
+  ),
+  coupons(
+    label: 'Coupons',
+    description: 'Discount codes and what they apply to',
+    icon: Icons.local_offer_outlined,
+    permission: EmployeePermissions.coupons,
     group: EmployeeMenuGroup.setup,
   ),
 
@@ -183,8 +224,8 @@ enum EmployeeDestination {
 
 /// The headings the menu is split under.
 ///
-/// The website puts all seventeen entries in one flat `OPERATIONS` section,
-/// which is workable in a sidebar and unreadable as a phone list. The split is
+/// The website puts every entry in one flat `OPERATIONS` section, which is
+/// workable in a sidebar and unreadable as a phone list. The split is
 /// by what the entry *does*: day-to-day desk work, then the venue setup an
 /// employee changes rarely.
 enum EmployeeMenuGroup {

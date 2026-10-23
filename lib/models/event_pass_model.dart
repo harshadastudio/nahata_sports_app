@@ -86,17 +86,14 @@ class EventFaq {
   Map<String, dynamic> toJson() => {'question': question, 'answer': answer};
 }
 
-/// One question the event asks each booker, defined per event by the admin.
+/// An extra question the organiser attaches to an event pass.
 ///
-/// The set is entirely API-driven — an event may ask for a parent's name, a
-/// child's age, a date of birth or nothing at all — so nothing here assumes a
-/// particular key or a fixed list of fields. [type] steers which input is
-/// drawn; an unrecognised one falls back to a plain text field rather than
-/// dropping the question, because a field the client cannot render is still a
-/// field the booking is rejected without.
+/// `POST /event-passes/bookings/create` takes the answers back as
+/// `customFieldValues: [{key, value}]`, so [key] is the identifier that has to
+/// survive the round trip — [label] is only ever shown to the user.
 class EventCustomField {
   const EventCustomField({
-    required this.key,
+    this.key,
     this.label,
     this.type,
     this.placeholder,
@@ -104,70 +101,65 @@ class EventCustomField {
     this.options = const <String>[],
   });
 
-  /// Identifier sent back in `customFieldValues`.
-  final String key;
+  /// Wire identifier, e.g. `enter_parents_name`.
+  final String? key;
 
   final String? label;
 
-  /// `text`, `number`, `date`, `select`, … as the API spells it.
+  /// `text`, `number`, `date`, `select`… — read as sent and matched
+  /// case-insensitively, so an unrecognised type falls back to a text field
+  /// rather than dropping the question.
   final String? type;
 
   final String? placeholder;
   final bool required;
 
-  /// Choices for a select-style field. Empty for free entry.
+  /// Choices for a select-style field; empty for free entry.
   final List<String> options;
 
-  /// What to show above the input.
+  bool get isNumber => (type ?? '').toLowerCase() == 'number';
+  bool get isDate => (type ?? '').toLowerCase() == 'date';
+
+  /// A dropdown whenever the organiser supplied choices, whatever the type
+  /// string says — options are only meaningful as a closed list.
+  bool get isSelect => options.isNotEmpty;
+
+  /// What to show above the input. Falls back to the key, turned into a
+  /// readable phrase (`child_name` → `Child name`), so a field with no label
+  /// is still answerable rather than nameless.
   String get displayLabel {
     final text = (label ?? '').trim();
     if (text.isNotEmpty) return text;
-    // Fall back to a readable form of the key: `child_name` → `Child name`.
-    final words = key.replaceAll('_', ' ').trim();
-    if (words.isEmpty) return 'Detail';
+
+    final rawKey = (key ?? '').trim();
+    if (rawKey.isEmpty) return rawKey;
+    final words = rawKey.replaceAll('_', ' ');
     return words[0].toUpperCase() + words.substring(1);
   }
 
-  String get _kind => (type ?? 'text').trim().toLowerCase();
+  factory EventCustomField.fromJson(Map<String, dynamic> json) =>
+      EventCustomField(
+        key: _asString(json['key'] ?? json['name']),
+        label: _asString(json['label'] ?? json['title']),
+        type: _asString(json['type'] ?? json['fieldType']),
+        placeholder: _asString(json['placeholder'] ?? json['hint']),
+        // The API sends a real bool today; a "true"/1 string is tolerated.
+        required: json['required'] == true ||
+            json['required']?.toString().toLowerCase() == 'true' ||
+            json['required'] == 1,
+        options: optionsFrom(json['options']),
+      );
 
-  bool get isNumber => _kind == 'number';
-  bool get isDate => _kind == 'date';
-  bool get isEmail => _kind == 'email';
-  bool get isPhone => _kind == 'phone' || _kind == 'tel';
-  bool get isMultiline => _kind == 'textarea';
-
-  /// A dropdown whenever the API supplied choices, whatever it called the
-  /// type — `select`, `radio` and `dropdown` all arrive with `options`.
-  bool get isChoice => options.isNotEmpty;
-
-  factory EventCustomField.fromJson(Map<String, dynamic> json) {
-    final required = json['required'];
-
-    return EventCustomField(
-      key: _asString(json['key'] ?? json['name']) ?? '',
-      label: _asString(json['label'] ?? json['title']),
-      type: _asString(json['type']),
-      placeholder: _asString(json['placeholder'] ?? json['hint']),
-      required: required is bool
-          ? required
-          : _asString(required)?.toLowerCase() == 'true',
-      options: _asOptions(json['options']),
-    );
+  /// Options arrive as bare strings on some records and objects on others.
+  static List<String> optionsFrom(Object? raw) {
+    if (raw is! List) return const <String>[];
+    return raw
+        .map((o) => o is Map
+            ? (o['value']?.toString() ?? o['label']?.toString() ?? '')
+            : o.toString())
+        .where((o) => o.trim().isNotEmpty)
+        .toList(growable: false);
   }
-}
-
-/// Choices for a select-style custom field.
-///
-/// Accepts both shapes the API may use: a plain `["A", "B"]` and the richer
-/// `[{"value": "a", "label": "A"}]`.
-List<String> _asOptions(Object? value) {
-  if (value is! List) return const <String>[];
-  return value
-      .map((o) => o is Map
-          ? _asString(o['value'] ?? o['label'])
-          : _asString(o))
-      .whereType<String>()
-      .toList(growable: false);
 }
 
 /// An event pass, with its slots and the venue that hosts it.
@@ -198,7 +190,7 @@ class EventPassModel {
   final List<EventPassSlot> slots;
   final List<EventFaq> faqs;
 
-  /// Questions this event asks each booker. Empty for most events.
+  /// Extra questions the booker has to answer. Empty for most events.
   final List<EventCustomField> customFields;
 
   /// From the nested `sportComplex` object.
@@ -249,7 +241,8 @@ class EventPassModel {
           _asList(json['faqs']).map(EventFaq.fromJson).toList(growable: false),
       customFields: _asList(json['customFields'] ?? json['custom_fields'])
           .map(EventCustomField.fromJson)
-          .where((f) => f.key.isNotEmpty)
+          // A field with no key cannot be sent back, so it is not asked.
+          .where((f) => (f.key ?? '').trim().isNotEmpty)
           .toList(growable: false),
       venueName: complex == null ? null : _asString(complex['name']),
     );

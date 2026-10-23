@@ -78,6 +78,15 @@ class CoachEnrollmentsController extends ChangeNotifier {
   /// the two need very different wording.
   bool get hasNoHistory => _state.isReady && _view.hasNoHistory;
 
+  // ── Copy to Next Month ──────────────────────────────────────────────────────
+  CoachViewState _renewalState = CoachViewState.idle;
+  CoachRenewalPreview _renewalPreview = CoachRenewalPreview.empty;
+  String? _renewalError;
+
+  CoachViewState get renewalState => _renewalState;
+  CoachRenewalPreview get renewalPreview => _renewalPreview;
+  String? get renewalError => _renewalError;
+
   bool isCollapsed(int batchId) => _collapsed.contains(batchId);
 
   void toggleGroup(int batchId) {
@@ -182,6 +191,70 @@ class CoachEnrollmentsController extends ChangeNotifier {
     _search = '';
     _status = null;
     load();
+  }
+
+  /// Loads the Copy to Next Month preview from the month currently on screen
+  /// into the month after it.
+  Future<void> loadRenewalPreview() async {
+    if (_disposed) return;
+
+    _renewalState = CoachViewState.loading;
+    _notify();
+
+    try {
+      _renewalPreview = await _repository.getRenewalPreview(
+        fromMonth: month.isEmpty ? _requestedMonth : month,
+        toMonth: _nextMonth(month.isEmpty ? _requestedMonth : month),
+      );
+      _renewalError = null;
+      _renewalState = CoachViewState.ready;
+      CoachLog.state('Renewal preview → $_renewalPreview');
+    } catch (e) {
+      _renewalError = _describe(e);
+      _renewalState = CoachViewState.failed;
+      CoachLog.failure('Renewal preview failed', error: e);
+    }
+
+    _notify();
+  }
+
+  /// Commits Copy to Next Month, then refreshes the roster so the current
+  /// month reflects any fee just collected.
+  Future<CoachRenewMonthResult> commitRenewal(List<CoachRenewItem> items) async {
+    final result = await _repository.renewMonth(
+      CoachRenewMonthRequest(toMonth: _renewalPreview.toMonth, items: items),
+    );
+    await load(silent: true);
+    return result;
+  }
+
+  /// `yyyy-MM` → the following month, or `null` when [value] is not a valid
+  /// `yyyy-MM` string.
+  static String? _nextMonth(String? value) {
+    final text = (value ?? '').trim();
+    final parts = text.split('-');
+    if (parts.length != 2) return null;
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    if (year == null || month == null) return null;
+
+    final next = month == 12 ? DateTime(year + 1, 1) : DateTime(year, month + 1);
+    return '${next.year.toString().padLeft(4, '0')}-'
+        '${next.month.toString().padLeft(2, '0')}';
+  }
+
+  /// Removes one student's enrollment from the month currently on screen, then
+  /// reloads the roster.
+  ///
+  /// Rethrows so the page can show a `ConflictException`'s guidance message
+  /// (the server names which later month must be removed first) instead of a
+  /// generic error.
+  Future<void> removeEnrollment(CoachEnrollment enrollment) async {
+    await _repository.removeEnrollmentFromMonth(
+      enrollmentId: enrollment.enrollmentId,
+      month: month,
+    );
+    await load(silent: true);
   }
 
   static String _describe(Object error) => error is ApiException

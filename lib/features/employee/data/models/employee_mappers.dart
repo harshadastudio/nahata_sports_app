@@ -1,7 +1,11 @@
 import '../../domain/entities/employee_attendance.dart';
 import '../../domain/entities/employee_booking.dart';
 import '../../domain/entities/employee_coach.dart';
+import '../../domain/entities/employee_contact_enquiry.dart';
+import '../../domain/entities/employee_coupon.dart';
 import '../../domain/entities/employee_enquiry.dart';
+import '../../domain/entities/employee_event.dart';
+import '../../domain/entities/employee_event_booking.dart';
 import '../../domain/entities/employee_fee.dart';
 import '../../domain/entities/employee_master.dart';
 import '../../domain/entities/employee_notification.dart';
@@ -9,7 +13,9 @@ import '../../domain/entities/employee_overview.dart';
 import '../../domain/entities/employee_paged.dart';
 import '../../domain/entities/employee_payment.dart';
 import '../../domain/entities/employee_staff_details.dart';
+import '../../domain/entities/employee_student.dart';
 import '../../domain/entities/employee_user.dart';
+import '../../domain/entities/employee_visitor_pass.dart';
 
 /// JSON → entity for the employee dashboard.
 ///
@@ -113,6 +119,8 @@ class EmployeeMappers {
     final limit = _firstInt([
       pagination?['limit'],
       pagination?['itemsPerPage'],
+      // `/visitor-passes` spells it this third way.
+      pagination?['pageSize'],
       data['limit'],
       top['limit'],
     ]);
@@ -406,13 +414,71 @@ class EmployeeMappers {
       batchFees: _numOrNull(batch['fees']),
       batchMaxStudents: _intOrNull(batch['maxStudents']),
       batchCurrentStudents: _intOrNull(batch['currentStudents']),
+      sportId: _intOrNull(sport['id']) ?? _intOrNull(json['sportId']),
       sportName: _string(sport['name']) ?? '',
+      coachId: _intOrNull(coachMap['id']) ?? _intOrNull(json['coachId']),
       coachName: _string(coachMap['name']) ?? '',
+      isAllSports: _bool(json['isAllSports']),
       status: _string(json['status']) ?? 'Pending',
       message: _string(json['message']),
       referenceNumber: _string(json['referenceNumber']),
+      // Both spellings are read: the API documents `enrolments`, and the
+      // double-l form appears wherever the payload was built from the
+      // `Enrollment` model's own name.
+      enrolments: _objectsAt(json['enrolments'] ?? json['enrollments'])
+          .map(enquiryEnrolment)
+          .whereType<EmployeeEnquiryEnrolment>()
+          .toList(growable: false),
       createdAt: _date(json['createdAt']),
       updatedAt: _date(json['updatedAt']),
+    );
+  }
+
+  /// One row of an enquiry's `enrolments[]`.
+  ///
+  /// The names arrive flattened (`sportName`, `coachName`, `batchName`), but a
+  /// payload that nested the associations instead is read too — the same route
+  /// answers both ways depending on the include.
+  static EmployeeEnquiryEnrolment? enquiryEnrolment(Map<String, dynamic> json) {
+    final batch = _mapAt(json['batch']) ?? const {};
+    final sport = _mapAt(json['sport']) ?? const {};
+    final coachMap = _mapAt(json['coach']) ?? const {};
+
+    final batchName = _string(json['batchName']) ?? _string(batch['name']);
+    final sportName = _string(json['sportName']) ?? _string(sport['name']);
+    final coachName = _string(json['coachName']) ?? _string(coachMap['name']);
+
+    // A row that names nothing is noise, not an enrolment.
+    if (batchName == null && sportName == null && coachName == null) {
+      return null;
+    }
+
+    return EmployeeEnquiryEnrolment(
+      id: _intOrNull(json['id']),
+      batchName: batchName ?? '',
+      sportName: sportName ?? '',
+      coachName: coachName ?? '',
+      status: _string(json['status']) ?? '',
+    );
+  }
+
+  /// The answer to `POST /coaching-enquiries/admin/create`.
+  ///
+  /// `studentAccount` is the part that matters: it says whether the route had
+  /// to create the login it just emailed. A response without the block is not a
+  /// failure — the enquiry was still created — so every field is optional.
+  static EmployeeEnquiryCreateResult enquiryCreateResult(Object? body) {
+    final data = envelope(body);
+    final enquiry = _mapAt(data['enquiry']) ?? data;
+    final account = _mapAt(data['studentAccount']) ??
+        _mapAt(enquiry['studentAccount']) ??
+        const {};
+
+    return EmployeeEnquiryCreateResult(
+      enquiryId: _intOrNull(enquiry['id']) ?? _intOrNull(data['id']),
+      userId: _intOrNull(account['userId']),
+      studentId: _intOrNull(account['studentId']),
+      isNewAccount: _bool(account['isNewAccount']),
     );
   }
 
@@ -631,6 +697,9 @@ class EmployeeMappers {
       isBlocked: _bool(json['isBlocked']),
       blockedBy: _string(json['blockedBy']),
       blockId: _intOrNull(json['blockId']),
+      blockNotes: _string(json['blockNotes']),
+      blockBilled: _bool(json['blockBilled']),
+      blockAmount: _num(json['blockAmount']),
     );
   }
 
@@ -657,6 +726,340 @@ class EmployeeMappers {
       fees: _num(json['fees']),
       status: _string(json['status']) ?? 'Active',
     );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Students
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// A `Student` row joined to the `User` behind it.
+  ///
+  /// The person's details are on the account, not on the student row, and the
+  /// include arrives capitalised (`User`) or not (`user`) depending on which
+  /// service answered — both spellings are read.
+  static EmployeeStudent? student(Map<String, dynamic> json) {
+    final id = _int(json['id']);
+    if (id <= 0) return null;
+
+    final user = _mapAt(json['User']) ?? _mapAt(json['user']) ?? const {};
+    final batch = _mapAt(json['Batch']) ?? _mapAt(json['batch']) ?? const {};
+    final sport = _mapAt(json['Sport']) ?? _mapAt(json['sport']) ?? const {};
+    final coachMap = _mapAt(json['Coach']) ?? _mapAt(json['coach']) ?? const {};
+
+    // The batch's own sport is the more reliable of the two: a student row
+    // only carries `sportId` when it was enrolled directly.
+    final batchSport = _mapAt(batch['Sport']) ?? _mapAt(batch['sport']);
+
+    return EmployeeStudent(
+      id: id,
+      userId: _intOrNull(user['id']) ?? _intOrNull(json['userId']),
+      name: _string(user['name']) ?? _string(json['name']) ?? '',
+      email: _string(user['email']) ?? _string(json['email']) ?? '',
+      phone: _string(user['phone_number']) ??
+          _string(user['phoneNumber']) ??
+          _string(json['phone_number']) ??
+          '',
+      gender: _string(user['gender']) ?? _string(json['gender']),
+      bloodGroup:
+          _string(user['blood_group']) ?? _string(json['blood_group']),
+      avatar: _string(user['avatar']) ?? _string(json['avatar']),
+      status: _string(user['status']) ?? _string(json['status']) ?? 'Active',
+      dob: _date(user['dob']) ?? _date(json['dob']),
+      batchId: _intOrNull(batch['id']) ?? _intOrNull(json['batchId']),
+      batchName: _string(batch['name']) ?? '',
+      sportName: _string(batchSport?['name']) ?? _string(sport['name']) ?? '',
+      coachName: _string(coachMap['name']) ?? '',
+      enrollmentDate:
+          _date(json['enrollmentDate']) ?? _date(json['enrollment_date']),
+      createdAt: _date(json['createdAt']),
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Coupons
+  // ───────────────────────────────────────────────────────────────────────────
+
+  static EmployeeCoupon? coupon(Map<String, dynamic> json) {
+    final id = _int(json['id']);
+    if (id <= 0) return null;
+
+    return EmployeeCoupon(
+      id: id,
+      code: _string(json['code']) ?? '',
+      discountType: _string(json['discountType']) ?? 'Percentage',
+      discountValue: _num(json['discountValue']),
+      maxDiscount: _numOrNull(json['maxDiscount']),
+      description: _string(json['description']),
+      validFrom: _date(json['validFrom']),
+      validUntil: _date(json['validUntil']),
+      // Nullable on purpose: no limit and a limit of zero are different
+      // things, and only the first means "unlimited".
+      usageLimit: _intOrNull(json['usageLimit']),
+      usedCount: _int(json['usedCount'] ?? json['usageCount']),
+      status: _string(json['status']) ?? 'Active',
+      appliesTo: _string(json['appliesTo']) ?? 'Court',
+      platform: _string(json['platform']) ?? 'All',
+      createdAt: _date(json['createdAt']),
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Visitor passes
+  // ───────────────────────────────────────────────────────────────────────────
+
+  static EmployeeVisitorPass? visitorPass(Map<String, dynamic> json) {
+    final id = _int(json['id']);
+    if (id <= 0) return null;
+
+    return EmployeeVisitorPass(
+      id: id,
+      passNumber:
+          _string(json['passNumber']) ?? _string(json['passCode']) ?? '',
+      visitorName: _string(json['visitorName']) ?? _string(json['name']) ?? '',
+      phoneNumber: _string(json['phoneNumber']) ??
+          _string(json['phone_number']) ??
+          '',
+      email: _string(json['email']),
+      visitPurpose:
+          _string(json['visitPurpose']) ?? _string(json['purpose']) ?? 'Visit',
+      status: _string(json['status']) ?? 'Active',
+      // The live route names these `qrUrl` (a rendered PNG) and `qrData` (the
+      // payload behind it); the two camel spellings are older aliases.
+      qrCode: _string(json['qrUrl']) ??
+          _string(json['qrCode']) ??
+          _string(json['qrCodeUrl']) ??
+          _string(json['qrData']),
+      validFrom: _date(json['validFrom']),
+      validUntil: _date(json['validUntil']),
+      checkInAt: _date(json['checkInTime']) ?? _date(json['checkInAt']),
+      checkOutAt: _date(json['checkOutTime']) ?? _date(json['checkOutAt']),
+      createdAt: _date(json['createdAt']),
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Events
+  // ───────────────────────────────────────────────────────────────────────────
+
+  static EmployeeEvent? event(Map<String, dynamic> json) {
+    final id = _int(json['id']);
+    if (id <= 0) return null;
+
+    return EmployeeEvent(
+      id: id,
+      title: _string(json['title']) ?? _string(json['name']) ?? '',
+      description: _string(json['description']),
+      image: _string(json['image']) ?? _string(json['imageUrl']),
+      status: _string(json['status']) ?? 'Active',
+      slots: _objectsAt(json['slots'] ?? json['EventPassSlots'])
+          .map(eventSlot)
+          .whereType<EmployeeEventSlot>()
+          .toList(growable: false),
+      customFields:
+          _objectsAt(json['customFields'] ?? json['EventPassCustomFields'])
+              .map(eventCustomField)
+              .whereType<EmployeeEventCustomField>()
+              .toList(growable: false),
+      faqs: _objectsAt(json['faqs'] ?? json['EventPassFaqs'])
+          .map(eventFaq)
+          .whereType<EmployeeEventFaq>()
+          .toList(growable: false),
+      createdAt: _date(json['createdAt']),
+    );
+  }
+
+  /// A slot keeps its id so the edit form can send it back and update in place
+  /// rather than replacing the row — and with it, its bookings.
+  static EmployeeEventSlot? eventSlot(Map<String, dynamic> json) {
+    final name = _string(json['name']);
+    final date = _date(json['date']);
+    final id = _intOrNull(json['id']);
+
+    // A slot with nothing identifying it at all is noise, not a row.
+    if (id == null && name == null && date == null) return null;
+
+    return EmployeeEventSlot(
+      id: id,
+      name: name ?? '',
+      date: date,
+      price: _num(json['price']),
+      passType: _string(json['passType']) ?? 'Single',
+      startTime: _string(json['startTime']),
+      endTime: _string(json['endTime']),
+      capacity: _intOrNull(json['capacity']) ?? _intOrNull(json['maxPasses']),
+      booked: _intOrNull(json['booked']) ?? _intOrNull(json['bookedCount']),
+    );
+  }
+
+  static EmployeeEventCustomField? eventCustomField(Map<String, dynamic> json) {
+    final label = _string(json['label']);
+    if (label == null) return null;
+
+    return EmployeeEventCustomField(
+      id: _intOrNull(json['id']),
+      label: label,
+      type: _string(json['type']) ?? 'text',
+      required: _bool(json['required'] ?? json['isRequired']),
+      placeholder: _string(json['placeholder']),
+      options: _strings(json['options']),
+    );
+  }
+
+  static EmployeeEventFaq? eventFaq(Map<String, dynamic> json) {
+    final question = _string(json['question']);
+    final answer = _string(json['answer']);
+    if (question == null || answer == null) return null;
+
+    return EmployeeEventFaq(
+      id: _intOrNull(json['id']),
+      question: question,
+      answer: answer,
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Event bookings
+  // ───────────────────────────────────────────────────────────────────────────
+
+  static EmployeeEventBooking? eventBooking(Map<String, dynamic> json) {
+    final id = _int(json['id']);
+    if (id <= 0) return null;
+
+    final event = _mapAt(json['EventPass']) ??
+        _mapAt(json['eventPass']) ??
+        _mapAt(json['event']) ??
+        const {};
+    final slot = _mapAt(json['EventPassSlot']) ??
+        _mapAt(json['slot']) ??
+        const {};
+    final user = _mapAt(json['User']) ?? _mapAt(json['user']) ?? const {};
+
+    return EmployeeEventBooking(
+      id: id,
+      bookingNumber: _string(json['bookingNumber']) ??
+          _string(json['bookingId']) ??
+          _string(json['referenceNumber']) ??
+          '',
+      eventId: _intOrNull(event['id']) ?? _intOrNull(json['eventPassId']),
+      eventTitle: _string(event['title']) ?? _string(json['eventTitle']) ?? '',
+      slotName: _string(slot['name']) ?? _string(json['slotName']) ?? '',
+      slotDate: _date(slot['date']) ?? _date(json['slotDate']),
+      // The booking's own guest fields win over the account: an event pass is
+      // routinely bought for someone else, and the buyer's name on the ticket
+      // would be the wrong one at the gate.
+      customerName: _string(json['customerName']) ??
+          _string(json['guestName']) ??
+          _string(json['name']) ??
+          _string(user['name']) ??
+          '',
+      email: _string(json['email']) ??
+          _string(json['guestEmail']) ??
+          _string(user['email']) ??
+          '',
+      phone: _string(json['phone']) ??
+          _string(json['phoneNumber']) ??
+          _string(user['phone_number']) ??
+          '',
+      quantity: _intOrNull(json['quantity']) ??
+          _intOrNull(json['numberOfPasses']) ??
+          1,
+      totalAmount: _num(json['totalAmount'] ?? json['amount']),
+      paymentStatus: _string(json['paymentStatus']) ?? 'Pending',
+      bookingStatus: _string(json['bookingStatus']) ??
+          _string(json['status']) ??
+          'Confirmed',
+      // The list route names them `individualPasses`; the other two spellings
+      // are what older payloads used for the same array.
+      passes: _objectsAt(json['individualPasses'] ??
+              json['passes'] ??
+              json['IndividualPasses'])
+          .map(individualPass)
+          .whereType<EmployeeIndividualPass>()
+          .toList(growable: false),
+      createdAt: _date(json['createdAt']),
+    );
+  }
+
+  static EmployeeIndividualPass? individualPass(Map<String, dynamic> json) {
+    final id = _int(json['id']);
+    if (id <= 0) return null;
+
+    return EmployeeIndividualPass(
+      id: id,
+      passCode: _string(json['passCode']) ?? _string(json['passNumber']) ?? '',
+      holderName: _string(json['holderName']) ??
+          _string(json['memberName']) ??
+          _string(json['name']) ??
+          '',
+      // `holderEmail` is the pass holder's own address, which on a group
+      // booking is not the buyer's — emailing a pass must not default to the
+      // person who paid for it.
+      email: _string(json['holderEmail']) ?? _string(json['email']),
+      status: _string(json['status']) ?? 'Active',
+      // `NotScanned` rather than null: the gate reports one of three states,
+      // and "no value" is the first of them, not a fourth.
+      scanStatus: _string(json['scanStatus']) ?? 'NotScanned',
+      qrCode: _string(json['qrCode']) ?? _string(json['qrCodeUrl']),
+      // The gate stamps the two directions separately; the later one is when
+      // the pass was last seen.
+      scannedAt: _date(json['scannedOutAt']) ??
+          _date(json['scannedInAt']) ??
+          _date(json['scannedAt']) ??
+          _date(json['scanTime']),
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Contact enquiries
+  // ───────────────────────────────────────────────────────────────────────────
+
+  static EmployeeContactEnquiry? contactEnquiry(Map<String, dynamic> json) {
+    // A UUID, not a number: parsing this as an int would yield 0 and drop
+    // every row on the route.
+    final id = _string(json['id']);
+    if (id == null) return null;
+
+    return EmployeeContactEnquiry(
+      id: id,
+      name: _string(json['name']) ?? _string(json['fullName']) ?? '',
+      email: _string(json['email']) ?? '',
+      phone: _string(json['phone']) ?? _string(json['phoneNumber']) ?? '',
+      subject: _string(json['subject']) ?? '',
+      message: _string(json['message']) ?? '',
+      status: _string(json['status']) ?? 'New',
+      createdAt: _date(json['createdAt']),
+      updatedAt: _date(json['updatedAt']),
+    );
+  }
+
+  /// The `statusCounts` block beside the contact-enquiry rows.
+  ///
+  /// Arrives either as an object (`{new: 4, resolved: 2}`) or as the rows a
+  /// `GROUP BY` produced (`[{status: 'New', count: 4}]`); both are read. Keys
+  /// are lower-cased so a lookup does not depend on the casing that came back.
+  static EmployeeContactEnquiryCounts contactEnquiryCounts(Object? body) {
+    final data = envelope(body);
+    final raw = data['statusCounts'] ??
+        (body is Map ? body['statusCounts'] : null);
+
+    final counts = <String, int>{};
+
+    final asMap = _mapAt(raw);
+    if (asMap != null) {
+      asMap.forEach((key, value) {
+        final name = _string(key)?.toLowerCase();
+        if (name != null) counts[name] = _int(value);
+      });
+      return EmployeeContactEnquiryCounts(byStatus: counts);
+    }
+
+    for (final row in _objectsAt(raw)) {
+      final name = _string(row['status'])?.toLowerCase();
+      if (name == null) continue;
+      counts[name] = _int(row['count'] ?? row['total']);
+    }
+
+    return EmployeeContactEnquiryCounts(byStatus: counts);
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -714,6 +1117,14 @@ class EmployeeMappers {
     if (value is Map<String, dynamic>) return value;
     if (value is Map) return Map<String, dynamic>.from(value);
     return null;
+  }
+
+  /// A plain `["S", "M", "L"]`, with blanks dropped. Used for a custom field's
+  /// options, which the API rejects as empty for a `select` — so an array of
+  /// empty strings must not read as "has options".
+  static List<String> _strings(Object? value) {
+    if (value is! List) return const [];
+    return value.map(_string).whereType<String>().toList(growable: false);
   }
 
   /// A list that is either `[{id, name}]` or `["Badminton"]`, flattened to

@@ -98,7 +98,11 @@ class AuthRepository {
       final response = await _api.post(
         ApiEndpoints.login,
         requiresAuth: false,
-        body: {'email': email, 'password': password},
+        // `portal: 'main'` marks this as the website/app portal. ADMIN and
+        // COMPLEX_ADMIN accounts are refused here and must use the admin
+        // portal, which is what the app wants: the two social sign-ins below
+        // already send it, so all three paths now agree.
+        body: {'email': email, 'password': password, 'portal': 'main'},
       );
 
       if (!response.isOk) {

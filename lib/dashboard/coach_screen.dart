@@ -1406,21 +1406,33 @@ class _LegacyCoachHomeScreenState extends State<LegacyCoachHomeScreen> {
                     ),
                   ],
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(item.icon, color: const Color(0xFF0A198D), size: 40),
-                    const SizedBox(height: 12),
-                    Text(
-                      item.title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black87,
+                // Horizontal padding so a two-word title cannot run to the
+                // card's edge, and the label is Flexible so a large system
+                // text scale shortens it rather than overflowing the square
+                // cell.
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(item.icon, color: const Color(0xFF0A198D), size: 40),
+                      const SizedBox(height: 12),
+                      Flexible(
+                        child: Text(
+                          item.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black87,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );

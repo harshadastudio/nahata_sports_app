@@ -788,11 +788,27 @@ class _ViewpassState extends State<Viewpass> with TickerProviderStateMixin {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text(bookingData!["tournament_title"] ?? "Event", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
+                // Event titles come from the API and run long — they wrap
+                // rather than truncate, because the title is the point of the
+                // pass. `textAlign` keeps a wrapped title centred under the QR
+                // instead of ragging left inside a centred box.
+                Text(
+                  bookingData!["tournament_title"] ?? "Event",
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87),
+                ),
                 const SizedBox(height: 8),
-                Text(bookingData!["pass_date"] ?? "-", style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+                Text(
+                  bookingData!["pass_date"] ?? "-",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                ),
                 const SizedBox(height: 4),
-                Text("${bookingData!["start_time"] ?? "-"} - ${bookingData!["end_time"] ?? "-"}", style: TextStyle(fontSize: 16, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                Text(
+                  "${bookingData!["start_time"] ?? "-"} - ${bookingData!["end_time"] ?? "-"}",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.grey[600], fontWeight: FontWeight.w500),
+                ),
                 const SizedBox(height: 20),
               ],
             ),

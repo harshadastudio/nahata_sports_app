@@ -72,6 +72,7 @@ import '../theme/admin_theme.dart';
 import '../widgets/admin_dialogs.dart';
 import '../widgets/admin_sidebar.dart';
 import '../widgets/admin_top_bar.dart';
+import 'admin_blocked_slots_page.dart';
 import 'batches_page.dart';
 import 'bookings_page.dart';
 import 'coaches_page.dart';
@@ -600,6 +601,8 @@ class _Shell extends StatelessWidget {
         return const ContactEnquiriesPage();
       case AdminDestination.courts:
         return const CourtsPage();
+      case AdminDestination.blockedSlots:
+        return const AdminBlockedSlotsPage();
       case AdminDestination.events:
         return const EventPassesPage();
       case AdminDestination.visitorPasses:

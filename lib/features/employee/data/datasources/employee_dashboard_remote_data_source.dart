@@ -150,33 +150,80 @@ class EmployeeDashboardRemoteDataSource {
   // Coaching enquiries
   // ───────────────────────────────────────────────────────────────────────────
 
-  /// `GET /coaching-enquiries/all?page=&limit=&status=&search=`
+  /// `GET /coaching-enquiries/all?page=&limit=&status=&search=&fromDate=&toDate=`
+  ///
+  /// [toDate] is compared against a **timestamp**, not a date, so a bare
+  /// `2026-08-31` excludes everything logged during that day. The caller passes
+  /// the day already suffixed with `T23:59:59.999`; see
+  /// `EmployeeDashboardRepositoryImpl.getEnquiries`.
   Future<ApiResponse> enquiries({
     required int page,
     required int limit,
     String? status,
     String? search,
+    String? fromDate,
+    String? toDate,
   }) {
     final query = <String, dynamic>{
       'page': page,
       'limit': limit,
       if (_has(status)) 'status': status!.trim(),
       if (_has(search)) 'search': search!.trim(),
+      if (_has(fromDate)) 'fromDate': fromDate!.trim(),
+      if (_has(toDate)) 'toDate': toDate!.trim(),
     };
 
     EmployeeLog.call('GET ${ApiEndpoints.coachingEnquiriesAll} $query');
     return _api.get(ApiEndpoints.coachingEnquiriesAll, query: query);
   }
 
+  /// `POST /coaching-enquiries/admin/create` — a walk-in enquiry typed at the
+  /// desk.
+  Future<ApiResponse> createEnquiry(Map<String, dynamic> body) {
+    EmployeeLog.call(
+      'POST ${ApiEndpoints.coachingEnquiryAdminCreate} fields=${body.keys}',
+    );
+    return _api.post(ApiEndpoints.coachingEnquiryAdminCreate, body: body);
+  }
+
+  /// `PUT /coaching-enquiries/admin/{enquiryId}`
+  Future<ApiResponse> updateEnquiry(int id, Map<String, dynamic> body) {
+    EmployeeLog.call(
+      'PUT ${ApiEndpoints.coachingEnquiryAdmin(id)} fields=${body.keys}',
+    );
+    return _api.put(ApiEndpoints.coachingEnquiryAdmin(id), body: body);
+  }
+
+  /// `PATCH /coaching-enquiries/{enquiryId}/status`
+  Future<ApiResponse> setEnquiryStatus(int id, String status) {
+    EmployeeLog.call(
+      'PATCH ${ApiEndpoints.coachingEnquiryStatus(id)} → $status',
+    );
+    return _api.patch(
+      ApiEndpoints.coachingEnquiryStatus(id),
+      body: {'status': status},
+    );
+  }
+
+  /// `DELETE /coaching-enquiries/{enquiryId}`
+  Future<ApiResponse> deleteEnquiry(int id) {
+    EmployeeLog.call('DELETE ${ApiEndpoints.coachingEnquiry(id)}');
+    return _api.delete(ApiEndpoints.coachingEnquiry(id));
+  }
+
   /// `POST /coaching-enquiries/{enquiryId}/approve-and-enroll`
   ///
-  /// Sent without a body — the website sends none, and the route defaults the
-  /// fee record to `Pending` / `0` when nothing is supplied.
-  Future<ApiResponse> approveEnquiry(int id) {
+  /// The body is optional server-side: the route defaults the fee record it
+  /// opens to `Pending` / `0` when nothing is supplied, which is what the plain
+  /// Approve action relies on.
+  Future<ApiResponse> approveEnquiry(int id, {Map<String, dynamic>? body}) {
     EmployeeLog.call(
       'POST ${ApiEndpoints.coachingEnquiryApproveAndEnroll(id)}',
     );
-    return _api.post(ApiEndpoints.coachingEnquiryApproveAndEnroll(id));
+    return _api.post(
+      ApiEndpoints.coachingEnquiryApproveAndEnroll(id),
+      body: body,
+    );
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -444,18 +491,29 @@ class EmployeeDashboardRemoteDataSource {
   }
 
   /// `POST /courts/{courtId}/slots/{slotId}/block` — that date only.
+  ///
+  /// `countAsRevenue: true` (BOOK) records the block as a paid booking;
+  /// re-posting with the opposite value on an already-blocked slot is the
+  /// un-bill/re-bill correction — it changes only the billed flag.
   Future<ApiResponse> blockSlot({
     required int courtId,
     required int slotId,
     required String date,
+    String? notes,
+    bool countAsRevenue = false,
+    num? amount,
   }) {
+    final body = <String, dynamic>{
+      'date': date,
+      'countAsRevenue': countAsRevenue,
+      if ((notes ?? '').trim().isNotEmpty) 'notes': notes!.trim(),
+      if (amount != null) 'amount': amount,
+    };
+
     EmployeeLog.call(
-      'POST ${ApiEndpoints.courtSlotBlock(courtId, slotId)} date=$date',
+      'POST ${ApiEndpoints.courtSlotBlock(courtId, slotId)} $body',
     );
-    return _api.post(
-      ApiEndpoints.courtSlotBlock(courtId, slotId),
-      body: {'date': date},
-    );
+    return _api.post(ApiEndpoints.courtSlotBlock(courtId, slotId), body: body);
   }
 
   /// `POST /courts/{courtId}/slots/{slotId}/unblock`
@@ -499,17 +557,272 @@ class EmployeeDashboardRemoteDataSource {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Pickers
+  // Students
   // ───────────────────────────────────────────────────────────────────────────
 
-  /// `GET /students?limit=&search=`
-  Future<ApiResponse> students({int limit = 300, String? search}) {
+  /// `GET /students?page=&limit=&search=`
+  ///
+  /// Serves both the Student List screen and the Fees Management picker — the
+  /// picker simply asks for one large page and ignores the pagination.
+  Future<ApiResponse> students({
+    int page = 1,
+    int limit = 300,
+    String? search,
+  }) {
     final query = <String, dynamic>{
+      'page': page,
       'limit': limit,
       if (_has(search)) 'search': search!.trim(),
     };
     EmployeeLog.call('GET ${ApiEndpoints.students} $query');
     return _api.get(ApiEndpoints.students, query: query);
+  }
+
+  /// `GET /students/{studentId}`
+  Future<ApiResponse> student(int id) {
+    EmployeeLog.call('GET ${ApiEndpoints.student(id)}');
+    return _api.get(ApiEndpoints.student(id));
+  }
+
+  /// `PUT /students/{studentId}`
+  Future<ApiResponse> updateStudent(int id, Map<String, dynamic> body) {
+    EmployeeLog.call('PUT ${ApiEndpoints.student(id)} fields=${body.keys}');
+    return _api.put(ApiEndpoints.student(id), body: body);
+  }
+
+  /// `DELETE /students/{studentId}`
+  Future<ApiResponse> deleteStudent(int id) {
+    EmployeeLog.call('DELETE ${ApiEndpoints.student(id)}');
+    return _api.delete(ApiEndpoints.student(id));
+  }
+
+  /// `POST /students/{studentId}/feedback`
+  Future<ApiResponse> sendStudentFeedback(int id, Map<String, dynamic> body) {
+    EmployeeLog.call('POST ${ApiEndpoints.studentFeedback(id)}');
+    return _api.post(ApiEndpoints.studentFeedback(id), body: body);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Coupons
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// `GET /admin/coupons?page=&limit=&search=&status=`
+  Future<ApiResponse> coupons({
+    required int page,
+    required int limit,
+    String? search,
+    String? status,
+  }) {
+    final query = <String, dynamic>{
+      'page': page,
+      'limit': limit,
+      if (_has(search)) 'search': search!.trim(),
+      if (_has(status)) 'status': status!.trim(),
+    };
+
+    EmployeeLog.call('GET ${ApiEndpoints.adminCoupons} $query');
+    return _api.get(ApiEndpoints.adminCoupons, query: query);
+  }
+
+  /// `GET /admin/coupons/{couponId}` — the single coupon the edit form seeds
+  /// itself from, so it never opens over a stale list row.
+  Future<ApiResponse> coupon(int id) {
+    EmployeeLog.call('GET ${ApiEndpoints.adminCoupon(id)}');
+    return _api.get(ApiEndpoints.adminCoupon(id));
+  }
+
+  /// `POST /admin/coupons`
+  Future<ApiResponse> createCoupon(Map<String, dynamic> body) {
+    EmployeeLog.call('POST ${ApiEndpoints.adminCoupons} fields=${body.keys}');
+    return _api.post(ApiEndpoints.adminCoupons, body: body);
+  }
+
+  /// `PUT /admin/coupons/{couponId}`
+  Future<ApiResponse> updateCoupon(int id, Map<String, dynamic> body) {
+    EmployeeLog.call(
+      'PUT ${ApiEndpoints.adminCoupon(id)} fields=${body.keys}',
+    );
+    return _api.put(ApiEndpoints.adminCoupon(id), body: body);
+  }
+
+  /// `DELETE /admin/coupons/{couponId}`
+  Future<ApiResponse> deleteCoupon(int id) {
+    EmployeeLog.call('DELETE ${ApiEndpoints.adminCoupon(id)}');
+    return _api.delete(ApiEndpoints.adminCoupon(id));
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Visitor passes
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// `GET /visitor-passes?page=&limit=`
+  Future<ApiResponse> visitorPasses({
+    required int page,
+    required int limit,
+  }) {
+    final query = <String, dynamic>{'page': page, 'limit': limit};
+    EmployeeLog.call('GET ${ApiEndpoints.visitorPasses} $query');
+    return _api.get(ApiEndpoints.visitorPasses, query: query);
+  }
+
+  /// `GET /visitor-passes/{idOrCode}`
+  ///
+  /// The route takes either the numeric id or the pass number
+  /// (`VP-20260812-F1D246`), which is why this is not typed to an int.
+  Future<ApiResponse> visitorPass(Object idOrCode) {
+    EmployeeLog.call('GET ${ApiEndpoints.visitorPass(idOrCode)}');
+    return _api.get(ApiEndpoints.visitorPass(idOrCode));
+  }
+
+  /// `POST /visitor-passes`
+  Future<ApiResponse> createVisitorPass(Map<String, dynamic> body) {
+    EmployeeLog.call('POST ${ApiEndpoints.visitorPasses} fields=${body.keys}');
+    return _api.post(ApiEndpoints.visitorPasses, body: body);
+  }
+
+  /// `POST /visitor-passes/{visitorPassId}/send-email`
+  Future<ApiResponse> emailVisitorPass(int id, Map<String, dynamic> body) {
+    EmployeeLog.call('POST ${ApiEndpoints.visitorPassSendEmail(id)}');
+    return _api.post(ApiEndpoints.visitorPassSendEmail(id), body: body);
+  }
+
+  /// `DELETE /visitor-passes/{visitorPassId}`
+  Future<ApiResponse> deleteVisitorPass(int id) {
+    EmployeeLog.call('DELETE ${ApiEndpoints.visitorPass(id)}');
+    return _api.delete(ApiEndpoints.visitorPass(id));
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Events
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// `GET /event-passes?page=&limit=&timeframe=`
+  ///
+  /// [timeframe] is `upcoming` or `past`; omitting it asks for both.
+  Future<ApiResponse> events({
+    required int page,
+    required int limit,
+    String? timeframe,
+  }) {
+    final query = <String, dynamic>{
+      'page': page,
+      'limit': limit,
+      if (_has(timeframe)) 'timeframe': timeframe!.trim(),
+    };
+
+    EmployeeLog.call('GET ${ApiEndpoints.eventPasses} $query');
+    return _api.get(ApiEndpoints.eventPasses, query: query);
+  }
+
+  /// `GET /event-passes/{eventPassId}` — the one call that reliably carries the
+  /// slots, custom fields and FAQs together.
+  Future<ApiResponse> event(int id) {
+    EmployeeLog.call('GET ${ApiEndpoints.eventPass(id)}');
+    return _api.get(ApiEndpoints.eventPass(id));
+  }
+
+  /// `POST /event-passes`
+  Future<ApiResponse> createEvent(Map<String, dynamic> body) {
+    EmployeeLog.call('POST ${ApiEndpoints.eventPasses} fields=${body.keys}');
+    return _api.post(ApiEndpoints.eventPasses, body: body);
+  }
+
+  /// `PUT /event-passes/{eventPassId}`
+  Future<ApiResponse> updateEvent(int id, Map<String, dynamic> body) {
+    EmployeeLog.call('PUT ${ApiEndpoints.eventPass(id)} fields=${body.keys}');
+    return _api.put(ApiEndpoints.eventPass(id), body: body);
+  }
+
+  /// `DELETE /event-passes/{eventPassId}`
+  Future<ApiResponse> deleteEvent(int id) {
+    EmployeeLog.call('DELETE ${ApiEndpoints.eventPass(id)}');
+    return _api.delete(ApiEndpoints.eventPass(id));
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Event bookings (Issue Event Pass)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// `GET /event-passes/bookings/all?page=&limit=`
+  Future<ApiResponse> eventBookings({
+    required int page,
+    required int limit,
+  }) {
+    final query = <String, dynamic>{'page': page, 'limit': limit};
+    EmployeeLog.call('GET ${ApiEndpoints.allEventBookings} $query');
+    return _api.get(ApiEndpoints.allEventBookings, query: query);
+  }
+
+  /// `POST /event-passes/individual-passes/{passId}/send-email`
+  Future<ApiResponse> emailIndividualPass(
+    int passId,
+    Map<String, dynamic> body,
+  ) {
+    EmployeeLog.call(
+      'POST ${ApiEndpoints.eventPassIndividualSendEmail(passId)}',
+    );
+    return _api.post(
+      ApiEndpoints.eventPassIndividualSendEmail(passId),
+      body: body,
+    );
+  }
+
+  /// `DELETE /event-passes/bookings/{eventBookingId}`
+  Future<ApiResponse> deleteEventBooking(int id) {
+    EmployeeLog.call('DELETE ${ApiEndpoints.eventBooking(id)}');
+    return _api.delete(ApiEndpoints.eventBooking(id));
+  }
+
+  /// `DELETE /event-passes/bookings` with `{ids: [..]}` — the bulk delete.
+  Future<ApiResponse> deleteEventBookings(List<int> ids) {
+    EmployeeLog.call(
+      'DELETE ${ApiEndpoints.eventBookings} ids=${ids.length}',
+    );
+    return _api.delete(ApiEndpoints.eventBookings, body: {'ids': ids});
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Contact enquiries
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// `GET /contact-us/admin?page=&limit=&status=`
+  Future<ApiResponse> contactEnquiries({
+    required int page,
+    required int limit,
+    String? status,
+  }) {
+    final query = <String, dynamic>{
+      'page': page,
+      'limit': limit,
+      if (_has(status)) 'status': status!.trim(),
+    };
+
+    EmployeeLog.call('GET ${ApiEndpoints.contactUsAdmin} $query');
+    return _api.get(ApiEndpoints.contactUsAdmin, query: query);
+  }
+
+  /// `GET /contact-us/admin/{enquiryId}` — the full enquiry, which the detail
+  /// sheet re-reads rather than trusting the list row's copy of the message.
+  Future<ApiResponse> contactEnquiry(String id) {
+    EmployeeLog.call('GET ${ApiEndpoints.contactUsAdminEnquiry(id)}');
+    return _api.get(ApiEndpoints.contactUsAdminEnquiry(id));
+  }
+
+  /// `PATCH /contact-us/admin/{enquiryId}/status`
+  Future<ApiResponse> setContactEnquiryStatus(String id, String status) {
+    EmployeeLog.call(
+      'PATCH ${ApiEndpoints.contactUsAdminEnquiryStatus(id)} → $status',
+    );
+    return _api.patch(
+      ApiEndpoints.contactUsAdminEnquiryStatus(id),
+      body: {'status': status},
+    );
+  }
+
+  /// `DELETE /contact-us/admin/{enquiryId}` — a soft delete server-side.
+  Future<ApiResponse> deleteContactEnquiry(String id) {
+    EmployeeLog.call('DELETE ${ApiEndpoints.contactUsAdminEnquiry(id)}');
+    return _api.delete(ApiEndpoints.contactUsAdminEnquiry(id));
   }
 
   static bool _has(String? value) => value != null && value.trim().isNotEmpty;

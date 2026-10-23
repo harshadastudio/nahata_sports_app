@@ -121,6 +121,52 @@ class CourtSlotRepositoryImpl implements CourtSlotRepository {
   }
 
   @override
+  Future<void> blockSlotForDate({
+    required int courtId,
+    required int slotId,
+    required String date,
+    String? notes,
+    bool countAsRevenue = false,
+    num? amount,
+  }) async {
+    final response = await _remote.blockSlot(
+      courtId: courtId,
+      slotId: slotId,
+      date: date,
+      notes: notes,
+      countAsRevenue: countAsRevenue,
+      amount: amount,
+    );
+    if (!response.isOk) throw response.toException();
+    AdminLog.success(
+      'Slot $slotId on court $courtId blocked for $date'
+      '${countAsRevenue ? ' (booked as revenue)' : ''}',
+    );
+  }
+
+  @override
+  Future<void> unblockSlotForDate({
+    required int courtId,
+    required int slotId,
+    required String date,
+  }) async {
+    final response = await _remote.unblockSlot(
+      courtId: courtId,
+      slotId: slotId,
+      date: date,
+    );
+    if (!response.isOk) throw response.toException();
+    AdminLog.success('Slot $slotId on court $courtId unblocked for $date');
+  }
+
+  @override
+  Future<void> setSlotStatus(int courtId, int slotId, String status) async {
+    final response = await _remote.setSlotStatus(courtId, slotId, status);
+    if (!response.isOk) throw response.toException();
+    AdminLog.success('Slot $slotId on court $courtId → $status (all dates)');
+  }
+
+  @override
   Future<List<AvailabilityWindow>> fetchAvailability({
     int? complexId,
     int? sportId,

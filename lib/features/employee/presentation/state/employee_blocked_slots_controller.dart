@@ -161,10 +161,12 @@ class EmployeeBlockedSlotsController extends ChangeNotifier {
 
   /// Blocks or unblocks one slot for the selected date.
   ///
-  /// Returns null on success, else a message. A customer booking is refused
-  /// here rather than sent to the API — the server would refuse it too, but
-  /// saying why locally is faster and clearer.
-  Future<String?> toggle(EmployeeAvailableSlot slot) async {
+  /// [billed] only matters when the slot is being blocked: `false` is a plain
+  /// maintenance BLOCK, `true` is BOOK — billed as revenue. Returns null on
+  /// success, else a message. A customer booking is refused here rather than
+  /// sent to the API — the server would refuse it too, but saying why locally
+  /// is faster and clearer.
+  Future<String?> toggle(EmployeeAvailableSlot slot, {bool billed = false}) async {
     final court = _court;
     if (court == null) return 'Pick a court first.';
 
@@ -176,7 +178,7 @@ class EmployeeBlockedSlotsController extends ChangeNotifier {
     _notify();
 
     try {
-      await _apply(court.id, slot, block: !slot.isBlocked);
+      await _apply(court.id, slot, block: !slot.isBlocked, billed: billed);
       // Re-read rather than guess: the server decides who owns a block, and a
       // partner feed can have claimed the slot since the page loaded.
       await fetchSlots();
@@ -192,13 +194,52 @@ class EmployeeBlockedSlotsController extends ChangeNotifier {
     }
   }
 
+  /// The billed/unbilled correction on an already-blocked slot of our own —
+  /// re-posts the block with the opposite `countAsRevenue`. Only meaningful on
+  /// a slot that is blocked, not a partner hold, and not a recurring block —
+  /// neither of those has a billable row of ours to correct.
+  Future<String?> setBilled(EmployeeAvailableSlot slot, bool billed) async {
+    final court = _court;
+    if (court == null) return 'Pick a court first.';
+
+    if (!slot.isBlocked || slot.isPartnerBlock || slot.isRecurringBlock) {
+      return 'This block cannot be re-billed.';
+    }
+
+    _busySlotId = slot.id;
+    _notify();
+
+    try {
+      await _repository.blockSlotForDate(
+        courtId: court.id,
+        slotId: slot.id,
+        date: formatIsoDate(_date),
+        countAsRevenue: billed,
+      );
+      await fetchSlots();
+      return null;
+    } catch (e) {
+      EmployeeLog.failure('Slot re-bill failed', error: e);
+      return _describe(e);
+    } finally {
+      if (!_disposed) {
+        _busySlotId = null;
+        _notify();
+      }
+    }
+  }
+
   /// Blocks or unblocks every slot that is not already in that state.
   ///
-  /// Customer bookings are skipped entirely — a bulk action must never touch a
-  /// slot somebody paid for. Returns a summary, since a partial failure is a
-  /// real outcome here: the requests go one at a time and any of them can be
+  /// [billed] only matters for a bulk BLOCK — `true` is Book All. Customer
+  /// bookings are skipped entirely — a bulk action must never touch a slot
+  /// somebody paid for. Returns a summary, since a partial failure is a real
+  /// outcome here: the requests go one at a time and any of them can be
   /// refused on its own.
-  Future<EmployeeBulkResult> bulkSet({required bool block}) async {
+  Future<EmployeeBulkResult> bulkSet({
+    required bool block,
+    bool billed = false,
+  }) async {
     final court = _court;
     if (court == null) {
       return const EmployeeBulkResult(attempted: 0, succeeded: 0);
@@ -218,7 +259,7 @@ class EmployeeBlockedSlotsController extends ChangeNotifier {
     var succeeded = 0;
     for (final slot in targets) {
       try {
-        await _apply(court.id, slot, block: block);
+        await _apply(court.id, slot, block: block, billed: billed);
         succeeded += 1;
       } catch (e) {
         EmployeeLog.failure('Bulk ${block ? 'block' : 'unblock'} failed', error: e);
@@ -252,6 +293,7 @@ class EmployeeBlockedSlotsController extends ChangeNotifier {
     int courtId,
     EmployeeAvailableSlot slot, {
     required bool block,
+    bool billed = false,
   }) {
     if (!block && slot.isRecurringBlock) {
       return _repository.setSlotStatus(courtId, slot.id, 'Active');
@@ -263,6 +305,7 @@ class EmployeeBlockedSlotsController extends ChangeNotifier {
             courtId: courtId,
             slotId: slot.id,
             date: date,
+            countAsRevenue: billed,
           )
         : _repository.unblockSlotForDate(
             courtId: courtId,

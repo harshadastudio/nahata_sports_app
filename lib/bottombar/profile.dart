@@ -873,7 +873,6 @@ import 'package:nahata_app/auth/login.dart';
 import '../core/network/api_exception.dart';
 import '../core/services/selected_ground.dart';
 import '../core/widgets/app_shimmer.dart';
-import '../core/widgets/media_image.dart';
 import '../models/batch_model.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/coaching_repository.dart';
@@ -1014,14 +1013,6 @@ class Coach {
   final String developmentPath;
   final String startTime;
   final String endTime;
-
-  /// From the coach's own record, e.g. "ALL India Basketball Cert".
-  final String certification;
-
-  /// The coach's own weekly availability, e.g. "Monday,Tuesday,Sunday" —
-  /// distinct from [availability], which is the tapped batch's schedule.
-  final String weeklyAvailability;
-
   Coach? coach;
 
   Coach({
@@ -1040,8 +1031,6 @@ class Coach {
     required this.developmentPath,
     required this.startTime,
     required this.endTime,
-    this.certification = '',
-    this.weeklyAvailability = '',
   });
 
   factory Coach.fromJson(Map<String, dynamic> json) {
@@ -1054,11 +1043,14 @@ class Coach {
       startTime = batch['start_time'] ?? '';
       endTime = batch['end_time'] ?? '';
     }
-    // Parse image safely
-    String imageUrl = '';
-    if (json['image'] != null && json['image'].toString().isNotEmpty) {
-      imageUrl = "https://nahatasports.com/upload/${json['image']}";
-    }
+    // Parse image safely.
+    //
+    // Only reached by the legacy call sites (all currently commented out); the
+    // live coaching screens build their Coach through `_toCoach`. Routed
+    // through [resolveMediaUrl] anyway so it handles the same shapes the rest
+    // of the app does — an absolute URL and an inlined `data:` URI — instead
+    // of prefixing a host onto whatever it was given.
+    final String imageUrl = resolveMediaUrl(json['image']?.toString()) ?? '';
 
     // Parse achievements from HTML or empty list
     List<String> parsedAchievements = [];
@@ -1198,25 +1190,31 @@ class _SportPhoto extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Same reasoning as the coach photo: a sport picture can arrive as an
+    // inlined `data:` URI, which Image.network cannot fetch.
+    final provider = mediaImageProvider(url);
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.network(
-          url,
-          fit: BoxFit.cover,
-          // A broken or missing image leaves the gradient underneath showing,
-          // which is the pre-existing look rather than a grey error box.
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-            if (wasSynchronouslyLoaded) return child;
-            return AnimatedOpacity(
-              opacity: frame == null ? 0 : 1,
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOut,
-              child: child,
-            );
-          },
-        ),
+        if (provider != null)
+          Image(
+            image: provider,
+            fit: BoxFit.cover,
+            // A broken or missing image leaves the gradient underneath
+            // showing, which is the pre-existing look rather than a grey
+            // error box.
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+              if (wasSynchronouslyLoaded) return child;
+              return AnimatedOpacity(
+                opacity: frame == null ? 0 : 1,
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOut,
+                child: child,
+              );
+            },
+          ),
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -1447,8 +1445,6 @@ class CoachApiService {
       developmentPath: profile?.credentials ?? '',
       startTime: batch.sessionStart,
       endTime: batch.sessionEnd,
-      certification: profile?.certification ?? '',
-      weeklyAvailability: profile?.availability ?? '',
     );
   }
 }
@@ -1527,39 +1523,12 @@ class SportsScreen extends StatefulWidget {
   State<SportsScreen> createState() => _SportsScreenState();
 }
 
-/// Type metrics for a sports grid tile.
-///
-/// Shared by the tile and by the delegate that sizes it — if they drifted
-/// apart the height would stop matching the text again, which is the bug this
-/// pair exists to prevent.
-const double _sportTileNameSize = 16;
-const double _sportTileGroundSize = 12;
-const double _sportTileLineHeight = 1.25;
-
-/// "Multipurpose AC Studio" needs three lines in a half-width tile; nothing in
-/// the catalogue needs more.
-const int _sportTileNameMaxLines = 3;
-
-/// Geometry for the sports grid, worked out once per build from the names the
-/// API actually returned. See [_SportsScreenState._sportsGridMetrics].
-class _SportsGridMetrics {
-  const _SportsGridMetrics({required this.delegate, required this.nameSize});
-
-  final SliverGridDelegate delegate;
-
-  /// Logical font size for the sport name before the user's text scale is
-  /// applied — reduced from [_sportTileNameSize] only when a name genuinely
-  /// cannot fit the device at full size.
-  final double nameSize;
-}
-
 class _SportsScreenState extends State<SportsScreen> {
-  late Future<List<Sport>> futureSports;
+  /// Sentinel for the "All venues" entry — PopupMenuButton needs a non-null
+  /// value, but "no filter" is represented as a null ground everywhere else.
+  static const String _allVenues = '__all_venues__';
 
-  /// The venue list, fetched once and shared by the picker and the ground
-  /// fallback below — both need it on first load, and neither should pay for
-  /// its own round trip.
-  Future<List<String>>? _venuesFuture;
+  late Future<List<Sport>> futureSports;
 
   /// Ground actually used for the current request — passed on to BatchScreen
   /// so the batch list stays scoped to the same venue.
@@ -1580,40 +1549,43 @@ class _SportsScreenState extends State<SportsScreen> {
   Future<List<Sport>> _loadSports() async {
     if (!_groundResolved) {
       _ground = widget.ground ?? await SelectedGround.instance.read();
-
-      // The picker offers only the real venues now, so there is no "all
-      // venues" state left for the screen to sit in. With nothing remembered,
-      // open on the first venue the API lists rather than every ground at
-      // once — otherwise the grid would show a selection the filter cannot
-      // express or undo.
-      if (_ground == null) {
-        final venues = await _loadVenuesOnce();
-        if (venues.isNotEmpty) {
-          _ground = venues.first;
-          await SelectedGround.instance.save(_ground);
-        }
-      }
-
       _groundResolved = true;
     }
     return CoachApiService.fetchSports(ground: _ground);
   }
 
-  /// `GET /sports-complexes`, fetched at most once per screen.
-  Future<List<String>> _loadVenuesOnce() =>
-      _venuesFuture ??= CoachApiService.fetchVenues();
-
   Future<void> _loadVenues() async {
-    final venues = await _loadVenuesOnce();
+    final venues = await CoachApiService.fetchVenues();
     if (!mounted) return;
     setState(() {
       _venues = venues;
       _loadingVenues = false;
     });
+
+    if (venues.isEmpty) return;
+
+    // The picker offers only real venues, so "no venue" is not something the
+    // user can pick — or get back to once they have. Adopt the first venue
+    // when nothing has been chosen yet, so the label always names the venue
+    // whose sports are actually on screen.
+    if (!_groundResolved) {
+      _ground = widget.ground ?? await SelectedGround.instance.read();
+      _groundResolved = true;
+    }
+    if (!mounted || _ground != null) return;
+
+    // Deliberately not persisted: SelectedGround records what the *user* last
+    // opened, and other screens read it. A default the user never chose has no
+    // business overwriting that.
+    setState(() {
+      _ground = venues.first;
+      futureSports = CoachApiService.fetchSports(ground: venues.first);
+    });
   }
 
   /// Switches venue: remembers the choice, then reloads the grid.
-  Future<void> _onVenueSelected(String ground) async {
+  Future<void> _onVenueSelected(String value) async {
+    final ground = value == _allVenues ? null : value;
     if (ground == _ground) return;
 
     await SelectedGround.instance.save(ground);
@@ -1736,10 +1708,18 @@ class _SportsScreenState extends State<SportsScreen> {
                 }
 
                 final sports = snapshot.data!;
-                final metrics = _sportsGridMetrics(context, sports);
                 return GridView.builder(
                   padding: const EdgeInsets.all(20),
-                  gridDelegate: metrics.delegate,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    // Taller than wide, so a two-line sport name plus the venue
+                    // fits without the tile clipping it. At 1.2 a cell on a
+                    // 360dp screen was ~127px tall against ~123px of content —
+                    // no margin at all once a name wrapped.
+                    childAspectRatio: 0.95,
+                  ),
                   itemCount: sports.length,
                   itemBuilder: (context, index) {
                     final sport = sports[index];
@@ -1819,42 +1799,48 @@ class _SportsScreenState extends State<SportsScreen> {
                                 ),
                               ),
                             ),
+                            // The grid fixes this cell's height, and the tile
+                            // clips (`Clip.antiAlias`) — so anything that does
+                            // not fit is cut off silently rather than showing
+                            // an overflow stripe. That is how a name like
+                            // "Multipurpose AC Studio" lost its second line.
+                            //
+                            // The title gets two lines and the room to use
+                            // them; the venue keeps one. Right padding is
+                            // wider than the rest to clear the emoji bubble
+                            // in the bottom-right corner.
                             Padding(
-                              padding: const EdgeInsets.all(16),
+                              padding: const EdgeInsets.fromLTRB(16, 14, 34, 14),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisAlignment: MainAxisAlignment.end,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  // Flexible, so that if a name is longer than
-                                  // even the measured height allows it shrinks
-                                  // the box rather than overrunning it. The
-                                  // ellipsis is the last resort after the tile
-                                  // has already grown to fit — not a way of
-                                  // hiding the problem.
                                   Flexible(
                                     child: Text(
                                       sport.sportName, // from API
-                                      maxLines: _sportTileNameMaxLines,
+                                      maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: metrics.nameSize,
-                                        height: _sportTileLineHeight,
+                                        fontSize: 15,
+                                        height: 1.2,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    sport.ground, // from API
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.9),
-                                      fontSize: _sportTileGroundSize,
-                                      height: _sportTileLineHeight,
+                                  if (sport.ground.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      sport.ground, // from API
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.9),
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -1870,118 +1856,6 @@ class _SportsScreenState extends State<SportsScreen> {
         ],
       ),
       // bottomNavigationBar: _buildBottomNav(),
-    );
-  }
-
-  /// Grid geometry for the sports tiles, measured against the names they hold.
-  ///
-  /// A fixed `childAspectRatio: 1.2` set the tile height from its width alone,
-  /// so a long sport name ran past the bottom. The tile clips its children to
-  /// get rounded corners, which turned that overflow into a silently cropped
-  /// name instead of the usual overflow stripes, so nothing ever flagged it.
-  ///
-  /// Nothing is assumed here. Every name is laid out with a [TextPainter] at
-  /// the user's own text scale, and the result drives three decisions in turn:
-  ///
-  ///  1. a name's longest **word** cannot be wrapped, so if it is wider than a
-  ///     half-width tile the grid drops to one column rather than ellipsing it,
-  ///  2. if the word still will not fit one full-width tile — a 22-character
-  ///     name at double system text size on a small phone is simply wider than
-  ///     the device — the type shrinks by exactly the shortfall, because a
-  ///     whole name a little smaller beats "Multipurpo…",
-  ///  3. the tallest measured name then sets the row height.
-  ///
-  /// The cost is a few text layouts over a list that holds a dozen sports.
-  _SportsGridMetrics _sportsGridMetrics(
-    BuildContext context,
-    List<Sport> sports,
-  ) {
-    const spacing = 16.0;
-    const gridPadding = 20.0;
-    const tilePadding = 16.0;
-
-    // Below this the name stops being readable; an ellipsis is better.
-    const minNameSize = 11.0;
-
-    final media = MediaQuery.of(context);
-    final available = media.size.width - gridPadding * 2;
-
-    TextPainter paint(String text, double size, FontWeight weight,
-        {int? maxLines, double? maxWidth}) {
-      return TextPainter(
-        text: TextSpan(
-          text: text,
-          style: TextStyle(
-            fontSize: size,
-            fontWeight: weight,
-            height: _sportTileLineHeight,
-          ),
-        ),
-        maxLines: maxLines,
-        textScaler: media.textScaler,
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: maxWidth ?? double.infinity);
-    }
-
-    double widestWordAt(double size) {
-      var widest = 0.0;
-      for (final sport in sports) {
-        for (final word in sport.sportName.split(RegExp(r'\s+'))) {
-          if (word.isEmpty) continue;
-          final width = paint(word, size, FontWeight.w600).width;
-          if (width > widest) widest = width;
-        }
-      }
-      return widest;
-    }
-
-    final widest = widestWordAt(_sportTileNameSize);
-
-    // 1. Two columns unless the longest unbreakable word will not fit in one.
-    final twoColumnContent = (available - spacing) / 2 - tilePadding * 2;
-    final columns = widest > twoColumnContent ? 1 : 2;
-
-    final tileWidth = (available - spacing * (columns - 1)) / columns;
-    final contentWidth = tileWidth - tilePadding * 2;
-
-    // 2. Shrink only by what is actually missing, and never below legibility.
-    var nameSize = _sportTileNameSize;
-    if (widest > contentWidth && widest > 0) {
-      final fitted = _sportTileNameSize * (contentWidth / widest);
-      nameSize = fitted < minNameSize ? minNameSize : fitted;
-    }
-
-    // 3. Height comes from the tallest name at whatever size it ended up.
-    var tallestName = 0.0;
-    for (final sport in sports) {
-      final height = paint(
-        sport.sportName.isEmpty ? ' ' : sport.sportName,
-        nameSize,
-        FontWeight.w600,
-        maxLines: _sportTileNameMaxLines,
-        maxWidth: contentWidth,
-      ).height;
-      if (height > tallestName) tallestName = height;
-    }
-
-    final groundHeight =
-        paint(' ', _sportTileGroundSize, FontWeight.w400, maxLines: 1).height;
-
-    final needed = tallestName + 4 + groundHeight + tilePadding * 2;
-
-    // A single-column tile would otherwise become absurdly tall; two-column
-    // tiles keep at least the proportions they had for short names.
-    final floor = columns == 1 ? 0.0 : tileWidth / 1.2;
-    final tileHeight = needed < floor ? floor : needed;
-
-    return _SportsGridMetrics(
-      nameSize: nameSize,
-      delegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns,
-        crossAxisSpacing: spacing,
-        mainAxisSpacing: spacing,
-        childAspectRatio: tileWidth / tileHeight,
-      ),
     );
   }
 
@@ -2003,8 +1877,8 @@ class _SportsScreenState extends State<SportsScreen> {
     // Nothing to choose between — keep the row exactly as it was.
     if (_venues.isEmpty) return const SizedBox.shrink();
 
-    // Null only for the moment between the venues arriving and the ground
-    // fallback in [_loadSports] settling on the first of them.
+    // Only ever null in the moment between the venue list arriving and
+    // [_loadVenues] adopting the first one.
     final label = _ground ?? 'Select venue';
 
     return PopupMenuButton<String>(
@@ -2014,7 +1888,9 @@ class _SportsScreenState extends State<SportsScreen> {
       color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       onSelected: _onVenueSelected,
-      // Only the real venues — coaching is always scoped to one ground.
+      // Real venues only — the "All venues" entry was removed so coaching is
+      // always browsed one venue at a time. [_onVenueSelected] still maps the
+      // sentinel back to null in case anything else ever offers it.
       itemBuilder: (context) => [
         ..._venues.map(
           (venue) => _venueMenuItem(venue, venue, _ground == venue),
@@ -2703,49 +2579,54 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
               ),
               child: Column(
                 children: [
-                  // Coach Image — tapping it opens the coach's full profile.
+                  // Coach Image
+                  //
+                  // Routed through [mediaImageProvider] rather than
+                  // Image.network: `/coaches` inlines the photo as a base64
+                  // `data:` URI, which the HTTP stack cannot fetch.
+                  //
+                  // Tapping it opens the full profile — the bio and
+                  // achievements have nowhere else on this screen to go.
                   Semantics(
                     button: true,
-                    label: 'View ${widget.coach.name}’s profile',
-                    child: InkWell(
+                    label: 'View ${widget.coach.name}\'s profile',
+                    child: GestureDetector(
                       key: const Key('coach_photo'),
-                      borderRadius: BorderRadius.circular(60),
-                      onTap: () => _showCoachProfile(context, widget.coach),
+                      onTap: _showCoachProfile,
                       child: Stack(
                         alignment: Alignment.bottomRight,
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(60),
-                            // A coach photo arrives either as a URL or, for
-                            // some records, as an inline base64 `data:` URI —
-                            // MediaImage handles both and falls back to the
-                            // placeholder when the bytes are in a format
-                            // Flutter cannot decode.
-                            child: widget.coach.image.isNotEmpty
-                                ? MediaImage(
-                                    source: widget.coach.image,
-                                    height: 120,
-                                    width: 120,
-                                    fit: BoxFit.cover,
-                                    // Shown at 120px; the source runs to well
-                                    // over a thousand pixels square.
-                                    decodeSize: 360,
-                                    errorBuilder: (context, error, stackTrace) =>
-                                        _placeholderImage(),
-                                  )
-                                : _placeholderImage(),
+                            child: Builder(
+                              builder: (context) {
+                                final provider =
+                                    mediaImageProvider(widget.coach.image);
+                                if (provider == null) return _placeholderImage();
+
+                                return Image(
+                                  image: provider,
+                                  height: 120,
+                                  width: 120,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      _placeholderImage(),
+                                );
+                              },
+                            ),
                           ),
-                          // Without this the photo looks like decoration
-                          // rather than something you can open.
+                          // Without this the photo looks like decoration and
+                          // nobody discovers the tap.
                           Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF1A237E),
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1A237E),
                               shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
                             ),
                             child: const Icon(
                               Icons.person_outline,
-                              size: 15,
+                              size: 14,
                               color: Colors.white,
                             ),
                           ),
@@ -3048,181 +2929,6 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
     );
   }
 
-  /// The coach's profile, opened by tapping their photo.
-  ///
-  /// A sheet rather than a route: the details screen underneath is already
-  /// about this coach, so this is a closer look at the same subject, not a
-  /// place to navigate to and come back from.
-  ///
-  /// Only what the API actually sent is shown — a coach with no biography or
-  /// no certification gets a shorter card, never an empty labelled row.
-  void _showCoachProfile(BuildContext context, Coach coach) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.62,
-          minChildSize: 0.4,
-          maxChildSize: 0.92,
-          expand: false,
-          builder: (_, scrollController) => Container(
-            key: const Key('coach_profile_sheet'),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: ListView(
-              controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 22),
-                Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(70),
-                    child: coach.image.isNotEmpty
-                        ? MediaImage(
-                            source: coach.image,
-                            height: 140,
-                            width: 140,
-                            fit: BoxFit.cover,
-                            decodeSize: 420,
-                            errorBuilder: (_, __, ___) => _placeholderImage(),
-                          )
-                        : _placeholderImage(),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Center(
-                  child: Text(
-                    coach.name.isEmpty ? 'Coach' : coach.name,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-                if (coach.developmentPath.trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Center(
-                    child: Text(
-                      coach.developmentPath,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                _coachProfileRow(
-                    Icons.sports_outlined, 'Sport', coach.sport),
-                _coachProfileRow(
-                    Icons.location_on_outlined, 'Venue', coach.ground),
-                _coachProfileRow(Icons.event_available_outlined,
-                    'Available on', coach.weeklyAvailability),
-                _coachProfileRow(Icons.workspace_premium_outlined,
-                    'Certification', coach.certification),
-                _coachProfileRow(
-                    Icons.schedule_outlined, 'Batch timing', coach.availability),
-                if (coach.coachBio.trim().isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  const Text(
-                    'About',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    coach.coachBio,
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      height: 1.5,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 26),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1A237E),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: const Text(
-                      'Close',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  /// One labelled line of the profile sheet. Renders nothing when the API sent
-  /// no value, so the card never shows an empty field.
-  Widget _coachProfileRow(IconData icon, String label, String value) {
-    final text = value.trim();
-    if (text.isEmpty) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: const Color(0xFF1A237E)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 11.5, color: Colors.grey[500]),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  text,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    color: Colors.black87,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _placeholderImage() {
     return Container(
       height: 120,
@@ -3245,6 +2951,264 @@ class _CoachDetailsScreenState extends State<CoachDetailsScreen> {
       ),
       child: const Icon(Icons.person, size: 12, color: Colors.white),
     );
+  }
+
+  /// The coach's profile, opened by tapping their photo.
+  ///
+  /// This is where `coachBio` and `achievements` are shown: both come down on
+  /// the coach record but the details screen has no room for them, so they
+  /// were being parsed and then dropped.
+  ///
+  /// Every section is omitted when the API sent nothing for it, so a sparse
+  /// coach record reads as a short profile rather than a list of blank labels.
+  void _showCoachProfile() {
+    const brandBlue = Color(0xFF1A237E);
+    final coach = widget.coach;
+    final provider = mediaImageProvider(coach.image);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        final media = MediaQuery.of(dialogContext).size;
+
+        return Dialog(
+          key: const Key('coach_profile_dialog'),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 40,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            // Long bios must not push the dialog off a small screen.
+            constraints: BoxConstraints(maxHeight: media.height * 0.8),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header: the photo at a size worth tapping through for.
+                  Container(
+                    width: double.infinity,
+                    color: brandBlue,
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                    child: Column(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(70),
+                          child: provider == null
+                              ? Container(
+                                  height: 140,
+                                  width: 140,
+                                  color: Colors.white24,
+                                  child: const Icon(
+                                    Icons.person,
+                                    size: 70,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Image(
+                                  image: provider,
+                                  height: 140,
+                                  width: 140,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    height: 140,
+                                    width: 140,
+                                    color: Colors.white24,
+                                    child: const Icon(
+                                      Icons.person,
+                                      size: 70,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          coach.name.isNotEmpty ? coach.name : 'Coach',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (coach.sport.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            '${coach.sport} Coach',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (coach.ground.trim().isNotEmpty)
+                          _profileRow(
+                            Icons.location_on_outlined,
+                            'Venue',
+                            coach.ground.trim(),
+                          ),
+                        if (coach.availability.trim().isNotEmpty &&
+                            coach.availability.trim() != '-')
+                          _profileRow(
+                            Icons.event_available_outlined,
+                            'Availability',
+                            coach.availability.trim(),
+                          ),
+                        if (coach.developmentPath.trim().isNotEmpty)
+                          _profileRow(
+                            Icons.workspace_premium_outlined,
+                            'Credentials',
+                            coach.developmentPath.trim(),
+                          ),
+
+                        if (coach.coachBio.trim().isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          const Text(
+                            'About',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            // The bio arrives with HTML in it on some records.
+                            _stripHtml(coach.coachBio),
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              height: 1.45,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ],
+
+                        if (coach.achievements.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Achievements',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          for (final achievement in coach.achievements)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle,
+                                    size: 16,
+                                    color: Colors.green,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      achievement,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.black54,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: brandBlue,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text(
+                              'Close',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// One labelled line in the profile window.
+  Widget _profileRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF1A237E)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 11.5, color: Colors.grey),
+                ),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Tags and entities out of a bio that some records store as HTML.
+  ///
+  /// `<br>` becomes a newline before parsing, because the parser's `.text`
+  /// drops the break entirely and would run the paragraphs together.
+  static String _stripHtml(String value) {
+    final withBreaks =
+        value.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
+    // Handles entities (&amp;, &#39;) as well as tags.
+    return html_parser.parse(withBreaks).body?.text.trim() ?? withBreaks.trim();
   }
 
   /// Opens the enrollment enquiry form, then reports what the server said.

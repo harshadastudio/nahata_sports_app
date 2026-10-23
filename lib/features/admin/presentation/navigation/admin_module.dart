@@ -27,6 +27,7 @@ class AdminModules {
   static const String students = 'students';
   static const String bookings = 'bookings';
   static const String settings = 'settings';
+  static const String revenueSplits = 'revenueSplits';
 
   /// Contact Us enquiries.
   ///
@@ -108,6 +109,7 @@ extension AdminDestinationPermission on AdminDestination {
       case AdminDestination.contactEnquiries:
         return AdminModules.contactEnquiries;
       case AdminDestination.courts:
+      case AdminDestination.blockedSlots:
         return AdminModules.courts;
       case AdminDestination.events:
       case AdminDestination.visitorPasses:

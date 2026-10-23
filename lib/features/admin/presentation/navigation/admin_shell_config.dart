@@ -80,6 +80,7 @@ class AdminShellConfig {
           AdminDestination.coachingEnquiries,
           AdminDestination.contactEnquiries,
           AdminDestination.courts,
+          AdminDestination.blockedSlots,
           AdminDestination.bookings,
           AdminDestination.events,
           AdminDestination.visitorPasses,
@@ -141,6 +142,7 @@ class AdminShellConfig {
             // contact enquiries through the same route the ADMIN console uses.
             AdminDestination.contactEnquiries,
             AdminDestination.courts,
+            AdminDestination.blockedSlots,
             AdminDestination.bookings,
             AdminDestination.securityDashboard,
           ],

@@ -77,6 +77,52 @@ class CoachDashboardRemoteDataSource {
     return _api.get(ApiEndpoints.coachEnrollmentsByMonth, query: query);
   }
 
+  /// `GET /coach/dashboard/earnings?startDate=&endDate=`
+  ///
+  /// Omit both dates for all time.
+  Future<ApiResponse> earnings({String? startDate, String? endDate}) {
+    final query = <String, dynamic>{
+      if (_has(startDate)) 'startDate': startDate!.trim(),
+      if (_has(endDate)) 'endDate': endDate!.trim(),
+    };
+
+    CoachLog.call('GET ${ApiEndpoints.coachEarnings} $query');
+    return _api.get(ApiEndpoints.coachEarnings, query: query);
+  }
+
+  /// `GET /coach/dashboard/students/renewal-preview?fromMonth=&toMonth=`
+  ///
+  /// Read-only — builds the editable Copy to Next Month list. Nothing is
+  /// written.
+  Future<ApiResponse> renewalPreview({String? fromMonth, String? toMonth}) {
+    final query = <String, dynamic>{
+      if (_has(fromMonth)) 'fromMonth': fromMonth!.trim(),
+      if (_has(toMonth)) 'toMonth': toMonth!.trim(),
+    };
+
+    CoachLog.call('GET ${ApiEndpoints.coachRenewalPreview} $query');
+    return _api.get(ApiEndpoints.coachRenewalPreview, query: query);
+  }
+
+  /// `POST /coach/dashboard/students/renew-month`
+  ///
+  /// Commits Copy to Next Month for exactly the rows the coach left ticked.
+  Future<ApiResponse> renewMonth(Map<String, dynamic> body) {
+    CoachLog.call('POST ${ApiEndpoints.coachRenewMonth} fields=${body.keys}');
+    return _api.post(ApiEndpoints.coachRenewMonth, body: body);
+  }
+
+  /// `DELETE /coach/dashboard/students/enrollments/{enrollmentId}?month=`
+  ///
+  /// Takes one student off the roster for exactly one month.
+  Future<ApiResponse> removeEnrollmentMonth(int id, {required String month}) {
+    CoachLog.call('DELETE ${ApiEndpoints.coachEnrollmentRecord(id)} month=$month');
+    return _api.delete(
+      ApiEndpoints.coachEnrollmentRecord(id),
+      query: {'month': month},
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Schedule
   // ---------------------------------------------------------------------------

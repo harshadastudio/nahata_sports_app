@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../core/network/api_exception.dart';
 import '../../core/coach_log.dart';
+import '../../domain/entities/coach_earnings.dart';
 import '../../domain/entities/coach_enquiry.dart';
 import '../../domain/entities/coach_option.dart';
 import '../../domain/entities/coach_overview.dart';
@@ -58,6 +59,17 @@ class CoachOverviewController extends ChangeNotifier {
   List<CoachTopPerformer> get performers => _performers;
   String? get performersError => _performersError;
 
+  // ── My Earnings ────────────────────────────────────────────────────────────
+  CoachViewState _earningsState = CoachViewState.idle;
+  CoachEarnings _earnings = CoachEarnings.empty;
+  String? _earningsError;
+  CoachEarningsRange _earningsRange = CoachEarningsRange.allTime;
+
+  CoachViewState get earningsState => _earningsState;
+  CoachEarnings get earnings => _earnings;
+  String? get earningsError => _earningsError;
+  CoachEarningsRange get earningsRange => _earningsRange;
+
   // ── Enquiry preview ────────────────────────────────────────────────────────
   CoachViewState _enquiriesState = CoachViewState.idle;
   List<CoachEnquiry> _enquiries = const [];
@@ -90,6 +102,7 @@ class CoachOverviewController extends ChangeNotifier {
       _stats == CoachDashboardStats.empty &&
       _schedule.isEmpty &&
       _performers.isEmpty &&
+      _earnings.isEmpty &&
       _enquiries.isEmpty;
 
   // ---------------------------------------------------------------------------
@@ -108,6 +121,7 @@ class CoachOverviewController extends ChangeNotifier {
     _statsState = CoachViewState.loading;
     _scheduleState = CoachViewState.loading;
     _performersState = CoachViewState.loading;
+    _earningsState = CoachViewState.loading;
     _enquiriesState = CoachViewState.loading;
     _notify();
 
@@ -117,6 +131,7 @@ class CoachOverviewController extends ChangeNotifier {
       _loadStats(),
       _loadSchedule(),
       _loadPerformers(),
+      _loadEarnings(),
       _loadEnquiries(),
     ]);
 
@@ -168,6 +183,55 @@ class CoachOverviewController extends ChangeNotifier {
       CoachLog.failure('Overview performers failed', error: e);
     }
   }
+
+  Future<void> _loadEarnings() async {
+    try {
+      final range = _rangeDates(_earningsRange);
+      _earnings = await _repository.getEarnings(
+        startDate: range?.$1,
+        endDate: range?.$2,
+      );
+      _earningsError = null;
+      _earningsState = CoachViewState.ready;
+    } catch (e) {
+      _earningsError = _describe(e);
+      _earningsState = CoachViewState.failed;
+      _noteProfileMissing(e);
+      CoachLog.failure('Overview earnings failed', error: e);
+    }
+  }
+
+  /// Reloads just the earnings card for a new range chip.
+  Future<void> setEarningsRange(CoachEarningsRange range) async {
+    if (_disposed || range == _earningsRange) return;
+    _earningsRange = range;
+    _earningsState = CoachViewState.loading;
+    _notify();
+    await _loadEarnings();
+    _notify();
+  }
+
+  /// `(startDate, endDate)` in `yyyy-MM-dd`, or null for all time.
+  (String, String)? _rangeDates(CoachEarningsRange range) {
+    if (range == CoachEarningsRange.allTime) return null;
+    final today = DateTime.now();
+    final end = _isoDate(today);
+    switch (range) {
+      case CoachEarningsRange.days30:
+        return (_isoDate(today.subtract(const Duration(days: 30))), end);
+      case CoachEarningsRange.days90:
+        return (_isoDate(today.subtract(const Duration(days: 90))), end);
+      case CoachEarningsRange.thisYear:
+        return (_isoDate(DateTime(today.year, 1, 1)), end);
+      case CoachEarningsRange.allTime:
+        return null;
+    }
+  }
+
+  static String _isoDate(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
 
   Future<void> _loadEnquiries() async {
     try {

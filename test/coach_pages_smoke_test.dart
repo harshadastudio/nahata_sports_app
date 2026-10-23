@@ -12,6 +12,7 @@ import 'package:nahata_app/features/coach/presentation/theme/coach_theme.dart';
 
 import 'package:nahata_app/features/coach/domain/entities/coach_attendance.dart';
 import 'package:nahata_app/features/coach/domain/entities/coach_batch.dart';
+import 'package:nahata_app/features/coach/domain/entities/coach_earnings.dart';
 import 'package:nahata_app/features/coach/domain/entities/coach_enquiry.dart';
 import 'package:nahata_app/features/coach/domain/entities/coach_enrollment.dart';
 import 'package:nahata_app/features/coach/domain/entities/coach_fee.dart';
@@ -387,6 +388,38 @@ class _StubCoachRepository implements CoachDashboardRepository {
         ),
       ],
     );
+  }
+
+  @override
+  Future<CoachEarnings> getEarnings({String? startDate, String? endDate}) async {
+    _guard();
+    if (empty) return const CoachEarnings();
+    return const CoachEarnings(totalEarnings: 5000, totalCollected: 8000);
+  }
+
+  @override
+  Future<CoachRenewalPreview> getRenewalPreview({
+    String? fromMonth,
+    String? toMonth,
+  }) async {
+    _guard();
+    return const CoachRenewalPreview();
+  }
+
+  @override
+  Future<CoachRenewMonthResult> renewMonth(
+    CoachRenewMonthRequest request,
+  ) async {
+    _guard();
+    return const CoachRenewMonthResult();
+  }
+
+  @override
+  Future<void> removeEnrollmentFromMonth({
+    required int enrollmentId,
+    required String month,
+  }) async {
+    _guard();
   }
 
   @override

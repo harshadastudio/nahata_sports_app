@@ -256,11 +256,13 @@ class AppShimmer {
 
   /// The Coaching tab's sports grid. Owns its viewport (it is the `Expanded`
   /// child of the screen's Column), so it does not shrink-wrap.
+  // Ratio, spacing and padding mirror the real grid in `SportsScreen`, so the
+  // tiles do not resize when the placeholder is swapped for the content.
   static Widget coachingSports({int tiles = 6}) => tileGrid(
         tiles: tiles,
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
-        childAspectRatio: 1.2,
+        childAspectRatio: 0.95,
         padding: const EdgeInsets.all(20),
         radius: 16,
       );

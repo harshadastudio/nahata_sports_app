@@ -273,6 +273,9 @@ class EmployeeAvailableSlot {
     this.isBlocked = false,
     this.blockedBy,
     this.blockId,
+    this.blockNotes,
+    this.blockBilled = false,
+    this.blockAmount = 0,
   });
 
   final int id;
@@ -294,6 +297,14 @@ class EmployeeAvailableSlot {
   final String? blockedBy;
 
   final int? blockId;
+
+  final String? blockNotes;
+
+  /// Whether the block was billed as revenue (BOOK, not BLOCK).
+  final bool blockBilled;
+
+  /// What it was billed for. `0` unless [blockBilled].
+  final num blockAmount;
 
   /// Held by an aggregator feed. Releasable — the venue must never be locked
   /// out of its own courts by a partner.

@@ -1,16 +1,24 @@
+import '../../../../core/network/api_exception.dart';
 import '../../core/employee_log.dart';
 import '../../domain/entities/employee_attendance.dart';
 import '../../domain/entities/employee_booking.dart';
 import '../../domain/entities/employee_coach.dart';
+import '../../domain/entities/employee_contact_enquiry.dart';
+import '../../domain/entities/employee_coupon.dart';
 import '../../domain/entities/employee_enquiry.dart';
+import '../../domain/entities/employee_event.dart';
+import '../../domain/entities/employee_event_booking.dart';
 import '../../domain/entities/employee_fee.dart';
+import '../../domain/entities/employee_formats.dart';
 import '../../domain/entities/employee_master.dart';
 import '../../domain/entities/employee_notification.dart';
 import '../../domain/entities/employee_overview.dart';
 import '../../domain/entities/employee_paged.dart';
 import '../../domain/entities/employee_payment.dart';
 import '../../domain/entities/employee_staff_details.dart';
+import '../../domain/entities/employee_student.dart';
 import '../../domain/entities/employee_user.dart';
+import '../../domain/entities/employee_visitor_pass.dart';
 import '../../domain/repositories/employee_dashboard_repository.dart';
 import '../datasources/employee_dashboard_remote_data_source.dart';
 import '../models/employee_mappers.dart';
@@ -275,12 +283,19 @@ class EmployeeDashboardRepositoryImpl implements EmployeeDashboardRepository {
     int limit = 20,
     String? status,
     String? search,
+    DateTime? from,
+    DateTime? to,
   }) async {
     final response = await _remote.enquiries(
       page: page,
       limit: limit,
       status: status,
       search: search,
+      fromDate: from == null ? null : formatIsoDate(from),
+      // `toDate` is compared against a timestamp, so the bare day would exclude
+      // everything logged during it. Extending to the last millisecond makes
+      // the filter read as the inclusive day the picker showed.
+      toDate: to == null ? null : '${formatIsoDate(to)}T23:59:59.999',
     );
     if (!response.isOk) throw response.toException();
 
@@ -302,8 +317,61 @@ class EmployeeDashboardRepositoryImpl implements EmployeeDashboardRepository {
   }
 
   @override
-  Future<void> approveEnquiry(int id) async {
-    final response = await _remote.approveEnquiry(id);
+  Future<EmployeeEnquiryCreateResult> createEnquiry(
+    EmployeeEnquiryDraft draft,
+  ) async {
+    final response = await _remote.createEnquiry(draft.toJson());
+    if (!response.isOk) throw response.toException();
+
+    // The route answers with the row it created and the `studentAccount` block
+    // saying whether it had to register the student. Neither is guaranteed — a
+    // payload without them is not a failure, the enquiry was still created —
+    // so the id falls back to the generic reader.
+    final parsed = EmployeeMappers.enquiryCreateResult(response.data);
+    final result = parsed.enquiryId != null
+        ? parsed
+        : EmployeeEnquiryCreateResult(
+            enquiryId: _idOf(response.data),
+            userId: parsed.userId,
+            studentId: parsed.studentId,
+            isNewAccount: parsed.isNewAccount,
+          );
+
+    EmployeeLog.success(
+      'Enquiry created'
+      '${result.enquiryId == null ? '' : ' (#${result.enquiryId})'}'
+      '${result.isNewAccount ? ' — student account registered' : ''}',
+    );
+    return result;
+  }
+
+  @override
+  Future<void> updateEnquiry(int id, EmployeeEnquiryDraft draft) async {
+    final response = await _remote.updateEnquiry(id, draft.toJson());
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Enquiry $id updated');
+  }
+
+  @override
+  Future<void> setEnquiryStatus(int id, String status) async {
+    final response = await _remote.setEnquiryStatus(id, status);
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Enquiry $id → $status');
+  }
+
+  @override
+  Future<void> deleteEnquiry(int id) async {
+    final response = await _remote.deleteEnquiry(id);
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Enquiry $id deleted');
+  }
+
+  @override
+  Future<void> approveEnquiry(
+    int id, {
+    EmployeeEnquiryApprovalDraft draft = EmployeeEnquiryApprovalDraft.pending,
+  }) async {
+    final response = await _remote.approveEnquiry(id, body: draft.toJson());
     if (!response.isOk) throw response.toException();
     EmployeeLog.success('Enquiry $id approved — student enrolled');
   }
@@ -678,14 +746,23 @@ class EmployeeDashboardRepositoryImpl implements EmployeeDashboardRepository {
     required int courtId,
     required int slotId,
     required String date,
+    String? notes,
+    bool countAsRevenue = false,
+    num? amount,
   }) async {
     final response = await _remote.blockSlot(
       courtId: courtId,
       slotId: slotId,
       date: date,
+      notes: notes,
+      countAsRevenue: countAsRevenue,
+      amount: amount,
     );
     if (!response.isOk) throw response.toException();
-    EmployeeLog.success('Slot $slotId blocked for $date');
+    EmployeeLog.success(
+      'Slot $slotId blocked for $date'
+      '${countAsRevenue ? ' (booked as revenue)' : ''}',
+    );
   }
 
   @override
@@ -766,6 +843,433 @@ class EmployeeDashboardRepositoryImpl implements EmployeeDashboardRepository {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Students (the Student List module)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  @override
+  Future<EmployeePaged<EmployeeStudent>> getStudents({
+    int page = 1,
+    int limit = 20,
+    String? search,
+  }) async {
+    final response = await _remote.students(
+      page: page,
+      limit: limit,
+      search: search,
+    );
+    if (!response.isOk) throw response.toException();
+
+    final result = EmployeeMappers.pageOf<EmployeeStudent>(
+      response.data,
+      key: 'students',
+      parse: EmployeeMappers.student,
+      fallbackPage: page,
+      fallbackLimit: limit,
+    );
+
+    _warnIfDropped(
+      EmployeeMappers.rowsAt(response.data, 'students').length,
+      result.items.length,
+      'students',
+    );
+    EmployeeLog.data('Students → $result');
+    return result;
+  }
+
+  @override
+  Future<EmployeeStudent> getStudent(int id) async {
+    final response = await _remote.student(id);
+    if (!response.isOk) throw response.toException();
+
+    final student = EmployeeMappers.student(
+      _objectOf(response.data, 'student'),
+    );
+    if (student == null) {
+      throw const ParseException('That student could not be read.');
+    }
+
+    EmployeeLog.data('Student → $student');
+    return student;
+  }
+
+  @override
+  Future<void> updateStudent(int id, EmployeeStudentDraft draft) async {
+    final body = draft.toJson();
+    if (body.isEmpty) {
+      // Nothing to send. Calling anyway would answer 200 and teach the user
+      // that a no-op edit "saved", so it is refused here instead.
+      EmployeeLog.state('Student $id update skipped — nothing changed');
+      return;
+    }
+
+    final response = await _remote.updateStudent(id, body);
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Student $id updated');
+  }
+
+  @override
+  Future<void> deleteStudent(int id) async {
+    final response = await _remote.deleteStudent(id);
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Student $id deleted');
+  }
+
+  @override
+  Future<void> sendStudentFeedback(
+    int id,
+    EmployeeStudentFeedbackDraft draft,
+  ) async {
+    final response = await _remote.sendStudentFeedback(id, draft.toJson());
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Feedback sent to student $id');
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Coupons
+  // ───────────────────────────────────────────────────────────────────────────
+
+  @override
+  Future<EmployeePaged<EmployeeCoupon>> getCoupons({
+    int page = 1,
+    int limit = 20,
+    String? search,
+    String? status,
+  }) async {
+    final response = await _remote.coupons(
+      page: page,
+      limit: limit,
+      search: search,
+      status: status,
+    );
+    if (!response.isOk) throw response.toException();
+
+    // Shape A: the rows are `data` itself, with a sibling `pagination` block —
+    // there is no named key to look under, so the key is the envelope's own.
+    final result = EmployeeMappers.pageOf<EmployeeCoupon>(
+      response.data,
+      key: 'coupons',
+      parse: EmployeeMappers.coupon,
+      fallbackPage: page,
+      fallbackLimit: limit,
+    );
+
+    _warnIfDropped(
+      EmployeeMappers.rowsAt(response.data, 'coupons').length,
+      result.items.length,
+      'coupons',
+    );
+    EmployeeLog.data('Coupons → $result');
+    return result;
+  }
+
+  @override
+  Future<EmployeeCoupon> getCoupon(int id) async {
+    final response = await _remote.coupon(id);
+    if (!response.isOk) throw response.toException();
+
+    final coupon = EmployeeMappers.coupon(_objectOf(response.data, 'coupon'));
+    if (coupon == null) {
+      throw const ParseException('That coupon could not be read.');
+    }
+
+    EmployeeLog.data('Coupon → $coupon');
+    return coupon;
+  }
+
+  @override
+  Future<void> createCoupon(EmployeeCouponDraft draft) async {
+    final response = await _remote.createCoupon(draft.toJson());
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Coupon ${draft.code.toUpperCase()} created');
+  }
+
+  @override
+  Future<void> updateCoupon(int id, EmployeeCouponDraft draft) async {
+    final response = await _remote.updateCoupon(id, draft.toJson());
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Coupon $id updated');
+  }
+
+  @override
+  Future<void> deleteCoupon(int id) async {
+    final response = await _remote.deleteCoupon(id);
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Coupon $id deleted');
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Visitor passes
+  // ───────────────────────────────────────────────────────────────────────────
+
+  @override
+  Future<EmployeePaged<EmployeeVisitorPass>> getVisitorPasses({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final response = await _remote.visitorPasses(page: page, limit: limit);
+    if (!response.isOk) throw response.toException();
+
+    final result = EmployeeMappers.pageOf<EmployeeVisitorPass>(
+      response.data,
+      key: 'passes',
+      parse: EmployeeMappers.visitorPass,
+      fallbackPage: page,
+      fallbackLimit: limit,
+    );
+
+    _warnIfDropped(
+      EmployeeMappers.rowsAt(response.data, 'passes').length,
+      result.items.length,
+      'visitor passes',
+    );
+    EmployeeLog.data('Visitor passes → $result');
+    return result;
+  }
+
+  @override
+  Future<EmployeeVisitorPass> getVisitorPass(Object idOrCode) async {
+    final response = await _remote.visitorPass(idOrCode);
+    if (!response.isOk) throw response.toException();
+
+    final pass = EmployeeMappers.visitorPass(_objectOf(response.data, 'pass'));
+    if (pass == null) {
+      throw const ParseException('That visitor pass could not be read.');
+    }
+
+    EmployeeLog.data('Visitor pass → $pass');
+    return pass;
+  }
+
+  @override
+  Future<EmployeeVisitorPass?> createVisitorPass(
+    EmployeeVisitorPassDraft draft,
+  ) async {
+    final response = await _remote.createVisitorPass(draft.toJson());
+    if (!response.isOk) throw response.toException();
+
+    // The pass number and QR code are only in this answer — nothing re-reads
+    // them — but a payload that did not echo the row is still a success.
+    final pass = EmployeeMappers.visitorPass(
+      _objectOf(response.data, 'pass'),
+    );
+    EmployeeLog.success('Visitor pass generated${pass == null ? '' : ' — ${pass.displayCode}'}');
+    return pass;
+  }
+
+  @override
+  Future<void> emailVisitorPass(
+    int id,
+    EmployeeVisitorPassEmailDraft draft,
+  ) async {
+    final response = await _remote.emailVisitorPass(id, draft.toJson());
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Visitor pass $id emailed');
+  }
+
+  @override
+  Future<void> deleteVisitorPass(int id) async {
+    final response = await _remote.deleteVisitorPass(id);
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Visitor pass $id deleted');
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Events
+  // ───────────────────────────────────────────────────────────────────────────
+
+  @override
+  Future<EmployeePaged<EmployeeEvent>> getEvents({
+    int page = 1,
+    int limit = 20,
+    EmployeeEventTimeframe timeframe = EmployeeEventTimeframe.upcoming,
+  }) async {
+    final response = await _remote.events(
+      page: page,
+      limit: limit,
+      timeframe: timeframe.queryOrNull,
+    );
+    if (!response.isOk) throw response.toException();
+
+    final result = EmployeeMappers.pageOf<EmployeeEvent>(
+      response.data,
+      key: 'events',
+      parse: EmployeeMappers.event,
+      fallbackPage: page,
+      fallbackLimit: limit,
+    );
+
+    _warnIfDropped(
+      EmployeeMappers.rowsAt(response.data, 'events').length,
+      result.items.length,
+      'events',
+    );
+    EmployeeLog.data('Events (${timeframe.query.isEmpty ? 'all' : timeframe.query}) → $result');
+    return result;
+  }
+
+  @override
+  Future<EmployeeEvent> getEvent(int id) async {
+    final response = await _remote.event(id);
+    if (!response.isOk) throw response.toException();
+
+    final event = EmployeeMappers.event(_objectOf(response.data, 'event'));
+    if (event == null) {
+      throw const ParseException('That event could not be read.');
+    }
+
+    EmployeeLog.data('Event → $event');
+    return event;
+  }
+
+  @override
+  Future<void> createEvent(EmployeeEventDraft draft) async {
+    final response = await _remote.createEvent(draft.toJson());
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Event created');
+  }
+
+  @override
+  Future<void> updateEvent(int id, EmployeeEventDraft draft) async {
+    final response = await _remote.updateEvent(id, draft.toJson());
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Event $id updated');
+  }
+
+  @override
+  Future<void> deleteEvent(int id) async {
+    final response = await _remote.deleteEvent(id);
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Event $id deleted');
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Event bookings (Issue Event Pass)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  @override
+  Future<EmployeePaged<EmployeeEventBooking>> getEventBookings({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final response = await _remote.eventBookings(page: page, limit: limit);
+    if (!response.isOk) throw response.toException();
+
+    final result = EmployeeMappers.pageOf<EmployeeEventBooking>(
+      response.data,
+      key: 'bookings',
+      parse: EmployeeMappers.eventBooking,
+      fallbackPage: page,
+      fallbackLimit: limit,
+    );
+
+    _warnIfDropped(
+      EmployeeMappers.rowsAt(response.data, 'bookings').length,
+      result.items.length,
+      'event bookings',
+    );
+    EmployeeLog.data('Event bookings → $result');
+    return result;
+  }
+
+  @override
+  Future<void> emailEventPass(
+    int passId,
+    EmployeeEventPassEmailDraft draft,
+  ) async {
+    final response = await _remote.emailIndividualPass(passId, draft.toJson());
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Pass $passId emailed');
+  }
+
+  @override
+  Future<void> deleteEventBooking(int id) async {
+    final response = await _remote.deleteEventBooking(id);
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Event booking $id deleted');
+  }
+
+  @override
+  Future<int> deleteEventBookings(List<int> ids) async {
+    // Deduplicated because the selection can hold the same row twice after a
+    // reload, and the route counts what it is given.
+    final unique = ids.toSet().toList(growable: false);
+    if (unique.isEmpty) return 0;
+
+    final response = await _remote.deleteEventBookings(unique);
+    if (!response.isOk) throw response.toException();
+
+    EmployeeLog.success('${unique.length} event bookings deleted');
+    return unique.length;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Contact enquiries
+  // ───────────────────────────────────────────────────────────────────────────
+
+  @override
+  Future<EmployeeContactEnquiryPage> getContactEnquiries({
+    int page = 1,
+    int limit = 20,
+    String? status,
+  }) async {
+    final response = await _remote.contactEnquiries(
+      page: page,
+      limit: limit,
+      status: status,
+    );
+    if (!response.isOk) throw response.toException();
+
+    final result = EmployeeMappers.pageOf<EmployeeContactEnquiry>(
+      response.data,
+      key: 'inquiries',
+      parse: EmployeeMappers.contactEnquiry,
+      fallbackPage: page,
+      fallbackLimit: limit,
+    );
+
+    _warnIfDropped(
+      EmployeeMappers.rowsAt(response.data, 'inquiries').length,
+      result.items.length,
+      'contact enquiries',
+    );
+
+    final counts = EmployeeMappers.contactEnquiryCounts(response.data);
+    EmployeeLog.data('Contact enquiries → $result, $counts');
+
+    return EmployeeContactEnquiryPage(page: result, counts: counts);
+  }
+
+  @override
+  Future<EmployeeContactEnquiry> getContactEnquiry(String id) async {
+    final response = await _remote.contactEnquiry(id);
+    if (!response.isOk) throw response.toException();
+
+    final enquiry = EmployeeMappers.contactEnquiry(
+      _objectOf(response.data, 'inquiry'),
+    );
+    if (enquiry == null) {
+      throw const ParseException('That enquiry could not be read.');
+    }
+
+    EmployeeLog.data('Contact enquiry → $enquiry');
+    return enquiry;
+  }
+
+  @override
+  Future<void> setContactEnquiryStatus(String id, String status) async {
+    final response = await _remote.setContactEnquiryStatus(id, status);
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Contact enquiry $id → $status');
+  }
+
+  @override
+  Future<void> deleteContactEnquiry(String id) async {
+    final response = await _remote.deleteContactEnquiry(id);
+    if (!response.isOk) throw response.toException();
+    EmployeeLog.success('Contact enquiry $id deleted');
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
   // Diagnostics
   // ───────────────────────────────────────────────────────────────────────────
 
@@ -774,6 +1278,50 @@ class EmployeeDashboardRepositoryImpl implements EmployeeDashboardRepository {
   /// A row is dropped only when it carries no usable id, which means a real
   /// record is missing from a screen an employee is making decisions on — worth
   /// a line in the console even though it is not worth an error state.
+  /// The single record a write or a by-id read answered with.
+  ///
+  /// These routes are not consistent about where they put it: some answer
+  /// `{data: {...}}`, some `{data: {student: {...}}}`, and some the bare object.
+  /// All three are read, so a caller never has to know which.
+  static Map<String, dynamic> _objectOf(Object? body, String key) {
+    if (body is Map) {
+      // `{key: {...}}` at the top level.
+      final direct = body[key];
+      if (direct is Map) return Map<String, dynamic>.from(direct);
+
+      final inner = body['data'];
+      if (inner is Map) {
+        // `{data: {key: {...}}}`.
+        final nested = inner[key];
+        if (nested is Map) return Map<String, dynamic>.from(nested);
+        // `{data: {...}}` — the record itself.
+        return Map<String, dynamic>.from(inner);
+      }
+      // `{data: [{...}]}` — a one-row list, which a couple of these routes
+      // answer with when the id matched exactly one record.
+      if (inner is List) {
+        final rows = EmployeeMappers.rowsAt(body, key);
+        if (rows.isNotEmpty) return rows.first;
+      }
+    }
+
+    return EmployeeMappers.envelope(body);
+  }
+
+  /// The id off a create response, wherever it landed.
+  static int? _idOf(Object? body) {
+    final json = EmployeeMappers.envelope(body);
+    final direct = json['id'];
+    if (direct != null) return int.tryParse(direct.toString());
+
+    for (final value in json.values) {
+      if (value is Map && value['id'] != null) {
+        return int.tryParse(value['id'].toString());
+      }
+    }
+    return null;
+  }
+
   static void _warnIfDropped(int received, int kept, String what) {
     if (received == kept) return;
     EmployeeLog.failure(

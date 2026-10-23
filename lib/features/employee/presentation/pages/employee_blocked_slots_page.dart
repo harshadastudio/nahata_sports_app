@@ -293,55 +293,63 @@ class _EmployeeBlockedSlotsPageState extends State<EmployeeBlockedSlotsPage> {
         Row(
           children: [
             Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _controller.busy ? null : () => _bulk(block: true),
-                icon: const Icon(Icons.lock_outline_rounded, size: 16),
-                label: const Text(
-                  'Block all',
-                  style: TextStyle(fontSize: 12.5),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: EmployeeTokens.danger,
-                  side: BorderSide(
-                    color: EmployeeTokens.danger.withValues(alpha: 0.4),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    vertical: EmployeeTokens.space3,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(EmployeeTokens.radiusSm),
-                  ),
-                ),
+              child: _bulkButton(
+                label: 'Block all',
+                icon: Icons.lock_outline_rounded,
+                color: EmployeeTokens.danger,
+                onPressed: () => _bulk(block: true),
               ),
             ),
-            const SizedBox(width: EmployeeTokens.space3),
+            const SizedBox(width: EmployeeTokens.space2),
             Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _controller.busy ? null : () => _bulk(block: false),
-                icon: const Icon(Icons.lock_open_rounded, size: 16),
-                label: const Text(
-                  'Unblock all',
-                  style: TextStyle(fontSize: 12.5),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: EmployeeTokens.success,
-                  side: BorderSide(
-                    color: EmployeeTokens.success.withValues(alpha: 0.4),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    vertical: EmployeeTokens.space3,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(EmployeeTokens.radiusSm),
-                  ),
-                ),
+              child: _bulkButton(
+                label: 'Book all',
+                icon: Icons.payments_outlined,
+                color: EmployeeTokens.warning,
+                onPressed: () => _bulk(block: true, billed: true),
+              ),
+            ),
+            const SizedBox(width: EmployeeTokens.space2),
+            Expanded(
+              child: _bulkButton(
+                label: 'Unblock all',
+                icon: Icons.lock_open_rounded,
+                color: EmployeeTokens.success,
+                onPressed: () => _bulk(block: false),
               ),
             ),
           ],
         ),
       ],
+    );
+  }
+
+  Widget _bulkButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: _controller.busy ? null : onPressed,
+      icon: Icon(icon, size: 15),
+      label: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 11.5),
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        side: BorderSide(color: color.withValues(alpha: 0.4)),
+        padding: const EdgeInsets.symmetric(
+          horizontal: EmployeeTokens.space1,
+          vertical: EmployeeTokens.space3,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(EmployeeTokens.radiusSm),
+        ),
+      ),
     );
   }
 
@@ -492,11 +500,36 @@ class _EmployeeBlockedSlotsPageState extends State<EmployeeBlockedSlotsPage> {
                   ],
                 ),
               ],
+              if (slot.blockBilled) ...[
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.currency_rupee_rounded,
+                      size: 10,
+                      color: EmployeeTokens.success,
+                    ),
+                    const SizedBox(width: 2),
+                    Expanded(
+                      child: Text(
+                        '${slot.blockAmount.round()} revenue',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                          color: EmployeeTokens.success,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const Spacer(),
               Text(
                 byCustomer
                     ? 'Cancel the booking to free it'
-                    : 'Tap to ${blocked ? 'unblock' : 'block'}',
+                    : 'Tap for options',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -523,6 +556,7 @@ class _EmployeeBlockedSlotsPageState extends State<EmployeeBlockedSlotsPage> {
           _LegendDot(color: EmployeeTokens.danger, label: 'Blocked by you'),
           _LegendDot(color: EmployeeTokens.warning, label: 'Partner hold'),
           _LegendDot(color: EmployeeTokens.purple, label: 'Customer booking'),
+          _LegendDot(color: EmployeeTokens.success, label: '₹ = booked as revenue'),
         ],
       ),
     );
@@ -533,9 +567,78 @@ class _EmployeeBlockedSlotsPageState extends State<EmployeeBlockedSlotsPage> {
   // ───────────────────────────────────────────────────────────────────────────
 
   Future<void> _toggle(EmployeeAvailableSlot slot) async {
-    // A recurring block reopens every date, so it is confirmed before it goes
-    // out — the tile says so, but this is not undoable.
-    if (slot.isBlocked && slot.isRecurringBlock) {
+    if (slot.isBlocked) {
+      await _tapBlocked(slot);
+    } else {
+      await _tapAvailable(slot);
+    }
+  }
+
+  /// An available slot: offer Block (no revenue) or Book (billed).
+  Future<void> _tapAvailable(EmployeeAvailableSlot slot) async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(slot.timeLabel),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop('block'),
+            child: const ListTile(
+              leading: Icon(
+                Icons.lock_outline_rounded,
+                color: EmployeeTokens.danger,
+              ),
+              title: Text('Block'),
+              subtitle: Text('No revenue — maintenance or a closure'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop('book'),
+            child: ListTile(
+              leading: const Icon(
+                Icons.payments_outlined,
+                color: EmployeeTokens.success,
+              ),
+              title: const Text('Book'),
+              subtitle: Text('Adds ₹${slot.price.round()} to revenue'),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null || !mounted) return;
+
+    final billed = choice == 'book';
+    if (billed) {
+      final ok = await confirmEmployeeAction(
+        context,
+        title: 'Book this slot?',
+        message: '₹${slot.price.round()} will be added to your reports for '
+            '${formatDay(_controller.date)}.',
+        confirmLabel: 'Book it',
+      );
+      if (!ok || !mounted) return;
+    }
+
+    final error = await _controller.toggle(slot, billed: billed);
+    if (!mounted) return;
+
+    showEmployeeToast(
+      context,
+      error ??
+          (billed
+              ? 'Slot booked — ₹${slot.price.round()} added to revenue'
+              : 'Slot blocked'),
+      isError: error != null,
+    );
+  }
+
+  /// A blocked slot: a recurring block only offers to reopen everywhere; a
+  /// partner hold only offers to release it; our own block also offers the
+  /// billed/unbilled correction.
+  Future<void> _tapBlocked(EmployeeAvailableSlot slot) async {
+    if (slot.isRecurringBlock) {
       final ok = await confirmEmployeeAction(
         context,
         title: 'This is a recurring block',
@@ -546,20 +649,73 @@ class _EmployeeBlockedSlotsPageState extends State<EmployeeBlockedSlotsPage> {
         destructive: true,
       );
       if (!ok || !mounted) return;
+
+      final error = await _controller.toggle(slot);
+      if (!mounted) return;
+      showEmployeeToast(context, error ?? 'Slot unblocked', isError: error != null);
+      return;
     }
 
-    final wasBlocked = slot.isBlocked;
-    final error = await _controller.toggle(slot);
-    if (!mounted) return;
+    if (slot.isPartnerBlock) {
+      final error = await _controller.toggle(slot);
+      if (!mounted) return;
+      showEmployeeToast(context, error ?? 'Slot unblocked', isError: error != null);
+      return;
+    }
 
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(slot.timeLabel),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop('unblock'),
+            child: const ListTile(
+              leading: Icon(
+                Icons.lock_open_rounded,
+                color: EmployeeTokens.success,
+              ),
+              title: Text('Unblock'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop('bill'),
+            child: ListTile(
+              leading: Icon(
+                slot.blockBilled
+                    ? Icons.money_off_rounded
+                    : Icons.payments_outlined,
+                color: EmployeeTokens.warning,
+              ),
+              title: Text(
+                slot.blockBilled ? 'Remove from revenue' : 'Mark as revenue',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null || !mounted) return;
+
+    if (choice == 'unblock') {
+      final error = await _controller.toggle(slot);
+      if (!mounted) return;
+      showEmployeeToast(context, error ?? 'Slot unblocked', isError: error != null);
+      return;
+    }
+
+    final billed = !slot.blockBilled;
+    final error = await _controller.setBilled(slot, billed);
+    if (!mounted) return;
     showEmployeeToast(
       context,
-      error ?? (wasBlocked ? 'Slot unblocked' : 'Slot blocked'),
+      error ?? (billed ? 'Marked as revenue' : 'Revenue removed'),
       isError: error != null,
     );
   }
 
-  Future<void> _bulk({required bool block}) async {
+  Future<void> _bulk({required bool block, bool billed = false}) async {
     final targets = _controller.bulkTargets(block: block);
 
     if (targets.isEmpty) {
@@ -576,20 +732,25 @@ class _EmployeeBlockedSlotsPageState extends State<EmployeeBlockedSlotsPage> {
         ? ''
         : '\n\n$recurring of them are recurring blocks — unblocking those '
             'reopens the time on EVERY date.';
+    final revenueNote = block && billed
+        ? '\n\nThese are BOOKED AS REVENUE — ₹'
+            '${targets.fold<num>(0, (t, s) => t + s.price).round()} added to '
+            'your reports.'
+        : '';
 
     final ok = await confirmEmployeeAction(
       context,
-      title: '${block ? 'Block' : 'Unblock'} ${targets.length} slot'
-          '${targets.length == 1 ? '' : 's'}?',
+      title: '${block ? (billed ? 'Book' : 'Block') : 'Unblock'} '
+          '${targets.length} slot${targets.length == 1 ? '' : 's'}?',
       message: 'For ${formatDay(_controller.date)} on '
           '${_controller.court?.displayName ?? 'this court'}. '
-          'Customer bookings are left alone.$warning',
-      confirmLabel: block ? 'Block them' : 'Unblock them',
-      destructive: block,
+          'Customer bookings are left alone.$revenueNote$warning',
+      confirmLabel: block ? (billed ? 'Book them' : 'Block them') : 'Unblock them',
+      destructive: block && !billed,
     );
     if (!ok || !mounted) return;
 
-    final result = await _controller.bulkSet(block: block);
+    final result = await _controller.bulkSet(block: block, billed: billed);
     if (!mounted) return;
 
     if (result.nothingToDo) {
@@ -601,7 +762,7 @@ class _EmployeeBlockedSlotsPageState extends State<EmployeeBlockedSlotsPage> {
       context,
       result.isComplete
           ? '${result.succeeded} slot${result.succeeded == 1 ? '' : 's'} '
-              '${block ? 'blocked' : 'unblocked'}'
+              '${block ? (billed ? 'booked' : 'blocked') : 'unblocked'}'
           // A partial result is reported honestly — the grid above already
           // shows which ones actually moved.
           : '${result.succeeded} of ${result.attempted} updated — check the '

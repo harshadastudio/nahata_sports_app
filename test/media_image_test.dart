@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nahata_app/core/widgets/media_image.dart';
-import 'package:nahata_app/repositories/coaching_repository.dart';
+import 'package:nahata_app/repositories/coaching_repository.dart'
+    hide decodeDataUri;
 
 /// The smallest valid PNG, as the API would send it inline.
 const String _pngDataUri =

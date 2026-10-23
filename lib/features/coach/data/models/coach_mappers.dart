@@ -1,5 +1,6 @@
 import '../../domain/entities/coach_attendance.dart';
 import '../../domain/entities/coach_batch.dart';
+import '../../domain/entities/coach_earnings.dart';
 import '../../domain/entities/coach_enquiry.dart';
 import '../../domain/entities/coach_enrollment.dart';
 import '../../domain/entities/coach_fee.dart';
@@ -133,6 +134,73 @@ class CoachMappers {
       detail: _string(json['detail']),
       sportName: _string(json['sport']),
       colorKey: _string(json['color']),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Earnings
+  // ---------------------------------------------------------------------------
+
+  static CoachEarnings earnings(Object? body) {
+    final json = envelope(body);
+
+    final byBatch = _objectsAt(json['byBatch'])
+        .map(_earningsBatch)
+        .whereType<CoachEarningsBatch>()
+        .toList(growable: false);
+
+    final byMonth = _objectsAt(json['byMonth'])
+        .map(_earningsMonth)
+        .whereType<CoachEarningsMonth>()
+        .toList(growable: false);
+
+    final period = json['period'];
+    final periodMap =
+        period is Map ? Map<String, dynamic>.from(period) : const {};
+
+    return CoachEarnings(
+      coachId: _intOrNull(json['coachId']),
+      totalEarnings: _num(json['totalEarnings']),
+      earnedFromPayments: _num(json['earnedFromPayments']),
+      reversedByRefunds: _num(json['reversedByRefunds']),
+      totalCollected: _num(json['totalCollected']),
+      nahataShare: _num(json['nahataShare']),
+      paymentCount: _int(json['paymentCount']),
+      byBatch: byBatch,
+      byMonth: byMonth,
+      startDate: _string(periodMap['startDate']),
+      endDate: _string(periodMap['endDate']),
+      allTime: periodMap['allTime'] == null ? true : _bool(periodMap['allTime']),
+    );
+  }
+
+  static CoachEarningsBatch? _earningsBatch(Map<String, dynamic> json) {
+    final id = _int(json['batchId']);
+    if (id <= 0) return null;
+
+    return CoachEarningsBatch(
+      batchId: id,
+      batchName: _string(json['batchName']) ?? '',
+      sportName: _string(json['sportName']),
+      complexName: _string(json['complexName']),
+      earnings: _num(json['earnings']),
+      collected: _num(json['collected']),
+      nahataEarnings: _num(json['nahataEarnings']),
+      payments: _int(json['payments']),
+    );
+  }
+
+  static CoachEarningsMonth? _earningsMonth(Map<String, dynamic> json) {
+    final month = _string(json['month']);
+    if (month == null) return null;
+
+    return CoachEarningsMonth(
+      month: month,
+      label: _string(json['label']) ?? '',
+      earnings: _num(json['earnings']),
+      collected: _num(json['collected']),
+      nahataEarnings: _num(json['nahataEarnings']),
+      payments: _int(json['payments']),
     );
   }
 
@@ -348,6 +416,121 @@ class CoachMappers {
       approvalStatusRaw: _string(json['approvalStatus']),
       amountPaid: _num(json['amountPaid']),
       feesPaid: _bool(json['feesPaid']),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Copy to Next Month (renewal preview + commit)
+  // ---------------------------------------------------------------------------
+
+  static CoachRenewalPreview renewalPreview(Object? body) {
+    final data = envelope(body);
+
+    final batches = _objectsAt(data['batches'])
+        .map(_renewalBatchGroup)
+        .whereType<CoachRenewalBatchGroup>()
+        .toList(growable: false);
+
+    final summary = data['summary'];
+    final summaryMap =
+        summary is Map ? Map<String, dynamic>.from(summary) : const {};
+
+    return CoachRenewalPreview(
+      fromMonth: _string(data['fromMonth']) ?? '',
+      fromLabel: _string(data['fromLabel']) ?? '',
+      toMonth: _string(data['toMonth']) ?? '',
+      toLabel: _string(data['toLabel']) ?? '',
+      defaultValidTill: _string(data['defaultValidTill']),
+      candidates: _int(summaryMap['candidates']),
+      selectedByDefault: _int(summaryMap['selectedByDefault']),
+      alreadyCovered: _int(summaryMap['alreadyCovered']),
+      alreadyRenewed: _int(summaryMap['alreadyRenewed']),
+      feeIfAllCollected: _num(summaryMap['feeIfAllCollected']),
+      batches: batches,
+    );
+  }
+
+  static CoachRenewalBatchGroup? _renewalBatchGroup(Map<String, dynamic> json) {
+    final id = _int(json['id']);
+    if (id <= 0) return null;
+
+    final students = _objectsAt(json['students'])
+        .map(_renewalLine)
+        .whereType<CoachRenewalLine>()
+        .toList(growable: false);
+
+    return CoachRenewalBatchGroup(
+      batchId: id,
+      name: _string(json['name']) ?? '',
+      sportName: _string(json['sport']),
+      schedule: _string(json['schedule']),
+      days: _string(json['days']),
+      startTime: _string(json['startTime']),
+      endTime: _string(json['endTime']),
+      fees: _numOrNull(json['fees']),
+      batchEndDate: _string(json['batchEndDate']),
+      students: students,
+      count: _int(json['count']) > 0 ? _int(json['count']) : students.length,
+    );
+  }
+
+  static CoachRenewalLine? _renewalLine(Map<String, dynamic> json) {
+    final id = _int(json['enrollmentId']);
+    if (id <= 0) return null;
+
+    return CoachRenewalLine(
+      enrollmentId: id,
+      studentId: _int(json['studentId']),
+      name: _string(json['name']) ?? '',
+      email: _string(json['email']) ?? '',
+      phone: _string(json['phone']) ?? '',
+      statusRaw: _string(json['status']),
+      paymentStatusRaw: _string(json['paymentStatus']),
+      approvalStatusRaw: _string(json['approvalStatus']),
+      amountPaid: _num(json['amountPaid']),
+      alreadyCovered: _bool(json['alreadyCovered']),
+      alreadyRenewed: _bool(json['alreadyRenewed']),
+      note: _string(json['note']) ?? '',
+      suggestedFee: _num(json['suggestedFee']),
+      defaultSelected: _bool(json['defaultSelected']),
+    );
+  }
+
+  static CoachRenewMonthResult renewMonthResult(Object? body, {String? message}) {
+    final data = envelope(body);
+    final summary = data['summary'];
+    final summaryMap =
+        summary is Map ? Map<String, dynamic>.from(summary) : const {};
+
+    return CoachRenewMonthResult(
+      toMonth: _string(data['toMonth']) ?? '',
+      toLabel: _string(data['toLabel']) ?? '',
+      validTill: _string(data['validTill']),
+      renewedCount: _int(summaryMap['renewed']),
+      skippedCount: _int(summaryMap['skipped']),
+      failedCount: _int(summaryMap['failed']),
+      feeCollected: _num(summaryMap['feeCollected']),
+      feePending: _num(summaryMap['feePending']),
+      renewed: _objectsAt(data['renewed'])
+          .map(_renewOutcome)
+          .toList(growable: false),
+      skipped: _objectsAt(data['skipped'])
+          .map(_renewOutcome)
+          .toList(growable: false),
+      failed: _objectsAt(data['failed'])
+          .map(_renewOutcome)
+          .toList(growable: false),
+      message: message ?? '',
+    );
+  }
+
+  static CoachRenewOutcome _renewOutcome(Map<String, dynamic> json) {
+    return CoachRenewOutcome(
+      enrollmentId: _int(json['enrollmentId']),
+      name: _string(json['name']) ?? '',
+      reason: _string(json['reason']),
+      feeCharged: _num(json['feeCharged']),
+      collected: _bool(json['collected']),
     );
   }
 

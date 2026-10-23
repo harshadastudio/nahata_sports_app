@@ -1884,6 +1884,22 @@ class _HomeScreenState extends State<HomeScreen> {
                                         return Image.network(
                                           img,
                                           fit: BoxFit.cover,
+                                          // Falls back to the same grey block
+                                          // the empty case uses, so a venue
+                                          // whose photo 404s looks unset
+                                          // rather than broken. The gradient
+                                          // and label above stay readable
+                                          // either way.
+                                          errorBuilder: (_, __, ___) =>
+                                              Container(color: Colors.grey[300]),
+                                          loadingBuilder:
+                                              (context, child, progress) =>
+                                                  progress == null
+                                                      ? child
+                                                      : Container(
+                                                          color:
+                                                              Colors.grey[200],
+                                                        ),
                                         );
                                       } else if (img.isNotEmpty) {
                                         return Image.asset(
